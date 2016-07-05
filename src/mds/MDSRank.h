@@ -145,23 +145,23 @@ class MDSRank {
     // to share a timer.
     SafeTimer &timer;
 
-    MDSMap *&mdsmap;
+    /* Lifetime/update managed by MDSDaemon. */
+    std::unique_ptr<MDSMap> &mdsmap;
 
     Objecter     *objecter;
 
     // sub systems
-    Server       *server;
-    MDCache      *mdcache;
-    Locker       *locker;
-    MDLog        *mdlog;
-    MDBalancer   *balancer;
-    ScrubStack   *scrubstack;
-    DamageTable  damage_table;
-
-    InoTable     *inotable;
-
-    SnapServer   *snapserver;
-    SnapClient   *snapclient;
+    std::unique_ptr<Server> server;
+    std::unique_ptr<MDCache> mdcache;
+    std::unique_ptr<Finisher> finisher;
+    std::unique_ptr<Locker> locker;
+    std::unique_ptr<MDLog> mdlog;
+    std::unique_ptr<MDBalancer> balancer;
+    std::unique_ptr<ScrubStack> scrubstack;
+    std::unique_ptr<DamageTable damage_table;
+    std::unique_ptr<InoTable> inotable;
+    std::unique_ptr<SnapServer> snapserver;
+    std::unique_ptr<SnapClient> snapclient;
 
     MDSTableClient *get_table_client(int t);
     MDSTableServer *get_table_server(int t);
@@ -171,7 +171,7 @@ class MDSRank {
       return sessionmap.get_session(entity_name_t::CLIENT(client.v));
     }
 
-    PerfCounters       *logger, *mlogger;
+    std::unique_ptr<PerfCounters> logger, mlogger;
     OpTracker    op_tracker;
 
     // The last different state I held before current
@@ -275,7 +275,7 @@ class MDSRank {
         LogChannelRef &clog_,
         SafeTimer &timer_,
         Beacon &beacon_,
-        MDSMap *& mdsmap_,
+        std::unique_ptr<MDSMap> &mdsmap_,
         Messenger *msgr,
         MonClient *monc_,
         Objecter *objecter_,
@@ -358,8 +358,6 @@ class MDSRank {
 
     ceph_tid_t issue_tid() { return ++last_tid; }
 
-    Finisher     *finisher;
-
     MDSMap *get_mds_map() { return mdsmap; }
 
     int get_req_rate() { return logger->get(l_mds_request); }
@@ -398,8 +396,8 @@ class MDSRank {
     Messenger    *messenger;
     MonClient    *monc;
 
-    Context *respawn_hook;
-    Context *suicide_hook;
+    std::unique_ptr<Context> respawn_hook;
+    std::unique_ptr<Context> suicide_hook;
 
     // Friended to access retry_dispatch
     friend class C_MDS_RetryMessage;
@@ -516,7 +514,7 @@ public:
       LogChannelRef &clog_,
       SafeTimer &timer_,
       Beacon &beacon_,
-      MDSMap *& mdsmap_,
+      std::unique_ptr<MDSMap> &mdsmap_,
       Messenger *msgr,
       MonClient *monc_,
       Objecter *objecter_,

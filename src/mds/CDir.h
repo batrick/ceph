@@ -336,7 +336,7 @@ private:
 
 
 protected:
-  scrub_info_t *scrub_infop;
+  std::unique_ptr<scrub_info_t> scrub_infop;
 
   // contents of this directory
   map_t items;       // non-null AND null
@@ -393,15 +393,13 @@ protected:
   friend class C_IO_Dir_OMAP_Fetched;
   friend class C_IO_Dir_Committed;
 
-  bloom_filter *bloom;
+  std::unique_ptr<bloom_filter> bloom;
   /* If you set up the bloom filter, you must keep it accurate!
    * It's deleted when you mark_complete() and is deliberately not serialized.*/
 
  public:
   CDir(CInode *in, frag_t fg, MDCache *mdcache, bool auth);
   ~CDir() {
-    delete scrub_infop;
-    remove_bloom();
     g_num_dir--;
     g_num_dirs++;
   }
@@ -410,7 +408,7 @@ protected:
     if (!scrub_infop) {
       scrub_info_create();
     }
-    return scrub_infop;
+    return scrub_infop.get();
   }
 
 

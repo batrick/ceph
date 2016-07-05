@@ -104,9 +104,7 @@ void Server::create_logger()
 Server::Server(MDSRank *m) : 
   mds(m), 
   mdcache(mds->mdcache), mdlog(mds->mdlog),
-  logger(0),
   is_full(false),
-  reconnect_done(NULL),
   failed_reconnects(0),
   terminating_sessions(false)
 {
@@ -850,8 +848,7 @@ void Server::reconnect_gather_finish()
 {
   dout(7) << "reconnect_gather_finish.  failed on " << failed_reconnects << " clients" << dendl;
   assert(reconnect_done);
-  reconnect_done->complete(0);
-  reconnect_done = NULL;
+  reconnect_done.release()->complete(0);
 }
 
 void Server::reconnect_tick()

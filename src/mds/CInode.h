@@ -513,7 +513,7 @@ public:
 
   // -- cache infrastructure --
 private:
-  compact_map<frag_t,CDir*> dirfrags; // cached dir fragments under this Inode
+  compact_map<frag_t,std::unique_ptr<CDir>> dirfrags; // cached dir fragments under this Inode
   int stickydir_ref;
   scrub_info_t *scrub_infop;
 
@@ -522,7 +522,7 @@ public:
   CDir* get_dirfrag(frag_t fg) {
     if (dirfrags.count(fg)) {
       //assert(g_conf->debug_mds < 2 || dirfragtree.is_leaf(fg)); // performance hack FIXME
-      return dirfrags[fg];
+      return dirfrags[fg].get();
     } else
       return NULL;
   }
@@ -570,30 +570,22 @@ public:
 
 protected:
 
-  ceph_lock_state_t *fcntl_locks;
-  ceph_lock_state_t *flock_locks;
+  std::unique_ptr<ceph_lock_state_t> fcntl_locks;
+  std::unique_ptr<ceph_lock_state_t> flock_locks;
 
   ceph_lock_state_t *get_fcntl_lock_state() {
     if (!fcntl_locks)
-      fcntl_locks = new ceph_lock_state_t(g_ceph_context, CEPH_LOCK_FCNTL);
-    return fcntl_locks;
-  }
-  void clear_fcntl_lock_state() {
-    delete fcntl_locks;
-    fcntl_locks = NULL;
+      fcntl_locks.reset(new ceph_lock_state_t(g_ceph_context, CEPH_LOCK_FCNTL));
+    return fcntl_locks.get();
   }
   ceph_lock_state_t *get_flock_lock_state() {
     if (!flock_locks)
-      flock_locks = new ceph_lock_state_t(g_ceph_context, CEPH_LOCK_FLOCK);
-    return flock_locks;
-  }
-  void clear_flock_lock_state() {
-    delete flock_locks;
-    flock_locks = NULL;
+      flock_locks.reset(new ceph_lock_state_t(g_ceph_context, CEPH_LOCK_FLOCK));
+    return flock_locks.get();
   }
   void clear_file_locks() {
-    clear_fcntl_lock_state();
-    clear_flock_lock_state();
+    fcntl_locks.reset();
+    flock_locks.reset();
   }
   void _encode_file_locks(bufferlist& bl) const {
     bool has_fcntl_locks = fcntl_locks && !fcntl_locks->empty();
@@ -611,13 +603,13 @@ protected:
     if (has_fcntl_locks)
       ::decode(*get_fcntl_lock_state(), p);
     else
-      clear_fcntl_lock_state();
+      fcntl_locks.reset();
     bool has_flock_locks;
     ::decode(has_flock_locks, p);
     if (has_flock_locks)
       ::decode(*get_flock_lock_state(), p);
     else
-      clear_flock_lock_state();
+      flock_locks.reset();
   }
 
   // LogSegment lists i (may) belong to
@@ -659,7 +651,6 @@ public:
     parent(0),
     inode_auth(CDIR_AUTH_DEFAULT),
     replica_caps_wanted(0),
-    fcntl_locks(0), flock_locks(0),
     item_dirty(this), item_caps(this), item_open_file(this), item_dirty_parent(this),
     item_dirty_dirfrag_dir(this), 
     item_dirty_dirfrag_nest(this), 
@@ -688,7 +679,6 @@ public:
     g_num_inos++;
     close_dirfrags();
     close_snaprealm();
-    clear_file_locks();
     assert(num_projected_xattrs == 0);
     assert(num_projected_srnodes == 0);
   }

@@ -78,9 +78,9 @@ protected:
   uint64_t safe_pos;
 
   inodeno_t ino;
-  Journaler *journaler;
+  std::unique_ptr<Journaler> journaler;
 
-  PerfCounters *logger;
+  std::unique_ptr<PerfCounters> logger;
 
 
   // -- replay --
@@ -187,8 +187,6 @@ public:
                       unflushed(0),
                       capped(false),
                       safe_pos(0),
-                      journaler(0),
-                      logger(0),
                       replay_thread(this),
                       already_replayed(false),
                       recovery_thread(this),
@@ -248,7 +246,7 @@ public:
   uint64_t get_read_pos();
   uint64_t get_write_pos();
   uint64_t get_safe_pos();
-  Journaler *get_journaler() { return journaler; }
+  Journaler *get_journaler() { return journaler.get(); }
   bool empty() { return segments.empty(); }
 
   bool is_capped() { return capped; }

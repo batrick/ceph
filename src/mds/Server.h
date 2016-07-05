@@ -45,16 +45,16 @@ enum {
 
 class Server {
 private:
-  MDSRank *mds;
-  MDCache *mdcache;
-  MDLog *mdlog;
-  PerfCounters *logger;
+  MDSRank *mds; // ORDER DEPENDENCY BEFORE: mdcache mdlog
+  MDCache *mdcache; // ORDER DEPENDENCY AFTER: mds
+  MDLog *mdlog; // ORDER DEPENDENCY AFTER: mds
+  std::unique_ptr<PerfCounters> logger;
 
   // OSDMap full status, used to generate ENOSPC on some operations
   bool is_full;
 
   // State for while in reconnect
-  MDSInternalContext *reconnect_done;
+  std::unique_ptr<MDSInternalContext> reconnect_done;
   int failed_reconnects;
 
   friend class MDSContinuation;
@@ -65,9 +65,7 @@ public:
 
   explicit Server(MDSRank *m);
   ~Server() {
-    g_ceph_context->get_perfcounters_collection()->remove(logger);
-    delete logger;
-    delete reconnect_done;
+    g_ceph_context->get_perfcounters_collection()->remove(logger.get());
   }
 
   void create_logger();

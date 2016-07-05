@@ -86,23 +86,22 @@ class MDSDaemon : public Dispatcher, public md_config_obs_t {
  protected:
   Beacon  beacon;
 
-  AuthAuthorizeHandlerRegistry *authorize_handler_cluster_registry;
-  AuthAuthorizeHandlerRegistry *authorize_handler_service_registry;
+  std::unique_ptr<AuthAuthorizeHandlerRegistry> authorize_handler_cluster_registry;
+  std::unique_ptr<AuthAuthorizeHandlerRegistry> authorize_handler_service_registry;
 
   std::string name;
 
   Messenger    *messenger;
   MonClient    *monc;
-  MDSMap       *mdsmap;
-  Objecter     *objecter;
+  std::unique_ptr<MDSMap> mdsmap;
+  std::unique_ptr<Objecter> objecter;
   LogClient    log_client;
   LogChannelRef clog;
 
-  MDSRankDispatcher *mds_rank;
+  std::unique_ptr<MDSRankDispatcher> mds_rank;
 
  public:
   MDSDaemon(const std::string &n, Messenger *m, MonClient *mc);
-  ~MDSDaemon();
   int orig_argc;
   const char **orig_argv;
 
@@ -133,10 +132,11 @@ class MDSDaemon : public Dispatcher, public md_config_obs_t {
     void finish(int r) {
       assert(mds_daemon->mds_lock.is_locked_by_me());
 
-      mds_daemon->tick_event = 0;
+      mds_daemon->tick_event.reset();
       mds_daemon->tick();
     }
-  } *tick_event;
+  };
+  std::unique_ptr<C_MDS_Tick> tick_event;
   void     reset_tick();
 
   void wait_for_omap_osds();
@@ -155,7 +155,7 @@ class MDSDaemon : public Dispatcher, public md_config_obs_t {
  protected:
   // admin socket handling
   friend class MDSSocketHook;
-  class MDSSocketHook *asok_hook;
+  std::unique_ptr<class MDSSocketHook> asok_hook;
   void set_up_admin_socket();
   void clean_up_admin_socket();
   void check_ops_in_flight(); // send off any slow ops to monitor

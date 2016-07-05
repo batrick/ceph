@@ -130,22 +130,14 @@ public:
 class C_IO_Wrapper : public MDSIOContext
 {
 private:
-  MDSInternalContextBase *wrapped;
+  std::unique_ptr<MDSInternalContextBase> wrapped;
 public:
   C_IO_Wrapper(MDSRank *mds_, MDSInternalContextBase *wrapped_) : MDSIOContext(mds_), wrapped(wrapped_) {
     assert(wrapped != NULL);
   }
 
-  ~C_IO_Wrapper() {
-    if (wrapped != nullptr) {
-      delete wrapped;
-      wrapped = nullptr;
-    }
-  }
-
   virtual void finish(int r) {
-    wrapped->complete(r);
-    wrapped = nullptr;
+    wrapped.release()->complete(r);
   }
 };
 

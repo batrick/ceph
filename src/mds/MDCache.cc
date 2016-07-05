@@ -169,8 +169,6 @@ MDCache::MDCache(MDSRank *m) :
   mds(m),
   logger(0),
   filer(m->objecter, m->finisher),
-  rejoin_done(NULL),
-  resolve_done(NULL),
   recovery_queue(m),
   stray_manager(m)
 {
@@ -216,15 +214,9 @@ MDCache::MDCache(MDSRank *m) :
 
 MDCache::~MDCache() 
 {
-  delete migrator;
   if (logger) {
     g_ceph_context->get_perfcounters_collection()->remove(logger);
-    delete logger;
-    logger = 0;
   }
-
-  delete rejoin_done; rejoin_done = NULL;
-  delete resolve_done; resolve_done = NULL;
 }
 
 
@@ -2665,7 +2657,7 @@ void MDCache::dump_resolve_status(Formatter *f) const
 void MDCache::resolve_start(MDSInternalContext *resolve_done_)
 {
   dout(10) << "resolve_start" << dendl;
-  assert(resolve_done == NULL);
+  assert(!resolve_done);
   resolve_done = resolve_done_;
 
   if (mds->mdsmap->get_root() != mds->get_nodeid()) {
@@ -3286,9 +3278,8 @@ void MDCache::maybe_resolve_finish()
   if (mds->is_resolve()) {
     trim_unlinked_inodes();
     recalc_auth_bits(false);
-    assert(resolve_done != NULL);
-    resolve_done->complete(0);
-    resolve_done = NULL;
+    assert(resolve_done);
+    resolve_done.release()->complete(0);
   } else {
     maybe_send_pending_rejoins();
   }
@@ -3870,7 +3861,7 @@ void MDCache::dump_rejoin_status(Formatter *f) const
 void MDCache::rejoin_start(MDSInternalContext *rejoin_done_)
 {
   dout(10) << "rejoin_start" << dendl;
-  assert(rejoin_done == NULL);
+  assert(!rejoin_done);
   rejoin_done = rejoin_done_;
 
   rejoin_gather = recovery_set;
@@ -5712,9 +5703,8 @@ void MDCache::open_snap_parents()
     do_delayed_cap_imports();
 
     start_files_to_recover(rejoin_recover_q, rejoin_check_q);
-    assert(rejoin_done != NULL);
-    rejoin_done->complete(0);
-    rejoin_done = NULL;
+    assert(rejoin_done);
+    rejoin_done.release()->complete(0);
   }
 }
 
