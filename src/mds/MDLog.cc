@@ -40,14 +40,10 @@
 // cons/des
 MDLog::~MDLog()
 {
-  if (journaler) { delete journaler; journaler = 0; }
   if (logger) {
     g_ceph_context->get_perfcounters_collection()->remove(logger);
-    delete logger;
-    logger = 0;
   }
 }
-
 
 void MDLog::create_logger()
 {
@@ -153,11 +149,8 @@ void MDLog::create(MDSInternalContextBase *c)
   ino = MDS_INO_LOG_OFFSET + mds->get_nodeid();
 
   // Instantiate Journaler and start async write to RADOS
-  assert(journaler == NULL);
-  journaler = new Journaler(ino, mds->mdsmap->get_metadata_pool(), CEPH_FS_ONDISK_MAGIC, mds->objecter,
-			    logger, l_mdl_jlat,
-			    &mds->timer,
-                            mds->finisher);
+  assert(!journaler);
+  journaler.reset(new Journaler(ino, mds->mdsmap->get_metadata_pool(), CEPH_FS_ONDISK_MAGIC, mds->objecter, logger, l_mdl_jlat, &mds->timer, mds->finisher));
   assert(journaler->is_readonly());
   journaler->set_write_error_handler(new C_MDL_WriteError(this));
   journaler->set_writeable();
@@ -216,11 +209,10 @@ void MDLog::reopen(MDSInternalContextBase *c)
 
   // Because we will call append() at the completion of this, check that we have already
   // read the whole journal.
-  assert(journaler != NULL);
+  assert(journaler);
   assert(journaler->get_read_pos() == journaler->get_write_pos());
 
-  delete journaler;
-  journaler = NULL;
+  journaler.reset();
 
   // recovery_thread was started at some point in the past.  Although
   // it has called it's completion if we made it back here, it might
@@ -888,7 +880,7 @@ void MDLog::replay(MDSInternalContextBase *c)
  */
 void MDLog::_recovery_thread(MDSInternalContextBase *completion)
 {
-  assert(journaler == NULL);
+  assert(!journaler);
   if (g_conf->mds_journal_format > JOURNAL_FORMAT_MAX) {
       dout(0) << "Configuration value for mds_journal_format is out of bounds, max is "
               << JOURNAL_FORMAT_MAX << dendl;
@@ -967,14 +959,14 @@ void MDLog::_recovery_thread(MDSInternalContextBase *completion)
   }
 
   /* Read the header from the front journal */
-  Journaler *front_journal = new Journaler(jp.front, mds->mdsmap->get_metadata_pool(),
-      CEPH_FS_ONDISK_MAGIC, mds->objecter, logger, l_mdl_jlat, &mds->timer, mds->finisher);
+  std::unique_ptr<Journaler> front_journal (new Journaler(jp.front, mds->mdsmap->get_metadata_pool(),
+      CEPH_FS_ONDISK_MAGIC, mds->objecter, logger, l_mdl_jlat, &mds->timer, mds->finisher));
 
   // Assign to ::journaler so that we can be aborted by ::shutdown while
   // waiting for journaler recovery
   {
     Mutex::Locker l(mds->mds_lock);
-    journaler = front_journal;
+    std::swap(journaler, front_journal);
   }
 
   C_SaferCond recover_wait;
@@ -997,8 +989,7 @@ void MDLog::_recovery_thread(MDSInternalContextBase *completion)
     {
       Mutex::Locker l(mds->mds_lock);
       if (mds->is_daemon_stopping()) {
-        journaler = NULL;
-        delete front_journal;
+        journaler.reset();
         return;
       }
       completion->complete(-EINVAL);
@@ -1193,9 +1184,8 @@ void MDLog::_reformat_journal(JournalPointer const &jp_in, Journaler *old_journa
       delete new_journal;
       return;
     }
-    assert(journaler == old_journal);
-    journaler = NULL;
-    delete old_journal;
+    assert(journaler.get() == old_journal);
+    journaler.reset();
   }
 
   /* Update the pointer to reflect we're back in clean single journal state. */

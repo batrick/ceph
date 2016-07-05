@@ -526,10 +526,10 @@ bool CInode::get_dirfrags_under(frag_t fg, list<CDir*>& ls)
 
   fragtree_t tmpdft;
   tmpdft.force_to_leaf(g_ceph_context, fg);
-  for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin(); p != dirfrags.end(); ++p) {
+  for (const auto &p : dirfrags) {
     tmpdft.force_to_leaf(g_ceph_context, p->first);
     if (fg.contains(p->first) && !dirfragtree.is_leaf(p->first))
-      ls.push_back(p->second);
+      ls.push_back(p->second.get());
   }
 
   all = true;
@@ -546,7 +546,7 @@ bool CInode::get_dirfrags_under(frag_t fg, list<CDir*>& ls)
 void CInode::verify_dirfrags()
 {
   bool bad = false;
-  for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin(); p != dirfrags.end(); ++p) {
+  for (const auto &p : dirfrags) {
     if (!dirfragtree.is_leaf(p->first)) {
       dout(0) << "have open dirfrag " << p->first << " but not leaf in " << dirfragtree
 	      << ": " << *p->second << dendl;
@@ -559,7 +559,7 @@ void CInode::verify_dirfrags()
 void CInode::force_dirfrags()
 {
   bool bad = false;
-  for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin(); p != dirfrags.end(); ++p) {
+  for (const auto &p : dirfrags) {
     if (!dirfragtree.is_leaf(p->first)) {
       dout(0) << "have open dirfrag " << p->first << " but not leaf in " << dirfragtree
 	      << ": " << *p->second << dendl;
@@ -600,28 +600,22 @@ CDir *CInode::get_approx_dirfrag(frag_t fg)
 void CInode::get_dirfrags(list<CDir*>& ls) 
 {
   // all dirfrags
-  for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-       p != dirfrags.end();
-       ++p)
-    ls.push_back(p->second);
+  for (const auto &p : dirfrags)
+    ls.push_back(p->second.get());
 }
 void CInode::get_nested_dirfrags(list<CDir*>& ls) 
 {  
   // dirfrags in same subtree
-  for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-       p != dirfrags.end();
-       ++p)
+  for (const auto &p : dirfrags)
     if (!p->second->is_subtree_root())
-      ls.push_back(p->second);
+      ls.push_back(p->second.get());
 }
 void CInode::get_subtree_dirfrags(list<CDir*>& ls) 
 { 
   // dirfrags that are roots of new subtrees
-  for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-       p != dirfrags.end();
-       ++p)
+  for (const auto &p : dirfrags)
     if (p->second->is_subtree_root())
-      ls.push_back(p->second);
+      ls.push_back(p->second.get());
 }
 
 
@@ -689,9 +683,7 @@ void CInode::close_dirfrags()
 
 bool CInode::has_subtree_root_dirfrag(int auth)
 {
-  for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-       p != dirfrags.end();
-       ++p)
+  for (const auto &p : dirfrags)
     if (p->second->is_subtree_root() &&
 	(auth == -1 || p->second->dir_auth.first == auth))
       return true;
@@ -700,9 +692,7 @@ bool CInode::has_subtree_root_dirfrag(int auth)
 
 bool CInode::has_subtree_or_exporting_dirfrag()
 {
-  for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-       p != dirfrags.end();
-       ++p)
+  for (const auto &p : dirfrags)
     if (p->second->is_subtree_root() ||
 	p->second->state_test(CDir::STATE_EXPORTING))
       return true;
@@ -713,9 +703,7 @@ void CInode::get_stickydirs()
 {
   if (stickydir_ref == 0) {
     get(PIN_STICKYDIRS);
-    for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-	 p != dirfrags.end();
-	 ++p) {
+    for (const auto &p : dirfrags) {
       p->second->state_set(CDir::STATE_STICKY);
       p->second->get(CDir::PIN_STICKY);
     }
@@ -729,9 +717,7 @@ void CInode::put_stickydirs()
   stickydir_ref--;
   if (stickydir_ref == 0) {
     put(PIN_STICKYDIRS);
-    for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-	 p != dirfrags.end();
-	 ++p) {
+    for (const auto &p : dirfrags) {
       p->second->state_clear(CDir::STATE_STICKY);
       p->second->put(CDir::PIN_STICKY);
     }
@@ -1456,11 +1442,9 @@ void CInode::encode_lock_state(int type, bufferlist& bl)
       ::encode(inode.dirstat, bl);  // only meaningful if i am auth.
       bufferlist tmp;
       __u32 n = 0;
-      for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-	   p != dirfrags.end();
-	   ++p) {
+      for (const auto &p : dirfrags) {
 	frag_t fg = p->first;
-	CDir *dir = p->second;
+	CDir *dir = p->second.get();
 	if (is_auth() || dir->is_auth()) {
 	  fnode_t *pf = dir->get_projected_fnode();
 	  dout(15) << fg << " " << *dir << dendl;
@@ -1491,11 +1475,9 @@ void CInode::encode_lock_state(int type, bufferlist& bl)
       ::encode(inode.rstat, bl);  // only meaningful if i am auth.
       bufferlist tmp;
       __u32 n = 0;
-      for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-	   p != dirfrags.end();
-	   ++p) {
+      for (const auto &p : dirfrags) {
 	frag_t fg = p->first;
-	CDir *dir = p->second;
+	CDir *dir = p->second.get();
 	if (is_auth() || dir->is_auth()) {
 	  fnode_t *pf = dir->get_projected_fnode();
 	  dout(10) << fg << " " << *dir << dendl;
@@ -1611,9 +1593,7 @@ void CInode::decode_lock_state(int type, bufferlist& bl)
 	//  dft was scattered, or we may still be be waiting on the
 	//  notify from the auth)
 	dirfragtree.swap(temp);
-	for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-	     p != dirfrags.end();
-	     ++p) {
+	for (const auto &p : dirfrags) {
 	  if (!dirfragtree.is_leaf(p->first)) {
 	    dout(10) << " forcing open dirfrag " << p->first << " to leaf (racing with split|merge)" << dendl;
 	    dirfragtree.force_to_leaf(g_ceph_context, p->first);
@@ -1846,11 +1826,9 @@ void CInode::start_scatter(ScatterLock *lock)
   assert(is_auth());
   inode_t *pi = get_projected_inode();
 
-  for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-       p != dirfrags.end();
-       ++p) {
+  for (const auto &p : dirfrags) {
     frag_t fg = p->first;
-    CDir *dir = p->second;
+    CDir *dir = p->second.get();
     fnode_t *pf = dir->get_projected_fnode();
     dout(20) << fg << " " << *dir << dendl;
 
@@ -1991,11 +1969,9 @@ void CInode::finish_scatter_gather_update(int type)
       bool touched_mtime = false;
       dout(20) << "  orig dirstat " << pi->dirstat << dendl;
       pi->dirstat.version++;
-      for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-	   p != dirfrags.end();
-	   ++p) {
+      for (const auto &p : dirfrags) {
 	frag_t fg = p->first;
-	CDir *dir = p->second;
+	CDir *dir = p->second.get();
 	dout(20) << fg << " " << *dir << dendl;
 
 	bool update;
@@ -2094,11 +2070,9 @@ void CInode::finish_scatter_gather_update(int type)
       inode_t *pi = get_projected_inode();
       dout(20) << "  orig rstat " << pi->rstat << dendl;
       pi->rstat.version++;
-      for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-	   p != dirfrags.end();
-	   ++p) {
+      for (const auto &p : dirfrags) {
 	frag_t fg = p->first;
-	CDir *dir = p->second;
+	CDir *dir = p->second.get();
 	dout(20) << fg << " " << *dir << dendl;
 
 	bool update;
@@ -2190,10 +2164,8 @@ void CInode::finish_scatter_gather_update_accounted(int type, MutationRef& mut, 
   dout(10) << "finish_scatter_gather_update_accounted " << type << " on " << *this << dendl;
   assert(is_auth());
 
-  for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-       p != dirfrags.end();
-       ++p) {
-    CDir *dir = p->second;
+  for (const auto &p : dirfrags) {
+    CDir *dir = p->second.get();
     if (!dir->is_auth() || dir->get_version() == 0 || dir->is_frozen())
       continue;
     
@@ -2440,10 +2412,8 @@ void CInode::adjust_nested_auth_pins(int a, void *by)
   if (g_conf->mds_debug_auth_pins) {
     // audit
     int s = 0;
-    for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-	 p != dirfrags.end();
-	 ++p) {
-      CDir *dir = p->second;
+    for (const auto &p : dirfrags) {
+      CDir *dir = p->second.get();
       if (!dir->is_subtree_root() && dir->get_cum_auth_pins())
 	s++;
     } 
@@ -3552,10 +3522,8 @@ void CInode::encode_export(bufferlist& bl)
   // include scatterlock info for any bounding CDirs
   bufferlist bounding;
   if (inode.is_dir())
-    for (compact_map<frag_t,CDir*>::iterator p = dirfrags.begin();
-	 p != dirfrags.end();
-	 ++p) {
-      CDir *dir = p->second;
+    for (const auto &p : dirfrags) {
+      CDir *dir = p->second.get();
       if (dir->state_test(CDir::STATE_EXPORTBOUND)) {
 	::encode(p->first, bounding);
 	::encode(dir->fnode.fragstat, bounding);
@@ -3707,7 +3675,7 @@ void CInode::validate_disk_state(CInode::validated_data *results,
     CInode *in;
     CInode::validated_data *results;
     bufferlist bl;
-    CInode *shadow_in;
+    std::unique_ptr<CInode> shadow_in;
 
     enum {
       START = 0,
@@ -3722,16 +3690,11 @@ void CInode::validate_disk_state(CInode::validated_data *results,
                              MDSContinuation(i->mdcache->mds->server),
                              fin(fin_),
                              in(i),
-                             results(data_r),
-                             shadow_in(NULL) {
+                             results(data_r) {
       set_callback(START, static_cast<Continuation::stagePtr>(&ValidationContinuation::_start));
       set_callback(BACKTRACE, static_cast<Continuation::stagePtr>(&ValidationContinuation::_backtrace));
       set_callback(INODE, static_cast<Continuation::stagePtr>(&ValidationContinuation::_inode_disk));
       set_callback(DIRFRAGS, static_cast<Continuation::stagePtr>(&ValidationContinuation::_dirfrags));
-    }
-
-    ~ValidationContinuation() {
-      delete shadow_in;
     }
 
     /**
@@ -3968,10 +3931,8 @@ next:
       }
 
       // check each dirfrag...
-      for (compact_map<frag_t,CDir*>::iterator p = in->dirfrags.begin();
-	   p != in->dirfrags.end();
-	   ++p) {
-	CDir *dir = p->second;
+      for (const auto &p : dirfrags) {
+	CDir *dir = p->second.get();
 	assert(dir->get_version() > 0);
 	nest_info.add(dir->fnode.accounted_rstat);
 	dir_info.add(dir->fnode.accounted_fragstat);

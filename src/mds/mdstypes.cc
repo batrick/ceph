@@ -228,9 +228,9 @@ void inline_data_t::decode(bufferlist::iterator &p)
   uint32_t inline_len;
   ::decode(inline_len, p);
   if (inline_len > 0)
-    ::decode_nohead(inline_len, get_data(), p);
+    ::decode_nohead(inline_len, *blp, p);
   else
-    free_data();
+    blp.reset();
 }
 
 /*

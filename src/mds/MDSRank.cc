@@ -46,7 +46,7 @@ MDSRank::MDSRank(
     LogChannelRef &clog_,
     SafeTimer &timer_,
     Beacon &beacon_,
-    MDSMap *& mdsmap_,
+    std::unique_ptr<MDSMap> &mdsmap_,
     Messenger *msgr,
     MonClient *monc_,
     Context *respawn_hook_,
@@ -105,41 +105,12 @@ MDSRank::~MDSRank()
   if (hb) {
     g_ceph_context->get_heartbeat_map()->remove_worker(hb);
   }
-
-  if (scrubstack) { delete scrubstack; scrubstack = NULL; }
-  if (mdcache) { delete mdcache; mdcache = NULL; }
-  if (mdlog) { delete mdlog; mdlog = NULL; }
-  if (balancer) { delete balancer; balancer = NULL; }
-  if (inotable) { delete inotable; inotable = NULL; }
-  if (snapserver) { delete snapserver; snapserver = NULL; }
-  if (snapclient) { delete snapclient; snapclient = NULL; }
-  if (mdsmap) { delete mdsmap; mdsmap = 0; }
-
-  if (server) { delete server; server = 0; }
-  if (locker) { delete locker; locker = 0; }
-
   if (logger) {
     g_ceph_context->get_perfcounters_collection()->remove(logger);
-    delete logger;
-    logger = 0;
   }
   if (mlogger) {
     g_ceph_context->get_perfcounters_collection()->remove(mlogger);
-    delete mlogger;
-    mlogger = 0;
   }
-
-  delete finisher;
-  finisher = NULL;
-
-  delete suicide_hook;
-  suicide_hook = NULL;
-
-  delete respawn_hook;
-  respawn_hook = NULL;
-
-  delete objecter;
-  objecter = nullptr;
 }
 
 void MDSRankDispatcher::init()
@@ -315,16 +286,14 @@ MDSTableServer *MDSRank::get_table_server(int t)
 void MDSRank::suicide()
 {
   if (suicide_hook) {
-    suicide_hook->complete(0);
-    suicide_hook = NULL;
+    suicide_hook.release()->complete(0);
   }
 }
 
 void MDSRank::respawn()
 {
   if (respawn_hook) {
-    respawn_hook->complete(0);
-    respawn_hook = NULL;
+    respawn_hook.release()->complete(0);
   }
 }
 
@@ -2547,7 +2516,7 @@ MDSRankDispatcher::MDSRankDispatcher(
     LogChannelRef &clog_,
     SafeTimer &timer_,
     Beacon &beacon_,
-    MDSMap *& mdsmap_,
+    std::unique_ptr<MDSMap> &mdsmap_,
     Messenger *msgr,
     MonClient *monc_,
     Context *respawn_hook_,
@@ -2583,10 +2552,9 @@ bool MDSRankDispatcher::handle_command(
       return true;
     }
 
-    Formatter *f = new JSONFormatter();
-    dump_sessions(filter, f);
+    std::unique_ptr<Formatter> f = new JSONFormatter();
+    dump_sessions(filter, f.get());
     f->flush(*ds);
-    delete f;
     return true;
   } else if (prefix == "session evict") {
     std::vector<std::string> filter_args;
@@ -2603,10 +2571,9 @@ bool MDSRankDispatcher::handle_command(
     *need_reply = false;
     return true;
   } else if (prefix == "damage ls") {
-    Formatter *f = new JSONFormatter();
-    damage_table.dump(f);
+    std::unique_ptr<Formatter> f = new JSONFormatter();
+    damage_table.dump(f.get());
     f->flush(*ds);
-    delete f;
     return true;
   } else if (prefix == "damage rm") {
     damage_entry_id_t id = 0;

@@ -37,19 +37,18 @@ class ScatterLock : public SimpleLock {
 	!item_updated.is_on_list();
     }
   };
-  more_bits_t *_more;
+  std::unique_ptr<more_bits_t> _more;
 
   bool have_more() const { return _more ? true : false; }
   void try_clear_more() {
     if (_more && _more->empty()) {
-      delete _more;
-      _more = NULL;
+      _more.release();
     }
   }
   more_bits_t *more() {
     if (!_more)
-      _more = new more_bits_t(this);
-    return _more;
+      _more.reset(new more_bits_t(this));
+    return _more.get();
   }
 
   enum flag_values {  // flag values for more_bits_t state
@@ -62,12 +61,11 @@ class ScatterLock : public SimpleLock {
 
 public:
   ScatterLock(MDSCacheObject *o, LockType *lt) : 
-    SimpleLock(o, lt), _more(NULL)
+    SimpleLock(o, lt)
   {}
   ~ScatterLock() {
     if (_more) {
       _more->item_updated.remove_myself();   // FIXME this should happen sooner, i think...
-      delete _more;
     }
   }
 

@@ -97,16 +97,14 @@ void Server::create_logger()
       "Client session messages", "hcs");
   plb.add_u64_counter(l_mdss_dispatch_client_request, "dispatch_client_request", "Client requests dispatched");
   plb.add_u64_counter(l_mdss_dispatch_slave_request, "dispatch_server_request", "Server requests dispatched");
-  logger = plb.create_perf_counters();
-  g_ceph_context->get_perfcounters_collection()->add(logger);
+  logger.reset(plb.create_perf_counters());
+  g_ceph_context->get_perfcounters_collection()->add(logger.get());
 }
 
 Server::Server(MDSRank *m) : 
   mds(m), 
   mdcache(mds->mdcache), mdlog(mds->mdlog),
-  logger(0),
   is_full(false),
-  reconnect_done(NULL),
   failed_reconnects(0),
   terminating_sessions(false)
 {
@@ -852,8 +850,7 @@ void Server::reconnect_gather_finish()
 {
   dout(7) << "reconnect_gather_finish.  failed on " << failed_reconnects << " clients" << dendl;
   assert(reconnect_done);
-  reconnect_done->complete(0);
-  reconnect_done = NULL;
+  reconnect_done.release()->complete(0);
 }
 
 void Server::reconnect_tick()
