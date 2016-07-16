@@ -19,6 +19,7 @@
 
 #include "mdstypes.h"
 
+#include "auth/AuthAuthorizeHandler.h"
 #include "msg/Dispatcher.h"
 #include "include/CompatSet.h"
 #include "include/types.h"
@@ -33,44 +34,15 @@
 #include "common/Finisher.h"
 #include "common/cmdparse.h"
 
+#include "Beacon.h"
 #include "MDSRank.h"
 #include "MDSMap.h"
 
-#include "Beacon.h"
-
-
 #define CEPH_MDS_PROTOCOL    27 /* cluster internal */
 
-class filepath;
-
-class MonClient;
-
-class Objecter;
-class Filer;
-
-class Server;
-class Locker;
-class MDCache;
-class MDBalancer;
-class MDSInternalContextBase;
-
-class CInode;
-class CDir;
-class CDentry;
-
-class Messenger;
 class Message;
-
-class MMDSBeacon;
-
-class InoTable;
-class SnapServer;
-class SnapClient;
-
-class MDSTableServer;
-class MDSTableClient;
-
-class AuthAuthorizeHandlerRegistry;
+class MonClient;
+class Objecter;
 
 class MDSDaemon : public Dispatcher, public md_config_obs_t {
  public:
@@ -78,23 +50,23 @@ class MDSDaemon : public Dispatcher, public md_config_obs_t {
    * also check the `stopping` flag.  If stopping is true, you
    * must either do nothing and immediately drop the lock, or
    * never drop the lock again (i.e. call respawn()) */
-  Mutex        mds_lock;
+  Mutex        mds_lock; // ORDER DEPENDENCY BEFORE: timer
   bool         stopping;
 
-  SafeTimer    timer;
+  SafeTimer    timer; // ORDER DEPENDENCY: mds_lock
 
  protected:
   Beacon  beacon;
 
-  std::unique_ptr<AuthAuthorizeHandlerRegistry> authorize_handler_cluster_registry;
-  std::unique_ptr<AuthAuthorizeHandlerRegistry> authorize_handler_service_registry;
+  AuthAuthorizeHandlerRegistry authorize_handler_cluster_registry;
+  AuthAuthorizeHandlerRegistry authorize_handler_service_registry;
 
   std::string name;
 
   Messenger    *messenger;
   MonClient    *monc;
   std::unique_ptr<MDSMap> mdsmap;
-  std::unique_ptr<Objecter> objecter;
+  Objecter objecter;
   LogClient    log_client;
   LogChannelRef clog;
 

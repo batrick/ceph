@@ -101,25 +101,18 @@ class C_VoidFn : public Context
 // cons/des
 MDSDaemon::MDSDaemon(const std::string &n, Messenger *m, MonClient *mc) :
   Dispatcher(m->cct),
-  mds_lock("MDSDaemon::mds_lock"),
-  stopping(false),
-  timer(m->cct, mds_lock),
+  authorize_handler_cluster_registry(m->cct, m->cct->_conf->auth_supported.empty() ? m->cct->_conf->auth_cluster_required : m->cct->_conf->auth_supported),
+  authorize_handler_service_registry(m->cct, m->cct->_conf->auth_supported.empty() ? m->cct->_conf->auth_service_required : m->cct->_conf->auth_supported),
   beacon(m->cct, mc, n),
-  authorize_handler_cluster_registry(new AuthAuthorizeHandlerRegistry(m->cct,
-								      m->cct->_conf->auth_supported.empty() ?
-								      m->cct->_conf->auth_cluster_required :
-								      m->cct->_conf->auth_supported)),
-  authorize_handler_service_registry(new AuthAuthorizeHandlerRegistry(m->cct,
-								      m->cct->_conf->auth_supported.empty() ?
-								      m->cct->_conf->auth_service_required :
-								      m->cct->_conf->auth_supported)),
-  name(n),
+  log_client(m->cct, m, &mc->monmap, LogClient::NO_FLAGS),
+  mds_lock("MDSDaemon::mds_lock"),
+  mdsmap(new MDSMap),
   messenger(m),
   monc(mc),
-  objecter(new Objecter(m->cct, m, mc, NULL, 0, 0)),
-  log_client(m->cct, messenger, &mc->monmap, LogClient::NO_FLAGS),
-  mds_rank(NULL),
-  tick_event(0),
+  name(n),
+  objecter(m->cct, m, mc, NULL, 0, 0),
+  stopping(false),
+  timer(m->cct, this->mds_lock)
 {
   orig_argc = 0;
   orig_argv = NULL;
@@ -128,9 +121,7 @@ MDSDaemon::MDSDaemon(const std::string &n, Messenger *m, MonClient *mc) :
 
   monc->set_messenger(messenger);
 
-  mdsmap = new MDSMap;
-
-  objecter->unset_honor_osdmap_full();
+  objecter.unset_honor_osdmap_full();
 }
 
 class MDSSocketHook : public AdminSocketHook {
@@ -173,7 +164,7 @@ bool MDSDaemon::asok_command(string command, cmdmap_t& cmdmap, string format,
 
 void MDSDaemon::dump_status(Formatter *f)
 {
-  const epoch_t osd_epoch = objecter->with_osdmap(
+  const epoch_t osd_epoch = objecter.with_osdmap(
     std::mem_fn(&OSDMap::get_epoch));
 
   f->open_object_section("status");
@@ -440,7 +431,7 @@ int MDSDaemon::init()
   dout(10) << sizeof(Capability) << "\tCapability " << dendl;
   dout(10) << sizeof(xlist<void*>::item) << "\t xlist<>::item   *2=" << 2*sizeof(xlist<void*>::item) << dendl;
 
-  objecter->init();
+  objecter.init();
   messenger->add_dispatcher_tail(objecter);
 
   messenger->add_dispatcher_tail(&beacon);
@@ -488,7 +479,7 @@ int MDSDaemon::init()
     return -ETIMEDOUT;
   }
 
-  objecter->start();
+  objecter.start();
 
   mds_lock.Lock();
   if (beacon.get_want_state() == CEPH_MDS_STATE_DNE) {
@@ -504,9 +495,9 @@ int MDSDaemon::init()
 
   // verify that osds support tmap2omap
   while (true) {
-    objecter->maybe_request_map();
-    objecter->wait_for_osd_map();
-    if (objecter->with_osdmap([&](const OSDMap& o) {
+    objecter.maybe_request_map();
+    objecter.wait_for_osd_map();
+    if (objecter.with_osdmap([&](const OSDMap& o) {
 	  uint64_t osd_features = o.get_up_osd_features();
 	  if (osd_features & CEPH_FEATURE_OSD_TMAP2OMAP)
 	    return true;
@@ -1088,8 +1079,8 @@ void MDSDaemon::suicide()
     mds_rank->shutdown();
   } else {
 
-    if (objecter->initialized.read()) {
-      objecter->shutdown();
+    if (objecter.initialized.read()) {
+      objecter.shutdown();
     }
     timer.shutdown();
 

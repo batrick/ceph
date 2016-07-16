@@ -15,20 +15,28 @@
 #ifndef MDS_RANK_H_
 #define MDS_RANK_H_
 
+#include "common/Finisher.h"
 #include "common/TrackedOp.h"
 #include "common/LogClient.h"
 #include "common/Timer.h"
 
+#include "osdc/Journaler.h"
 #include "messages/MCommand.h"
 
 #include "Beacon.h"
 #include "DamageTable.h"
-#include "MDSMap.h"
-#include "SessionMap.h"
+#include "InoTable.h"
+#include "Locker.h"
+#include "MDBalancer.h"
 #include "MDCache.h"
-#include "Migrator.h"
 #include "MDLog.h"
-#include "osdc/Journaler.h"
+#include "MDSMap.h"
+#include "Migrator.h"
+#include "ScrubStack.h"
+#include "Server.h"
+#include "SessionMap.h"
+#include "SnapClient.h"
+#include "SnapServer.h"
 
 // Full .h import instead of forward declaration for PerfCounter, for the
 // benefit of those including this header and using MDSRank::logger
@@ -95,22 +103,12 @@ namespace ceph {
   struct heartbeat_handle_d;
 }
 
-class Server;
-class Locker;
-class MDCache;
-class MDLog;
-class MDBalancer;
-class InoTable;
-class SnapServer;
-class SnapClient;
 class MDSTableServer;
 class MDSTableClient;
 class Messenger;
 class Objecter;
 class MonClient;
-class Finisher;
 class MMDSMap;
-class ScrubStack;
 
 /**
  * The public part of this class's interface is what's exposed to all
@@ -119,6 +117,9 @@ class ScrubStack;
  */
 class MDSRank {
   protected:
+    Messenger    *messenger;
+    MonClient    *monc; // ORDER DEPENDENCY BEFORE: balancer, snapserver
+
     const mds_rank_t whoami;
 
     // Incarnation as seen in MDSMap at the point where a rank is
@@ -151,17 +152,17 @@ class MDSRank {
     Objecter     *objecter;
 
     // sub systems
-    std::unique_ptr<Server> server;
-    std::unique_ptr<MDCache> mdcache;
-    std::unique_ptr<Finisher> finisher;
-    std::unique_ptr<Locker> locker;
-    std::unique_ptr<MDLog> mdlog;
-    std::unique_ptr<MDBalancer> balancer;
-    std::unique_ptr<ScrubStack> scrubstack;
-    std::unique_ptr<DamageTable damage_table;
-    std::unique_ptr<InoTable> inotable;
-    std::unique_ptr<SnapServer> snapserver;
-    std::unique_ptr<SnapClient> snapclient;
+    DamageTable damage_table;
+    Finisher finisher; // ORDER DEPENDENCY BEFORE: scrubstack
+    InoTable inotable;
+    MDCache mdcache; // ORDER DEPENDENCY BEFORE: locker, scrubstack
+    MDLog mdlog;
+    Server server;
+    SnapClient snapclient;
+    MDBalancer balancer; // ORDER DEPENDENCY AFTER: monc
+    SnapServer snapserver; // ORDER DEPENDENCY AFTER: monc
+    Locker locker; // ORDER DEPENDENCY AFTER: mdcache
+    ScrubStack scrubstack; // ORDER DEPENDENCY AFTER: mdcache, finisher
 
     MDSTableClient *get_table_client(int t);
     MDSTableServer *get_table_server(int t);
@@ -358,7 +359,7 @@ class MDSRank {
 
     ceph_tid_t issue_tid() { return ++last_tid; }
 
-    MDSMap *get_mds_map() { return mdsmap; }
+    MDSMap *get_mds_map() { return mdsmap.get(); }
 
     int get_req_rate() { return logger->get(l_mds_request); }
   
@@ -393,9 +394,6 @@ class MDSRank {
         std::ostream &ss);
 
   protected:
-    Messenger    *messenger;
-    MonClient    *monc;
-
     std::unique_ptr<Context> respawn_hook;
     std::unique_ptr<Context> suicide_hook;
 
