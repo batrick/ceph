@@ -81,7 +81,7 @@ Log::Log(SubsystemMap *s)
   // kludge for prealloc testing
   if (false)
     for (int i=0; i < PREALLOC; i++)
-      m_recent.enqueue(new Entry);
+      m_recent.enqueue(NullEntry());
 }
 
 Log::~Log()
@@ -211,7 +211,7 @@ void Log::stop_graylog()
   pthread_mutex_unlock(&m_flush_mutex);
 }
 
-void Log::submit_entry(Entry *e)
+void Log::submit_entry(const Entry &e)
 {
   pthread_mutex_lock(&m_queue_mutex);
   m_queue_mutex_holder = pthread_self();
@@ -229,42 +229,23 @@ void Log::submit_entry(Entry *e)
   pthread_mutex_unlock(&m_queue_mutex);
 }
 
-
-Entry *Log::create_entry(int level, int subsys)
+Entry Log::create_entry(int level, int subsys)
 {
-  if (true) {
-    return new Entry(ceph_clock_now(NULL),
-		   pthread_self(),
-		   level, subsys);
+  if (cct->_conf->subsys.should_gather(sub, v)) {
+    if (true) {
+      return Entry(this, ceph_clock_now(NULL), pthread_self(), level, subsys);
+    } else {
+      // kludge for perf testing
+      Entry e = m_recent.front();
+      e.m_stamp = ceph_clock_now(NULL);
+      e.m_thread = pthread_self();
+      e.m_prio = level;
+      e.m_subsys = subsys;
+      m_recent.pop();
+      return e;
+    }
   } else {
-    // kludge for perf testing
-    Entry *e = m_recent.dequeue();
-    e->m_stamp = ceph_clock_now(NULL);
-    e->m_thread = pthread_self();
-    e->m_prio = level;
-    e->m_subsys = subsys;
-    return e;
-  }
-}
-
-Entry *Log::create_entry(int level, int subsys, size_t* expected_size)
-{
-  if (true) {
-    ANNOTATE_BENIGN_RACE_SIZED(expected_size, sizeof(*expected_size),
-                               "Log hint");
-    size_t size = __atomic_load_n(expected_size, __ATOMIC_RELAXED);
-    void *ptr = ::operator new(sizeof(Entry) + size);
-    return new(ptr) Entry(ceph_clock_now(NULL),
-       pthread_self(), level, subsys,
-       reinterpret_cast<char*>(ptr) + sizeof(Entry), size, expected_size);
-  } else {
-    // kludge for perf testing
-    Entry *e = m_recent.dequeue();
-    e->m_stamp = ceph_clock_now(NULL);
-    e->m_thread = pthread_self();
-    e->m_prio = level;
-    e->m_subsys = subsys;
-    return e;
+    return NullEntry();
   }
 }
 
@@ -279,7 +260,7 @@ void Log::flush()
   pthread_cond_broadcast(&m_cond_loggers);
   m_queue_mutex_holder = 0;
   pthread_mutex_unlock(&m_queue_mutex);
-  _flush(&t, &m_recent, false);
+  _flush(t, m_recent, false);
 
   // trim
   while (m_recent.m_len > m_max_recent) {
@@ -290,24 +271,25 @@ void Log::flush()
   pthread_mutex_unlock(&m_flush_mutex);
 }
 
-void Log::_flush(EntryQueue *t, EntryQueue *requeue, bool crash)
+void Log::_flush(EntryQueue &t, EntryQueue &requeue, bool crash)
 {
-  Entry *e;
-  while ((e = t->dequeue()) != NULL) {
-    unsigned sub = e->m_subsys;
+  while (!t.empty()) {
+    Entry e = t.front();
+    t.pop();
+    unsigned sub = e.m_subsys;
 
-    bool should_log = crash || m_subs->get_log_level(sub) >= e->m_prio;
+    bool should_log = crash || m_subs->get_log_level(sub) >= e.m_prio;
     bool do_fd = m_fd >= 0 && should_log;
-    bool do_syslog = m_syslog_crash >= e->m_prio && should_log;
-    bool do_stderr = m_stderr_crash >= e->m_prio && should_log;
-    bool do_graylog2 = m_graylog_crash >= e->m_prio && should_log;
+    bool do_syslog = m_syslog_crash >= e.m_prio && should_log;
+    bool do_stderr = m_stderr_crash >= e.m_prio && should_log;
+    bool do_graylog2 = m_graylog_crash >= e.m_prio && should_log;
 
-    e->hint_size();
+    e.hint_size();
     if (do_fd || do_syslog || do_stderr) {
       size_t buflen = 0;
 
       char *buf;
-      size_t buf_size = 80 + e->size();
+      size_t buf_size = 80 + e.size();
       bool need_dynamic = buf_size >= 0x10000; //avoids >64K buffers
 					       //allocation at stack
       char buf0[need_dynamic ? 1 : buf_size];
@@ -319,11 +301,11 @@ void Log::_flush(EntryQueue *t, EntryQueue *requeue, bool crash)
 
       if (crash)
 	buflen += snprintf(buf, buf_size, "%6d> ", -t->m_len);
-      buflen += e->m_stamp.sprintf(buf + buflen, buf_size-buflen);
+      buflen += e.m_stamp.sprintf(buf + buflen, buf_size-buflen);
       buflen += snprintf(buf + buflen, buf_size-buflen, " %lx %2d ",
-			(unsigned long)e->m_thread, e->m_prio);
+			(unsigned long)e.m_thread, e.m_prio);
 
-      buflen += e->snprintf(buf + buflen, buf_size - buflen - 1);
+      buflen += e.snprintf(buf + buflen, buf_size - buflen - 1);
       if (buflen > buf_size - 1) { //paranoid check, buf was declared
 				   //to hold everything
         buflen = buf_size - 1;
@@ -355,7 +337,7 @@ void Log::_flush(EntryQueue *t, EntryQueue *requeue, bool crash)
       m_graylog->log_entry(e);
     }
 
-    requeue->enqueue(e);
+    requeue.push(std::move(e));
   }
 }
 
@@ -390,11 +372,11 @@ void Log::dump_recent()
 
   m_queue_mutex_holder = 0;
   pthread_mutex_unlock(&m_queue_mutex);
-  _flush(&t, &m_recent, false);
+  _flush(t, m_recent, false);
 
   EntryQueue old;
   _log_message("--- begin dump of recent events ---", true);
-  _flush(&m_recent, &old, true);
+  _flush(m_recent, old, true);
 
   char buf[4096];
   _log_message("--- logging levels ---", true);

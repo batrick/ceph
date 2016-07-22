@@ -23,7 +23,7 @@ class Formatter;
 
 namespace logging {
 
-struct Entry;
+class Entry;
 class SubsystemMap;
 
 // Graylog logging backend: Convert log datastructures (LogEntry, Entry) to
@@ -55,7 +55,7 @@ class Graylog
 
   void set_destination(const std::string& host, int port);
 
-  void log_entry(Entry const * const e);
+  void log_entry(const Entry &e);
   void log_log_entry(LogEntry const * const e);
 
   typedef ceph::shared_ptr<Graylog> Ref;

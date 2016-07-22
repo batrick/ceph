@@ -13,83 +13,156 @@
 namespace ceph {
 namespace logging {
 
-struct Entry {
+class Entry {
+  Log &log;
+
+protected:
+  Entry(Log &l, utime_t s, pthread_t t, short pr, short sub) :
+    log(l),
+    m_stamp(s),
+    m_thread(t),
+    m_prio(pr),
+    m_subsys(sub)
+  {}
+
+public:
   utime_t m_stamp;
   pthread_t m_thread;
   short m_prio, m_subsys;
-  Entry *m_next;
 
-  PrebufferedStreambuf m_streambuf;
-  size_t m_buf_len;
-  size_t* m_exp_len;
-  char m_static_buf[1];
+  Entry(const Entry &) = delete;
+  Entry& operator=(const Entry &) = delete;
+  Entry(Entry &&e) = default;
+  Entry& operator=(Entry &&e) = default;
+  virtual ~Entry() {}
 
-  Entry()
-    : m_thread(0), m_prio(0), m_subsys(0),
-      m_next(NULL),
-      m_streambuf(m_static_buf, sizeof(m_static_buf)),
-      m_buf_len(sizeof(m_static_buf)),
-      m_exp_len(NULL)
-  {}
-  Entry(utime_t s, pthread_t t, short pr, short sub,
-  const char *msg = NULL)
-      : m_stamp(s), m_thread(t), m_prio(pr), m_subsys(sub),
-        m_next(NULL),
-        m_streambuf(m_static_buf, sizeof(m_static_buf)),
-        m_buf_len(sizeof(m_static_buf)),
-        m_exp_len(NULL)
-    {
-      if (msg) {
-        ostream os(&m_streambuf);
-        os << msg;
-      }
-    }
-  Entry(utime_t s, pthread_t t, short pr, short sub, char* buf, size_t buf_len, size_t* exp_len,
-	const char *msg = NULL)
-    : m_stamp(s), m_thread(t), m_prio(pr), m_subsys(sub),
-      m_next(NULL),
-      m_streambuf(buf, buf_len),
-      m_buf_len(buf_len),
-      m_exp_len(exp_len)
+  virtual const std::string &get_str() const = 0;
+  virtual size_t size() const = 0;
+
+  //virtual Entry& operator<<(Entry &e, std::string s) = 0;
+};
+
+class MutableEntry : public Entry, public std::ostream {
+protected:
+  MutableEntry(std::streambuf *b, Log &l, utime_t s, pthread_t t, short pr, short sub) :
+    Entry(l, s, t, pr, sub),
+    ostream(b)
   {
-    if (msg) {
-      ostream os(&m_streambuf);
-      os << msg;
-    }
   }
 
-  // function improves estimate for expected size of message
-  void hint_size() {
-    if (m_exp_len != NULL) {
-      size_t size = m_streambuf.size();
-      if (size > __atomic_load_n(m_exp_len, __ATOMIC_RELAXED)) {
-        //log larger then expected, just expand
-        __atomic_store_n(m_exp_len, size + 10, __ATOMIC_RELAXED);
-      }
-      else {
-        //asymptotically adapt expected size to message size
-        __atomic_store_n(m_exp_len, (size + 10 + m_buf_len*31) / 32, __ATOMIC_RELAXED);
-      }
-    }
+public:
+  MutableEntry(MutableEntry &&e) :
+    Entry(std::move(e))
+  {
+    *this << e.get_str();
+  }
+  MutableEntry& operator=(MutableEntry &&e) :
+  {
+    Entry::operator=(std::move(e));
+    *this << e.get_str();
+    return *this;
+  }
+  virtual ~MutableEntry() {}
+  //virtual std::ostream& operator<<(const std::string &s) = 0;
+};
+
+class IncompleteEntry : public PrebufferedStreambuf, public MutableEntry /* after PrebufferedStreambuf! */ {
+  char m_buf[4096];
+
+public:
+  IncompleteEntry(Log &l, utime_t s, pthread_t t, short pr, short sub) :
+      PrebufferedStreambuf(m_buf, sizeof m_buf),
+      MutableEntry(this, l, s, t, pr, sub)
+  {}
+
+  IncompleteEntry(IncompleteEntry &&e) :
+    PrebufferedStreambuf(m_buf, sizeof m_buf),
+    MutableEntry(std::move(e))
+  {
+  }
+  IncompleteEntry& operator=(IncompleteEntry &&e)
+  {
+    PrebufferedStreambuf(m_buf, sizeof m_buf),
+    MutableEntry::operator=(std::move(e));
+    return *this;
   }
 
-  void set_str(const std::string &s) {
-    ostream os(&m_streambuf);
-    os << s;
+  ~IncompleteEntry()
+  {
+    if (m_streambuf.size())
+      log.submit_entry(ConcreteEntry(std::move(this)));
   }
 
-  std::string get_str() const {
+  const std::string &get_str() const
+  {
     return m_streambuf.get_str();
   }
 
   // returns current size of content
-  size_t size() const {
+  size_t size() const
+  {
     return m_streambuf.size();
   }
 
   // extracts up to avail chars of content
-  int snprintf(char* dst, size_t avail) const {
-    return m_streambuf.snprintf(dst, avail);
+  //int snprintf(char* dst, size_t avail) const {
+    //return m_streambuf.snprintf(dst, avail);
+  //}
+};
+
+class NullEntry : public std::streambuf, public MutableEntry /* after std::streambuf! */ {
+  static const std::string s;
+  char b[4096];
+
+protected:
+  int overflow(int c)
+  {
+    setp(b, b + sizeof b);
+    return std::char_traits<char>::not_eof(c);
+  }
+
+public:
+  NullEntry(Log &l, utime_t s, pthread_t t, short pr, short sub) :
+    Entry(l, s, t, pr, sub)
+  {
+    //setstate(std::ios_base::failbit);
+    setp(b, b+(sizeof b));
+  }
+  NullEntry(NullEntry &&e) :
+    MutableEntry(std::move(e))
+  {}
+
+  const std::string &get_str const
+  {
+    return s;
+  }
+  size_t size() const
+  {
+    return 0;
+  }
+};
+
+class ConcreteEntry : public Entry {
+  std::string s;
+
+public:
+  ConcreteEntry(Entry &&e) :
+    Entry(e),
+    s(e.get_str())
+  {}
+  ConcreteEntry(ConcreteEntry &&e) :
+    Entry(std::move(e)),
+    s(std::move(e.s))
+  {}
+
+  const std::string &get_str() const
+  {
+    return s;
+  }
+
+  size_t size() const
+  {
+    return s.len();
   }
 };
 
