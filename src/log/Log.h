@@ -4,6 +4,8 @@
 #ifndef __CEPH_LOG_LOG_H
 #define __CEPH_LOG_LOG_H
 
+#include <queue>
+
 #include "common/Thread.h"
 
 #include <pthread.h>
@@ -29,7 +31,7 @@ class Log : private Thread
   pthread_t m_queue_mutex_holder;
   pthread_t m_flush_mutex_holder;
 
-  using EntryQueue = std::queue<EntryQueue>;
+  using EntryQueue = std::queue<Entry>;
   EntryQueue m_new;    ///< new entries
   EntryQueue m_recent; ///< recent (less new) entries we've already written at low detail
 

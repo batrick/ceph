@@ -23,6 +23,7 @@
 #include "log/Log.h"
 #include "include/assert.h"
 
+#include <ostream>
 #include <iostream>
 #include <pthread.h>
 #include <streambuf>
@@ -50,9 +51,6 @@ public:
 // generic macros
 #define dout_prefix *_dout
 
-    ostream _dout_os(&_dout_e->m_streambuf);				\
-    std::ostream* _dout = &_dout_os;
-
 // NOTE: depend on magic value in _ASSERT_H so that we detect when
 // /usr/include/assert.h clobbers our fancier version.
 #define _dout_cct create_entry
@@ -70,6 +68,6 @@ public:
 #define ldlog_p1(cct, sub, lvl)                 \
   (cct->_conf->subsys.should_gather((sub), (lvl)))
 
-using dendl = std::flush;
+#define dendl std::flush
 
 #endif
