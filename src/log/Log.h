@@ -8,8 +8,6 @@
 
 #include <pthread.h>
 
-#include "EntryQueue.h"
-
 namespace ceph {
 namespace log {
 
@@ -31,6 +29,7 @@ class Log : private Thread
   pthread_t m_queue_mutex_holder;
   pthread_t m_flush_mutex_holder;
 
+  using EntryQueue = std::queue<EntryQueue>;
   EntryQueue m_new;    ///< new entries
   EntryQueue m_recent; ///< recent (less new) entries we've already written at low detail
 
@@ -55,7 +54,7 @@ class Log : private Thread
 
   void *entry();
 
-  void _flush(EntryQueue *q, EntryQueue *requeue, bool crash);
+  void _flush(EntryQueue &q, EntryQueue &requeue, bool crash);
 
   void _log_message(const char *s, bool crash);
 
@@ -84,9 +83,7 @@ public:
 
   shared_ptr<Graylog> graylog() { return m_graylog; }
 
-  Entry *create_entry(int level, int subsys);
-  Entry *create_entry(int level, int subsys, size_t* expected_size);
-  void submit_entry(Entry *e);
+  Entry create_entry(int level, int subsys);
 
   void start();
   void stop();

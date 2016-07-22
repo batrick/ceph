@@ -6,6 +6,5 @@ noinst_LTLIBRARIES += liblog.la
 
 noinst_HEADERS += \
 	log/Entry.h \
-	log/EntryQueue.h \
 	log/Log.h \
 	log/SubsystemMap.h
