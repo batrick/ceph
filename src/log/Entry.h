@@ -72,7 +72,7 @@ public:
   {
     this << e.get_str();
   }
-  MutableEntry& operator=(MutableEntry &&e) :
+  IncompleteEntry& operator=(IncompleteEntry &&e) :
     PrebufferedStreambuf(m_buf, sizeof m_buf),
     MutableEntry(std::move(e))
   {
@@ -85,11 +85,6 @@ public:
     if (m_streambuf.size())
       log.submit_entry(ConcreteEntry(std::move(this)));
   }
-
-  //std::ostream& operator<<(MutableEntry &e, std::string s) {
-  //  m_streambuf << s;
-  //  return e;
-  //}
 
   const std::string &get_str() const
   {
