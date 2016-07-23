@@ -23,10 +23,10 @@ public:
 
   Entry(Log &l, utime_t s, pthread_t t, short pr, short sub) :
     log(l),
-    m_prio(pr),
     m_stamp(s),
-    m_subsys(sub),
     m_thread(t)
+    m_prio(pr),
+    m_subsys(sub),
   {}
   Entry(Entry &&e) :
     log(e.log),
