@@ -51,7 +51,7 @@ protected:
   }
 
 public:
-  MutableEntry(MutableEntry &&e) = default;
+  MutableEntry(MutableEntry &&e) = default; // FIXME, can't be default??
   MutableEntry& operator=(MutableEntry &&e) = default;
   virtual ~MutableEntry() {}
   //virtual std::ostream& operator<<(const std::string &s) = 0;
