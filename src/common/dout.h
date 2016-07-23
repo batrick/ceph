@@ -20,6 +20,7 @@
 #include "common/config.h"
 #include "common/likely.h"
 #include "common/Clock.h"
+#include "log/Entry.h"
 #include "log/Log.h"
 #include "include/assert.h"
 
