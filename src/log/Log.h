@@ -7,6 +7,7 @@
 #include <queue>
 
 #include "common/Thread.h"
+#include "log/Entry.h"
 
 #include <pthread.h>
 
@@ -15,7 +16,6 @@ namespace log {
 
 class Graylog;
 class SubsystemMap;
-class Entry;
 
 class Log : private Thread
 {
@@ -85,7 +85,7 @@ public:
 
   shared_ptr<Graylog> graylog() { return m_graylog; }
 
-  Entry create_entry(int level, int subsys);
+  MutableEntry create_entry(int level, int subsys);
 
   void start();
   void stop();

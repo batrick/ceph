@@ -36,7 +36,7 @@ public:
     m_thread(e.m_thread)
   {}
   Entry(const Entry &) = delete;
-  Entry& operator=(const Entry &) = delete;
+  //Entry& operator=(const Entry &) = delete;
   virtual ~Entry() {}
 
   virtual Entry& operator<<(Entry &e, std::string s) = 0;
@@ -48,7 +48,7 @@ class MutableEntry : public Entry, public std::ostream {
   MutableEntry(std::streambuf *b, Log &l, utime_t s, pthread_t t, short pr, short sub) : Entry(l, s, t, pr, sub), ostream(b) {}
   virtual ~MutableEntry() {}
   //virtual std::ostream& operator<<(MutableEntry &e, const std::string &s) = 0;
-}
+};
 
 class IncompleteEntry : public PrebufferedStreambuf, public MutableEntry /* after PrebufferedStreambuf! */ {
   char m_buf[4096];
@@ -127,7 +127,7 @@ public:
   size_t size() const {
     return s.len();
   }
-}
+};
 
 }
 }
