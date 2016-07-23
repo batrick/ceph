@@ -57,8 +57,8 @@ public:
     *this << e.get_str();
   }
   MutableEntry& operator=(MutableEntry &&e) :
-    Entry(std::move(e))
   {
+    Entry::operator=(std::move(e));
     *this << e.get_str();
     return *this;
   }
@@ -80,10 +80,10 @@ public:
     MutableEntry(std::move(e))
   {
   }
-  IncompleteEntry& operator=(IncompleteEntry &&e) :
-    PrebufferedStreambuf(m_buf, sizeof m_buf),
-    MutableEntry(std::move(e))
+  IncompleteEntry& operator=(IncompleteEntry &&e)
   {
+    PrebufferedStreambuf(m_buf, sizeof m_buf),
+    MutableEntry::operator=(std::move(e));
     return *this;
   }
 
