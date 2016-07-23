@@ -54,11 +54,15 @@ public:
   MutableEntry(MutableEntry &&e) :
     Entry(std::move(e)),
     ostream(e)
-  {}
+  {
+    this << e.get_str();
+  }
   MutableEntry& operator=(MutableEntry &&e) :
     Entry(std::move(e)),
     ostream(e)
-  {}
+  {
+    this << e.get_str();
+  }
   virtual ~MutableEntry() {}
   //virtual std::ostream& operator<<(const std::string &s) = 0;
 };
@@ -76,13 +80,11 @@ public:
     PrebufferedStreambuf(m_buf, sizeof m_buf),
     MutableEntry(std::move(e))
   {
-    this << e.get_str();
   }
   IncompleteEntry& operator=(IncompleteEntry &&e) :
     PrebufferedStreambuf(m_buf, sizeof m_buf),
     MutableEntry(std::move(e))
   {
-    this << e.get_str();
     return *this;
   }
 
