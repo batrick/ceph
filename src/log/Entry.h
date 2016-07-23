@@ -45,9 +45,14 @@ public:
 };
 
 class MutableEntry : public Entry, public std::ostream {
-  MutableEntry(std::streambuf *b, Log &l, utime_t s, pthread_t t, short pr, short sub) : Entry(l, s, t, pr, sub), ostream(b) {}
+protected:
+  MutableEntry(std::streambuf *b, Log &l, utime_t s, pthread_t t, short pr, short sub) :
+    Entry(l, s, t, pr, sub),
+    ostream(b)
+  {
+  }
   virtual ~MutableEntry() {}
-  //virtual std::ostream& operator<<(MutableEntry &e, const std::string &s) = 0;
+  //virtual std::ostream& operator<<(const std::string &s) = 0;
 };
 
 class IncompleteEntry : public PrebufferedStreambuf, public MutableEntry /* after PrebufferedStreambuf! */ {
