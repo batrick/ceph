@@ -24,13 +24,6 @@ protected:
     m_prio(pr),
     m_subsys(sub)
   {}
-  Entry(Entry &&e) :
-    log(e.log),
-    m_stamp(e.m_stamp),
-    m_thread(e.m_thread),
-    m_prio(e.m_prio),
-    m_subsys(e.m_subsys)
-  {}
 
 public:
   utime_t m_stamp;
