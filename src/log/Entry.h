@@ -66,7 +66,7 @@ public:
   }
 
   IncompleteEntry(IncompleteEntry &&e) :
-    Entry(std::move(e)),
+    MutableEntry(std::move(e)),
     PrebufferedStreambuf(m_buf, sizeof m_buf)
   {
     this << e.get_str();
@@ -112,7 +112,7 @@ public:
     //setstate(std::ios_base::failbit);
     setp(b, b+(sizeof b));
   }
-  NullEntry(NullEntry &&e) : Entry(std::move(e)) {}
+  NullEntry(NullEntry &&e) : MutableEntry(std::move(e)) {}
 
   const std::string &get_str const { return s; }
   size_t size() const { return 0; }
