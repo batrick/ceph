@@ -48,22 +48,20 @@ public:
   virtual ~DoutPrefixProvider() {}
 };
 
-// generic macros
-#define dout_prefix *_dout
-
 // NOTE: depend on magic value in _ASSERT_H so that we detect when
 // /usr/include/assert.h clobbers our fancier version.
 #define _dout_cct create_entry
 
-#define lsubdout(cct, sub, v)  (cct)->_log->_ASSERT_H(v, ceph_subsys_##sub)
-#define ldout(cct, v)  (cct)->_log->_ASSERT_H(v, sub)
+#define lsubdout(cct, sub, v)  (cct)->_log->_ASSERT_H((v), ceph_subsys_##sub)
+#define ldout(cct, v)  (cct)->_log->_ASSERT_H((v), dout_subsys)
 #define lderr(cct) (cct)->_log->_ASSERT_H(-1, ceph_subsys_)
 
-#define ldpp_dout(dpp, v) if (dpp) dout_impl(dpp->get_cct(), dpp->get_subsys(), v) (*_dout << dpp->gen_prefix())
+#define ldpp_dout(dpp, v) (dpp ? (dpp)->get_cct()->_log->_ASSERT_H(v, dpp->get_subsys()) : NullEntry())
+// FIXME (*_dout << dpp->gen_prefix())
 
-#define lgeneric_subdout(cct, sub, v) dout_impl(cct, ceph_subsys_##sub, v) *_dout
-#define lgeneric_dout(cct, v) dout_impl(cct, ceph_subsys_, v) *_dout
-#define lgeneric_derr(cct) dout_impl(cct, ceph_subsys_, -1) *_dout
+#define lgeneric_subdout(cct, sub, v) lsubdout(cct, sub, v)
+#define lgeneric_dout(cct, v) (cct)->_log->_ASSERT_H((v), ceph_subsys_)
+#define lgeneric_derr(cct) (cct)->_log->_ASSERT_H(-1, ceph_subsys_)
 
 #define ldlog_p1(cct, sub, lvl)                 \
   (cct->_conf->subsys.should_gather((sub), (lvl)))
