@@ -54,9 +54,9 @@ class IncompleteEntry : public PrebufferedStreambuf, public MutableEntry /* afte
   char m_buf[4096];
 
 public:
-  IncompleteEntry(Log &l, utime_t s, pthread_t t, short pr, short sub)
-    : MutableEntry(this, l, s, t, pr, sub),
-      PrebufferedStreambuf(m_buf, sizeof m_buf)
+  IncompleteEntry(Log &l, utime_t s, pthread_t t, short pr, short sub) :
+      PrebufferedStreambuf(m_buf, sizeof m_buf),
+      MutableEntry(this, l, s, t, pr, sub)
   {
   }
 
