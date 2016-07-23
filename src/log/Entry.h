@@ -39,6 +39,8 @@ public:
 
   Entry(const Entry &) = delete;
   Entry& operator=(const Entry &) = delete;
+  Entry(Entry &&e) = default;
+  Entry& operator=(Entry &&e) = default;
   virtual ~Entry() {}
 
   virtual const std::string &get_str() const = 0;
@@ -56,11 +58,8 @@ protected:
   }
 
 public:
-  MutableEntry(MutableEntry &&e) :
-    Entry(std::move(e)),
-    ostream(std::move(e))
-  {
-  }
+  MutableEntry(MutableEntry &&e) = default;
+  MutableEntry& operator=(MutableEntry &&e) = default;
   virtual ~MutableEntry() {}
   //virtual std::ostream& operator<<(const std::string &s) = 0;
 };
@@ -79,6 +78,13 @@ public:
     MutableEntry(std::move(e))
   {
     this << e.get_str();
+  }
+  MutableEntry& operator=(MutableEntry &&e) :
+    PrebufferedStreambuf(m_buf, sizeof m_buf),
+    MutableEntry(std::move(e))
+  {
+    this << e.get_str();
+    return *this;
   }
 
   ~IncompleteEntry()
