@@ -53,13 +53,11 @@ protected:
 public:
   MutableEntry(MutableEntry &&e) :
     Entry(std::move(e)),
-    ostream(e)
   {
     this << e.get_str();
   }
   MutableEntry& operator=(MutableEntry &&e) :
     Entry(std::move(e)),
-    ostream(e)
   {
     this << e.get_str();
   }
