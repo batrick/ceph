@@ -36,10 +36,10 @@ public:
     m_thread(e.m_thread)
   {}
   Entry(const Entry &) = delete;
-  //Entry& operator=(const Entry &) = delete;
+  Entry& operator=(const Entry &) = delete;
   virtual ~Entry() {}
 
-  virtual Entry& operator<<(Entry &e, std::string s) = 0;
+  //virtual Entry& operator<<(Entry &e, std::string s) = 0;
   virtual const std::string &get_str() const = 0;
   virtual size_t size() const = 0;
 };
