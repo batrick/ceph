@@ -54,12 +54,13 @@ public:
   MutableEntry(MutableEntry &&e) :
     Entry(std::move(e))
   {
-    this << e.get_str();
+    *this << e.get_str();
   }
   MutableEntry& operator=(MutableEntry &&e) :
     Entry(std::move(e))
   {
-    this << e.get_str();
+    *this << e.get_str();
+    return *this;
   }
   virtual ~MutableEntry() {}
   //virtual std::ostream& operator<<(const std::string &s) = 0;
