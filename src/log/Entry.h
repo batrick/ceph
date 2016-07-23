@@ -24,16 +24,16 @@ public:
   Entry(Log &l, utime_t s, pthread_t t, short pr, short sub) :
     log(l),
     m_stamp(s),
-    m_thread(t)
+    m_thread(t),
     m_prio(pr),
-    m_subsys(sub),
+    m_subsys(sub)
   {}
   Entry(Entry &&e) :
     log(e.log),
-    m_prio(e.m_prio),
     m_stamp(e.m_stamp),
-    m_subsys(e.m_subsys),
-    m_thread(e.m_thread)
+    m_thread(e.m_thread),
+    m_prio(e.m_prio),
+    m_subsys(e.m_subsys)
   {}
   Entry(const Entry &) = delete;
   Entry& operator=(const Entry &) = delete;
