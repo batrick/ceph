@@ -978,7 +978,7 @@ void CInode::store(MDSInternalContextBase *fin)
 
   Context *newfin =
     new C_OnFinisher(new C_IO_Inode_Stored(this, get_version(), fin),
-		     mdcache->mds->finisher);
+		     mdcache->mds->finisher.get());
   mdcache->mds->objecter->mutate(oid, oloc, m, snapc,
 				 ceph::real_clock::now(g_ceph_context), 0,
 				 NULL, newfin);
@@ -1043,7 +1043,7 @@ void CInode::fetch(MDSInternalContextBase *fin)
   dout(10) << "fetch" << dendl;
 
   C_IO_Inode_Fetched *c = new C_IO_Inode_Fetched(this, fin);
-  C_GatherBuilder gather(g_ceph_context, new C_OnFinisher(c, mdcache->mds->finisher));
+  C_GatherBuilder gather(g_ceph_context, new C_OnFinisher(c, mdcache->mds->finisher.get()));
 
   object_t oid = CInode::get_object_name(ino(), frag_t(), "");
   object_locator_t oloc(mdcache->mds->mdsmap->get_metadata_pool());
@@ -1160,7 +1160,7 @@ void CInode::store_backtrace(MDSInternalContextBase *fin, int op_prio)
   object_locator_t oloc(pool);
   Context *fin2 = new C_OnFinisher(
     new C_IO_Inode_StoredBacktrace(this, inode.backtrace_version, fin),
-    mdcache->mds->finisher);
+    mdcache->mds->finisher.get());
 
   if (!state_test(STATE_DIRTYPOOL) || inode.old_pools.empty()) {
     dout(20) << __func__ << ": no dirtypool or no old pools" << dendl;
@@ -1880,7 +1880,7 @@ void CInode::finish_scatter_update(ScatterLock *lock, CDir *dir,
     if (dir_accounted_version != inode_version) {
       dout(10) << "finish_scatter_update " << fg << " journaling accounted scatterstat update v" << inode_version << dendl;
 
-      MDLog *mdlog = mdcache->mds->mdlog;
+      auto &mdlog = mdcache->mds->mdlog;
       MutationRef mut(new MutationImpl);
       mut->ls = mdlog->get_current_segment();
 
@@ -1906,7 +1906,7 @@ void CInode::finish_scatter_update(ScatterLock *lock, CDir *dir,
 	
       mut->add_projected_fnode(dir);
 
-      EUpdate *le = new EUpdate(mdlog, ename);
+      EUpdate *le = new EUpdate(mdlog.get(), ename);
       mdlog->start_entry(le);
       le->metablob.add_dir_context(dir);
       le->metablob.add_dir(dir, true);
@@ -3735,7 +3735,7 @@ void CInode::validate_disk_state(CInode::validated_data *results,
       }
 
       C_OnFinisher *conf = new C_OnFinisher(get_io_callback(BACKTRACE),
-                                            in->mdcache->mds->finisher);
+                                            in->mdcache->mds->finisher.get());
 
       // Whether we have a tag to apply depends on ScrubHeader (if one is
       // present)

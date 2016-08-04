@@ -2276,13 +2276,13 @@ bool Locker::check_inode_max_size(CInode *in, bool force_wrlock,
   LogEvent *le;
   EMetaBlob *metablob;
   if (in->is_any_caps_wanted() && in->last == CEPH_NOSNAP) {   
-    EOpen *eo = new EOpen(mds->mdlog);
+    EOpen *eo = new EOpen(mds->mdlog.get());
     eo->add_ino(in->ino());
     metablob = &eo->metablob;
     le = eo;
     mut->ls->open_files.push_back(&in->item_open_file);
   } else {
-    EUpdate *eu = new EUpdate(mds->mdlog, "check_inode_max_size");
+    EUpdate *eu = new EUpdate(mds->mdlog.get(), "check_inode_max_size");
     metablob = &eu->metablob;
     le = eu;
   }
@@ -2387,7 +2387,7 @@ void Locker::adjust_cap_wanted(Capability *cap, int wanted, int issue_seq)
       dout(10) << " adding to open file list " << *cur << dendl;
       assert(cur->last == CEPH_NOSNAP);
       LogSegment *ls = mds->mdlog->get_current_segment();
-      EOpen *le = new EOpen(mds->mdlog);
+      EOpen *le = new EOpen(mds->mdlog.get());
       mds->mdlog->start_entry(le);
       le->add_clean_inode(cur);
       ls->open_files.push_back(&cur->item_open_file);
@@ -2893,7 +2893,7 @@ void Locker::_do_snap_update(CInode *in, snapid_t snap, int dirty, snapid_t foll
     return;
   }
 
-  EUpdate *le = new EUpdate(mds->mdlog, "snap flush");
+  EUpdate *le = new EUpdate(mds->mdlog.get(), "snap flush");
   mds->mdlog->start_entry(le);
   MutationRef mut(new MutationImpl);
   mut->ls = mds->mdlog->get_current_segment();

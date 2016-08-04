@@ -94,7 +94,7 @@ void StrayManager::purge(CDentry *dn, uint32_t op_allowance)
   C_GatherBuilder gather(
     g_ceph_context,
     new C_OnFinisher(new C_IO_PurgeStrayPurged(
-        this, dn, false, op_allowance), mds->finisher));
+        this, dn, false, op_allowance), mds->finisher.get()));
 
   if (in->is_dir()) {
     object_locator_t oloc(mds->mdsmap->get_metadata_pool());
@@ -830,7 +830,7 @@ StrayManager::StrayManager(MDSRank *mds)
     ops_in_flight(0), files_purging(0),
     max_purge_ops(0), 
     num_strays(0), num_strays_purging(0), num_strays_delayed(0),
-    filer(mds->objecter, mds->finisher)
+    filer(mds->objecter, mds->finisher.get())
 {
   assert(mds != NULL);
 }
@@ -878,7 +878,7 @@ void StrayManager::truncate(CDentry *dn, uint32_t op_allowance)
   C_GatherBuilder gather(
     g_ceph_context,
     new C_OnFinisher(new C_IO_PurgeStrayPurged(this, dn, true, 0),
-		     mds->finisher));
+		     mds->finisher.get()));
 
   SnapRealm *realm = in->find_snaprealm();
   assert(realm);

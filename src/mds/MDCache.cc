@@ -6210,7 +6210,7 @@ void MDCache::_truncate_inode(CInode *in, LogSegment *ls)
 		 pi->truncate_seq, ceph::real_time::min(), 0,
 		 0, new C_OnFinisher(new C_IO_MDC_TruncateFinish(this, in,
 								       ls),
-					   mds->finisher));
+					   mds->finisher.get()));
 }
 
 struct C_MDC_TruncateLogged : public MDCacheContext {
@@ -8235,7 +8235,7 @@ void MDCache::_open_ino_backtrace_fetched(inodeno_t ino, bufferlist& bl, int err
       C_IO_MDC_OpenInoBacktraceFetched *fin =
 	new C_IO_MDC_OpenInoBacktraceFetched(this, ino);
       fetch_backtrace(ino, info.pool, fin->bl,
-		      new C_OnFinisher(fin, mds->finisher));
+		      new C_OnFinisher(fin, mds->finisher.get()));
       return;
     }
   } else if (err == -ENOENT) {
@@ -8247,7 +8247,7 @@ void MDCache::_open_ino_backtrace_fetched(inodeno_t ino, bufferlist& bl, int err
       C_IO_MDC_OpenInoBacktraceFetched *fin =
 	new C_IO_MDC_OpenInoBacktraceFetched(this, ino);
       fetch_backtrace(ino, info.pool, fin->bl,
-		      new C_OnFinisher(fin, mds->finisher));
+		      new C_OnFinisher(fin, mds->finisher.get()));
       return;
     }
   }
@@ -8475,7 +8475,7 @@ void MDCache::do_open_ino(inodeno_t ino, open_ino_info_t& info, int err)
     C_IO_MDC_OpenInoBacktraceFetched *fin =
       new C_IO_MDC_OpenInoBacktraceFetched(this, ino);
     fetch_backtrace(ino, info.pool, fin->bl,
-		    new C_OnFinisher(fin, mds->finisher));
+		    new C_OnFinisher(fin, mds->finisher.get()));
   } else {
     assert(!info.ancestors.empty());
     info.checking = mds->get_nodeid();
@@ -11216,7 +11216,7 @@ void MDCache::_fragment_committed(dirfrag_t basedirfrag, list<CDir*>& resultfrag
     g_ceph_context,
     new C_OnFinisher(
       new C_IO_MDC_FragmentFinish(this, basedirfrag, resultfrags),
-      mds->finisher));
+      mds->finisher.get()));
 
   SnapContext nullsnapc;
   object_locator_t oloc(mds->mdsmap->get_metadata_pool());

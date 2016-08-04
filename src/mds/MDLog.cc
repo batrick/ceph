@@ -41,7 +41,7 @@
 MDLog::~MDLog()
 {
   if (logger) {
-    g_ceph_context->get_perfcounters_collection()->remove(logger);
+    g_ceph_context->get_perfcounters_collection()->remove(logger.get());
   }
 }
 
@@ -72,8 +72,8 @@ void MDLog::create_logger()
   plb.add_u64(l_mdl_jlat, "jlat", "Journaler flush latency");
 
   // logger
-  logger = plb.create_perf_counters();
-  g_ceph_context->get_perfcounters_collection()->add(logger);
+  logger.reset(plb.create_perf_counters());
+  g_ceph_context->get_perfcounters_collection()->add(logger.get());
 }
 
 void MDLog::set_write_iohint(unsigned iohint_flags)
@@ -114,7 +114,7 @@ void MDLog::write_head(MDSInternalContextBase *c)
 {
   C_OnFinisher *fin = NULL;
   if (c != NULL) {
-    fin = new C_OnFinisher(new C_IO_Wrapper(mds, c), mds->finisher);
+    fin = new C_OnFinisher(new C_IO_Wrapper(mds, c), mds->finisher.get());
   }
   journaler->write_head(fin);
 }
@@ -143,14 +143,14 @@ void MDLog::create(MDSInternalContextBase *c)
   C_GatherBuilder gather(g_ceph_context);
   // This requires an OnFinisher wrapper because Journaler will call back the completion for write_head inside its own lock
   // XXX but should maybe that be handled inside Journaler?
-  gather.set_finisher(new C_OnFinisher(new C_IO_Wrapper(mds, c), mds->finisher));
+  gather.set_finisher(new C_OnFinisher(new C_IO_Wrapper(mds, c), mds->finisher.get()));
 
   // The inode of the default Journaler we will create
   ino = MDS_INO_LOG_OFFSET + mds->get_nodeid();
 
   // Instantiate Journaler and start async write to RADOS
   assert(!journaler);
-  journaler.reset(new Journaler(ino, mds->mdsmap->get_metadata_pool(), CEPH_FS_ONDISK_MAGIC, mds->objecter, logger, l_mdl_jlat, &mds->timer, mds->finisher));
+  journaler.reset(new Journaler(ino, mds->mdsmap->get_metadata_pool(), CEPH_FS_ONDISK_MAGIC, mds->objecter.get(), logger.get(), l_mdl_jlat, &mds->timer, mds->finisher.get()));
   assert(journaler->is_readonly());
   journaler->set_write_error_handler(new C_MDL_WriteError(this));
   journaler->set_writeable();
@@ -161,7 +161,7 @@ void MDLog::create(MDSInternalContextBase *c)
   JournalPointer jp(mds->get_nodeid(), mds->mdsmap->get_metadata_pool());
   jp.front = ino;
   jp.back = 0;
-  jp.save(mds->objecter, gather.new_sub());
+  jp.save(mds->objecter.get(), gather.new_sub());
 
   gather.activate();
 
@@ -895,11 +895,11 @@ void MDLog::_recovery_thread(MDSInternalContextBase *completion)
   // If the pointer object is not present, then create it with
   // front = default ino and back = null
   JournalPointer jp(mds->get_nodeid(), mds->mdsmap->get_metadata_pool());
-  int const read_result = jp.load(mds->objecter);
+  int const read_result = jp.load(mds->objecter.get());
   if (read_result == -ENOENT) {
     inodeno_t const default_log_ino = MDS_INO_LOG_OFFSET + mds->get_nodeid();
     jp.front = default_log_ino;
-    int write_result = jp.save(mds->objecter);
+    int write_result = jp.save(mds->objecter.get());
     // Nothing graceful we can do for this
     assert(write_result >= 0);
   } else if (read_result != 0) {
@@ -926,7 +926,7 @@ void MDLog::_recovery_thread(MDSInternalContextBase *completion)
     dout(1) << "Erasing journal " << jp.back << dendl;
     C_SaferCond erase_waiter;
     Journaler back(jp.back, mds->mdsmap->get_metadata_pool(), CEPH_FS_ONDISK_MAGIC,
-        mds->objecter, logger, l_mdl_jlat, &mds->timer, mds->finisher);
+        mds->objecter.get(), logger, l_mdl_jlat, &mds->timer, mds->finisher.get());
 
     // Read all about this journal (header + extents)
     C_SaferCond recover_wait;
@@ -952,7 +952,7 @@ void MDLog::_recovery_thread(MDSInternalContextBase *completion)
     } else {
       dout(1) << "Successfully erased journal, updating journal pointer" << dendl;
       jp.back = 0;
-      int write_result = jp.save(mds->objecter);
+      int write_result = jp.save(mds->objecter.get());
       // Nothing graceful we can do for this
       assert(write_result >= 0);
     }
@@ -960,7 +960,7 @@ void MDLog::_recovery_thread(MDSInternalContextBase *completion)
 
   /* Read the header from the front journal */
   std::unique_ptr<Journaler> front_journal (new Journaler(jp.front, mds->mdsmap->get_metadata_pool(),
-      CEPH_FS_ONDISK_MAGIC, mds->objecter, logger, l_mdl_jlat, &mds->timer, mds->finisher));
+      CEPH_FS_ONDISK_MAGIC, mds->objecter.get(), logger, l_mdl_jlat, &mds->timer, mds->finisher.get()));
 
   // Assign to ::journaler so that we can be aborted by ::shutdown while
   // waiting for journaler recovery
@@ -1036,12 +1036,12 @@ void MDLog::_reformat_journal(JournalPointer const &jp_in, Journaler *old_journa
   inodeno_t primary_ino = MDS_INO_LOG_OFFSET + mds->get_nodeid();
   inodeno_t secondary_ino = MDS_INO_LOG_BACKUP_OFFSET + mds->get_nodeid();
   jp.back = (jp.front == primary_ino ? secondary_ino : primary_ino);
-  int write_result = jp.save(mds->objecter);
+  int write_result = jp.save(mds->objecter.get());
   assert(write_result == 0);
 
   /* Create the new Journaler file */
   Journaler *new_journal = new Journaler(jp.back, mds->mdsmap->get_metadata_pool(),
-      CEPH_FS_ONDISK_MAGIC, mds->objecter, logger, l_mdl_jlat, &mds->timer, mds->finisher);
+      CEPH_FS_ONDISK_MAGIC, mds->objecter.get(), logger, l_mdl_jlat, &mds->timer, mds->finisher.get());
   dout(4) << "Writing new journal header " << jp.back << dendl;
   file_layout_t new_layout = old_journal->get_layout();
   new_journal->set_writeable();
@@ -1169,7 +1169,7 @@ void MDLog::_reformat_journal(JournalPointer const &jp_in, Journaler *old_journa
   inodeno_t const tmp = jp.front;
   jp.front = jp.back;
   jp.back = tmp;
-  write_result = jp.save(mds->objecter);
+  write_result = jp.save(mds->objecter.get());
   assert(write_result == 0);
 
   /* Delete the old journal to free space */
@@ -1190,7 +1190,7 @@ void MDLog::_reformat_journal(JournalPointer const &jp_in, Journaler *old_journa
 
   /* Update the pointer to reflect we're back in clean single journal state. */
   jp.back = 0;
-  write_result = jp.save(mds->objecter);
+  write_result = jp.save(mds->objecter.get());
   assert(write_result == 0);
 
   /* Reset the Journaler object to its default state */

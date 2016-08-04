@@ -1368,7 +1368,7 @@ struct C_Dir_Dirty : public CDirContext {
 // caller should hold auth pin of this
 void CDir::log_mark_dirty()
 {
-  MDLog *mdlog = inode->mdcache->mds->mdlog;
+  auto &mdlog = inode->mdcache->mds->mdlog;
   version_t pv = pre_dirty();
   mdlog->flush();
   mdlog->wait_for_safe(new C_Dir_Dirty(this, pv, mdlog->get_current_segment()));
@@ -1531,7 +1531,7 @@ void CDir::_omap_fetch(MDSInternalContextBase *c, const std::set<dentry_key_t>& 
   }
 
   cache->mds->objecter->read(oid, oloc, rd, CEPH_NOSNAP, NULL, 0,
-			     new C_OnFinisher(fin, cache->mds->finisher));
+			     new C_OnFinisher(fin, cache->mds->finisher.get()));
 }
 
 CDentry *CDir::_load_dentry(
@@ -2005,7 +2005,7 @@ void CDir::_omap_commit(int op_prio)
   C_GatherBuilder gather(g_ceph_context,
 			 new C_OnFinisher(new C_IO_Dir_Committed(this,
 								 get_version()),
-					  cache->mds->finisher));
+					  cache->mds->finisher.get()));
 
   SnapContext snapc;
   object_t oid = get_ondisk_object();
