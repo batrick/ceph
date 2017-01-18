@@ -289,6 +289,7 @@ class NonDefaultLayout(Workload):
     """
     def write(self):
         self._mount.run_shell(["touch", "datafile"])
+        self._mount.run_shell(["/bin/sh", "-c", "stat datafile > /home/pdonnell/READ2"])
         self._mount.run_shell(["setfattr", "-n", "ceph.file.layout.object_size", "-v", "8388608", "./datafile"])
         self._mount.run_shell(["dd", "if=/dev/urandom", "of=./datafile", "bs=1M", "count=32"])
         self._initial_state = self._mount.stat("datafile")

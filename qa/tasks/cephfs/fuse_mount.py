@@ -49,7 +49,7 @@ class FuseMount(CephFSMount):
             daemon_signal,
         ]
 
-        fuse_cmd = ['ceph-fuse', "-f"]
+        fuse_cmd = ['sudo', 'ceph-fuse', "-f"]
 
         if mount_path is not None:
             fuse_cmd += ["--client_mountpoint={0}".format(mount_path)]

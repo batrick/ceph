@@ -192,7 +192,10 @@ class LocalRemoteProcess(object):
         if self.subproc.pid and not self.finished:
             log.info("kill: killing pid {0} ({1})".format(
                 self.subproc.pid, self.args))
-            safe_kill(self.subproc.pid)
+            if self.args[0] == 'sudo':
+                subprocess.call(['sudo', 'kill', str(self.subproc.pid)])
+            else:
+                safe_kill(self.subproc.pid)
         else:
             log.info("kill: already terminated ({0})".format(self.args))
 
@@ -233,9 +236,6 @@ class LocalRemote(object):
             stdout=None, stderr=None, cwd=None, stdin=None,
             logger=None, label=None, env=None):
         log.info("run args={0}".format(args))
-
-        # We don't need no stinkin' sudo
-        args = [a for a in args if a != "sudo"]
 
         # We have to use shell=True if any run.Raw was present, e.g. &&
         shell = any([a for a in args if isinstance(a, Raw)])
@@ -438,7 +438,7 @@ class LocalFuseMount(FuseMount):
 
         def list_connections():
             self.client_remote.run(
-                args=["mount", "-t", "fusectl", "/sys/fs/fuse/connections", "/sys/fs/fuse/connections"],
+                args=["sudo", "mount", "-t", "fusectl", "/sys/fs/fuse/connections", "/sys/fs/fuse/connections"],
                 check_status=False
             )
             p = self.client_remote.run(
@@ -460,7 +460,7 @@ class LocalFuseMount(FuseMount):
         pre_mount_conns = list_connections()
         log.info("Pre-mount connections: {0}".format(pre_mount_conns))
 
-        prefix = [os.path.join(BIN_PREFIX, "ceph-fuse")]
+        prefix = ["sudo", os.path.join(BIN_PREFIX, "ceph-fuse")]
         if os.getuid() != 0:
             prefix += ["--client-die-on-failed-remount=false"]
 
