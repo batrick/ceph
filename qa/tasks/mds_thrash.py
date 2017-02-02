@@ -11,6 +11,7 @@ import time
 from gevent import sleep
 from gevent.greenlet import Greenlet
 from gevent.event import Event
+from gevent.pool import Group
 from teuthology import misc as teuthology
 
 from tasks.cephfs.filesystem import MDSCluster, Filesystem
@@ -406,7 +407,7 @@ def task(ctx, config):
     log.info('Ready to start thrashing')
 
     manager.wait_for_clean()
-    thrashers = {}
+    thrashers = Group()
     for fs in status.get_filesystems():
         name = fs['mdsmap']['fs_name']
         log.info('Running thrasher against FS {f}'.format(f = name))
@@ -416,16 +417,14 @@ def task(ctx, config):
             Filesystem(ctx, fs['id']), fs['mdsmap']['max_mds']
             )
         thrasher.start()
-        thrashers[name] = thrasher
+        thrashers.add(thrasher)
 
     try:
         log.debug('Yielding')
         yield
     finally:
         log.info('joining mds_thrashers')
-        for name in thrashers:
-            log.info('join thrasher mds_thrasher.fs.[{f}]'.format(f=name))
-            thrashers[name].stop()
-            thrashers[name].get()  # Raise any exception from _run()
-            thrashers[name].join()
+        for thrasher in thrashers:
+            thrasher.stop()
+        thrashers.join(raise_error=True)
         log.info('done joining')
