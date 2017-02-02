@@ -6,6 +6,7 @@ import contextlib
 import ceph_manager
 import itertools
 import random
+import signal
 import time
 
 from gevent import sleep
@@ -18,6 +19,92 @@ from tasks.cephfs.filesystem import MDSCluster, Filesystem
 
 log = logging.getLogger(__name__)
 
+class DaemonWatchdog(Greenlet):
+    """
+    DaemonWatchdog::
+
+    Watch Ceph daemons for failures. If an extended failure is detected (i.e.
+    not intentional), then the watchdog will unmount file systems and send
+    SIGTERM to all daemons. The duration of an extended failure is configurable
+    with watchdog_daemon_timeout.
+
+    watchdog_daemon_timeout [default: 300]: number of seconds a daemon
+        is allowed to be failed before the watchdog will bark.
+    """
+
+    def __init__(self, ctx, manager, config, thrashers):
+        Greenlet.__init__(self)
+        self.ctx = ctx
+        self.config = config
+        self.logger = log.getChild('daemon_watchdog')
+        self.manager = manager
+        self.stopping = Event()
+        self.thrashers = thrashers
+
+    def _run(self):
+        try:
+            self.main()
+        except:
+            # Log exceptions here so we get the full backtrace (it's lost
+            # by the time someone does a .get() on this greenlet)
+            self.logger.exception("Exception in DaemonWatchdog:")
+            raise
+
+    def log(self, x):
+        """Write data to logger"""
+        self.logger.info(x)
+
+    def stop(self):
+        self.stopping.set()
+
+    def bark(self):
+        self.log("BARK! unmounting mounts and killing all daemons and clients")
+        for mount in self.ctx.mounts:
+            mount.umount_wait(force=True)
+        daemons = []
+        daemons.extend(filter(lambda daemon: daemon.running(), self.ctx.daemons.iter_daemons_of_role('client', cluster=self.manager.cluster)))
+        daemons.extend(filter(lambda daemon: daemon.running(), self.ctx.daemons.iter_daemons_of_role('mds', cluster=self.manager.cluster)))
+        daemons.extend(filter(lambda daemon: daemon.running(), self.ctx.daemons.iter_daemons_of_role('mon', cluster=self.manager.cluster)))
+        for daemon in daemons:
+            daemon.signal(signal.SIGTERM)
+
+    def main(self):
+        self.log("watchdog starting")
+        daemon_timeout = int(self.config.get('watchdog_daemon_timeout', 300))
+        daemon_failure_time = {}
+        while not self.stopping.is_set():
+            bark = False
+            now = time.time()
+
+            daemon_failures = []
+            daemon_failures.extend(filter(lambda daemon: not daemon.running(), self.ctx.daemons.iter_daemons_of_role('mon', cluster=self.manager.cluster)))
+            daemon_failures.extend(filter(lambda daemon: not daemon.running(), self.ctx.daemons.iter_daemons_of_role('mds', cluster=self.manager.cluster)))
+            daemon_failures.extend(filter(lambda daemon: not daemon.running(), self.ctx.daemons.iter_daemons_of_role('client', cluster=self.manager.cluster)))
+            for daemon in daemon_failures:
+                name = daemon.role + '.' + daemon.id_
+                dt = daemon_failure_time.setdefault(name, (daemon, now))
+                assert dt[0] is daemon
+                delta = now-dt[1]
+                self.log("daemon {role}.{id} is failed for ~{t}s".format(role=daemon.role, id=daemon.id_, t=delta))
+                if delta > daemon_timeout:
+                    bark = True
+
+            # If a daemon is no longer failed, remove it from tracking:
+            for name in daemon_failure_time.keys():
+                if name not in [d.role + '.' + d.id_ for d in daemon_failures]:
+                    self.log("daemon {role}.{id} has been restored".format(role=daemon.role, id=daemon.id_))
+                    del daemon_failure_time[name]
+
+            thrasher_failures = filter(lambda g: g.exception, self.thrashers)
+            for thrasher in thrasher_failures:
+                self.log("thrasher on fs.{name} failed".format(name=thrasher.fs['mdsmap']['fs_name']))
+                bark = True
+
+            if bark:
+                self.bark()
+                return
+
+            sleep(5)
 
 class MDSThrasher(Greenlet):
     """
@@ -100,7 +187,7 @@ class MDSThrasher(Greenlet):
     """
 
     def __init__(self, ctx, manager, config, logger, fs, max_mds):
-        super(MDSThrasher, self).__init__()
+        Greenlet.__init__(self)
 
         self.ctx = ctx
         self.manager = manager
@@ -406,8 +493,12 @@ def task(ctx, config):
         status = mds_cluster.status()
     log.info('Ready to start thrashing')
 
-    manager.wait_for_clean()
     thrashers = Group()
+
+    watchdog = DaemonWatchdog(ctx, manager, config, thrashers)
+    watchdog.start()
+
+    manager.wait_for_clean()
     for fs in status.get_filesystems():
         name = fs['mdsmap']['fs_name']
         log.info('Running thrasher against FS {f}'.format(f = name))
@@ -416,8 +507,7 @@ def task(ctx, config):
             log.getChild('fs.[{f}]'.format(f = name)),
             Filesystem(ctx, fs['id']), fs['mdsmap']['max_mds']
             )
-        thrasher.start()
-        thrashers.add(thrasher)
+        thrashers.start(thrasher)
 
     try:
         log.debug('Yielding')
@@ -428,3 +518,6 @@ def task(ctx, config):
             thrasher.stop()
         thrashers.join(raise_error=True)
         log.info('done joining')
+
+        watchdog.stop()
+        watchdog.join()
