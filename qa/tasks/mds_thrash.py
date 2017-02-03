@@ -12,7 +12,6 @@ import time
 from gevent import sleep
 from gevent.greenlet import Greenlet
 from gevent.event import Event
-from gevent.pool import Group
 from teuthology import misc as teuthology
 
 from tasks.cephfs.filesystem import MDSCluster, Filesystem
@@ -36,6 +35,7 @@ class DaemonWatchdog(Greenlet):
         Greenlet.__init__(self)
         self.ctx = ctx
         self.config = config
+        self.e = None
         self.logger = log.getChild('daemon_watchdog')
         self.manager = manager
         self.name = 'watchdog'
@@ -46,10 +46,10 @@ class DaemonWatchdog(Greenlet):
         try:
             self.watch()
         except Exception as e:
-            # Log exceptions here so we get the full backtrace (gevent loses them).
-            self.exception = e # gevent fails to set this for some reason
+            # See _run exception comment for MDSThrasher
+            self.e = e
             self.logger.exception("exception:")
-            raise
+            # allow successful completion so gevent doesn't see an exception...
 
     def log(self, x):
         """Write data to logger"""
@@ -59,15 +59,20 @@ class DaemonWatchdog(Greenlet):
         self.stopping.set()
 
     def bark(self):
-        self.log("BARK! unmounting mounts and killing all daemons and clients")
+        self.log("BARK! unmounting mounts and killing all daemons")
         for mount in self.ctx.mounts.values():
-            mount.umount_wait(force=True)
+            try:
+                mount.umount_wait(force=True)
+            except:
+                self.logger.exception("ignoring exception:")
         daemons = []
-        daemons.extend(filter(lambda daemon: daemon.running(), self.ctx.daemons.iter_daemons_of_role('client', cluster=self.manager.cluster)))
-        daemons.extend(filter(lambda daemon: daemon.running(), self.ctx.daemons.iter_daemons_of_role('mds', cluster=self.manager.cluster)))
-        daemons.extend(filter(lambda daemon: daemon.running(), self.ctx.daemons.iter_daemons_of_role('mon', cluster=self.manager.cluster)))
+        daemons.extend(filter(lambda daemon: daemon.running() and not daemon.proc.finished, self.ctx.daemons.iter_daemons_of_role('mds', cluster=self.manager.cluster)))
+        daemons.extend(filter(lambda daemon: daemon.running() and not daemon.proc.finished, self.ctx.daemons.iter_daemons_of_role('mon', cluster=self.manager.cluster)))
         for daemon in daemons:
-            daemon.signal(signal.SIGTERM)
+            try:
+                daemon.signal(signal.SIGTERM)
+            except:
+                self.logger.exception("ignoring exception:")
 
     def watch(self):
         self.log("watchdog starting")
@@ -76,42 +81,36 @@ class DaemonWatchdog(Greenlet):
         while not self.stopping.is_set():
             bark = False
             now = time.time()
-            self.log("awake")
 
             mons = self.ctx.daemons.iter_daemons_of_role('mon', cluster=self.manager.cluster)
             mdss = self.ctx.daemons.iter_daemons_of_role('mds', cluster=self.manager.cluster)
             clients = self.ctx.daemons.iter_daemons_of_role('client', cluster=self.manager.cluster)
 
-            for daemon in mons:
-                self.log("mon daemon {role}.{id}: running={r}".format(role=daemon.role, id=daemon.id_, r=daemon.running()))
-            for daemon in mdss:
-                self.log("mdss daemon {role}.{id}: running={r}".format(role=daemon.role, id=daemon.id_, r=daemon.running()))
-            for daemon in clients:
-                self.log("clients daemon {role}.{id}: running={r}".format(role=daemon.role, id=daemon.id_, r=daemon.running()))
+            #for daemon in mons:
+            #    self.log("mon daemon {role}.{id}: running={r}".format(role=daemon.role, id=daemon.id_, r=daemon.running() and not daemon.proc.finished))
+            #for daemon in mdss:
+            #    self.log("mds daemon {role}.{id}: running={r}".format(role=daemon.role, id=daemon.id_, r=daemon.running() and not daemon.proc.finished))
 
             daemon_failures = []
-            daemon_failures.extend(filter(lambda daemon: not daemon.running(), mons))
-            daemon_failures.extend(filter(lambda daemon: not daemon.running(), mdss))
-            daemon_failures.extend(filter(lambda daemon: not daemon.running(), clients))
+            daemon_failures.extend(filter(lambda daemon: daemon.running() and daemon.proc.finished, mons))
+            daemon_failures.extend(filter(lambda daemon: daemon.running() and daemon.proc.finished, mdss))
             for daemon in daemon_failures:
                 name = daemon.role + '.' + daemon.id_
                 dt = daemon_failure_time.setdefault(name, (daemon, now))
                 assert dt[0] is daemon
                 delta = now-dt[1]
-                self.log("daemon {role}.{id} is failed for ~{t}s".format(role=daemon.role, id=daemon.id_, t=delta))
+                self.log("daemon {name} is failed for ~{t:.0f}s".format(name=name, t=delta))
                 if delta > daemon_timeout:
                     bark = True
 
             # If a daemon is no longer failed, remove it from tracking:
             for name in daemon_failure_time.keys():
                 if name not in [d.role + '.' + d.id_ for d in daemon_failures]:
-                    self.log("daemon {role}.{id} has been restored".format(role=daemon.role, id=daemon.id_))
+                    self.log("daemon {name} has been restored".format(name=name))
                     del daemon_failure_time[name]
 
-            #for thrasher in filter(lambda g: g.exception, self.thrashers):
             for thrasher in self.thrashers:
-                self.log("thrasher {name}: ready={ready}".format(name=thrasher.name, ready=thrasher.ready()))
-                if thrasher.exception:
+                if thrasher.e is not None:
                     self.log("thrasher on fs.{name} failed".format(name=thrasher.fs.name))
                     bark = True
 
@@ -119,7 +118,6 @@ class DaemonWatchdog(Greenlet):
                 self.bark()
                 return
 
-            self.log("sleeping")
             sleep(5)
 
         self.log("watchdog finished")
@@ -153,7 +151,7 @@ class MDSThrasher(Greenlet):
     thrash_in_replay: [default: 0.0] likelihood that the MDS will be thrashed
       during replay.  Value should be between 0.0 and 1.0.
 
-    thrash_max_mds: [default: 0.25] likelihood that the max_mds of the mds
+    thrash_max_mds: [default: 0.0] likelihood that the max_mds of the mds
       cluster will be modified to a value [1, current) or (current, starting
       max_mds]. When reduced, randomly selected MDSs other than rank 0 will be
       deactivated to reach the new max_mds.  Value should be between 0.0 and 1.0.
@@ -207,11 +205,10 @@ class MDSThrasher(Greenlet):
     def __init__(self, ctx, manager, config, fs, max_mds):
         Greenlet.__init__(self)
 
-        assert manager.is_clean()
-
         self.config = config
         self.ctx = ctx
-        self.logger = log.getChild('fs.[{f}]'.format(f = fs.name)),
+        self.e = None
+        self.logger = log.getChild('fs.[{f}]'.format(f = fs.name))
         self.fs = fs
         self.manager = manager
         self.max_mds = max_mds
@@ -219,7 +216,7 @@ class MDSThrasher(Greenlet):
         self.stopping = Event()
 
         self.randomize = bool(self.config.get('randomize', True))
-        self.thrash_max_mds = float(self.config.get('thrash_max_mds', 0.25))
+        self.thrash_max_mds = float(self.config.get('thrash_max_mds', 0.0))
         self.max_thrash = int(self.config.get('max_thrash', 1))
         self.max_thrash_delay = float(self.config.get('thrash_delay', 120.0))
         self.thrash_in_replay = float(self.config.get('thrash_in_replay', False))
@@ -233,9 +230,21 @@ class MDSThrasher(Greenlet):
             self.do_thrash()
         except Exception as e:
             # Log exceptions here so we get the full backtrace (gevent loses them).
-            self.exception = e # gevent fails to set this for some reason
+            # Also allow succesful completion as gevent exception handling is a broken mess:
+            #
+            # 2017-02-03T14:34:01.259 CRITICAL:root:  File "gevent.libev.corecext.pyx", line 367, in gevent.libev.corecext.loop.handle_error (src/gevent/libev/gevent.corecext.c:5051)
+            #   File "/home/teuthworker/src/git.ceph.com_git_teuthology_master/virtualenv/local/lib/python2.7/site-packages/gevent/hub.py", line 558, in handle_error
+            #     self.print_exception(context, type, value, tb)
+            #   File "/home/teuthworker/src/git.ceph.com_git_teuthology_master/virtualenv/local/lib/python2.7/site-packages/gevent/hub.py", line 605, in print_exception
+            #     traceback.print_exception(type, value, tb, file=errstream)
+            #   File "/usr/lib/python2.7/traceback.py", line 124, in print_exception
+            #     _print(file, 'Traceback (most recent call last):')
+            #   File "/usr/lib/python2.7/traceback.py", line 13, in _print
+            #     file.write(str+terminator)
+            # 2017-02-03T14:34:01.261 CRITICAL:root:IOError
+            self.e = e
             self.logger.exception("exception:")
-            raise
+            # allow successful completion so gevent doesn't see an exception...
 
     def log(self, x):
         """Write data to logger assigned to this MDThrasher"""
@@ -341,7 +350,7 @@ class MDSThrasher(Greenlet):
 
             status = self.fs.status()
 
-            if random.randrange(0.0, 1.0) <= self.thrash_max_mds:
+            if random.random() <= self.thrash_max_mds:
                 max_mds = status.get_fsmap(self.fs.id)['mdsmap']['max_mds']
                 options = range(1, max_mds)+range(max_mds+1, self.max_mds+1)
                 if len(options) > 0:
@@ -352,6 +361,7 @@ class MDSThrasher(Greenlet):
                     stats['max_mds'] += 1
 
                     # Now randomly deactivate mds if we shrank
+                    # TODO: it's desirable to deactivate in order. Make config to do random.
                     targets = filter(lambda r: r['rank'] > 0, status.get_ranks(self.fs.id)) # can't deactivate 0
                     for target in random.sample(targets, max(0, max_mds-new_max_mds)):
                         self.log("deactivating rank %d" % target['rank'])
@@ -515,15 +525,17 @@ def task(ctx, config):
         status = mds_cluster.status()
     log.info('Ready to start thrashing')
 
-    thrashers = Group()
+    thrashers = []
 
     watchdog = DaemonWatchdog(ctx, manager, config, thrashers)
     watchdog.start()
 
     manager.wait_for_clean()
+    assert manager.is_clean()
     for fs in status.get_filesystems():
         thrasher = MDSThrasher(ctx, manager, config, Filesystem(ctx, fs['id']), fs['mdsmap']['max_mds'])
-        thrashers.start(thrasher)
+        thrasher.start()
+        thrashers.append(thrasher)
 
     try:
         log.debug('Yielding')
@@ -532,7 +544,9 @@ def task(ctx, config):
         log.info('joining mds_thrashers')
         for thrasher in thrashers:
             thrasher.stop()
-        thrashers.join(raise_error=True)
+            if thrasher.e:
+                raise RuntimeError('error during thrashing')
+            thrasher.join()
         log.info('done joining')
 
         watchdog.stop()
