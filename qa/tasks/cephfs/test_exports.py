@@ -1,11 +1,15 @@
 import logging
 import time
+from teuthology.orchestra.run import Raw
 from tasks.cephfs.fuse_mount import FuseMount
 from tasks.cephfs.cephfs_test_case import CephFSTestCase
 
 log = logging.getLogger(__name__)
 
 class TestExports(CephFSTestCase):
+    CLIENTS_REQUIRED = 1
+    MDSS_REQUIRED = 3
+
     def _wait_subtrees(self, status, rank, test):
         timeout = 30
         pause = 2
@@ -101,3 +105,26 @@ class TestExports(CephFSTestCase):
         self._wait_subtrees(status, 0, [('/1', 0), ('/1/4/5', 1), ('/1/2/3', 2), ('/a', 1), ('/aa/bb', 0)])
         self.mount_a.run_shell(["mv", "aa", "a/b/"])
         self._wait_subtrees(status, 0, [('/1', 0), ('/1/4/5', 1), ('/1/2/3', 2), ('/a', 1), ('/a/b/aa/bb', 0)])
+
+    def test_export_kills(self):
+        self.fs.set_allow_multimds(True)
+        self.fs.set_max_mds(2)
+
+        trees = []
+
+        # See killpoints in src/doc/killpoints.txt or src/mds/Migrator.cc
+        for i in range(1, 14):
+            tree = "/files.%d" % i
+            self.mount_a.create_n_files(tree, 100)
+            trees.append((tree, 1))
+
+            self.fs.wait_for_daemons()
+
+            status = self.fs.status()
+            self.fs.mds_asok(["config", "set", "mds_kill_export_at", str(i)], mds_id=status.get_rank(self.fs.id, 0)['name'])
+
+            self.setfattr("/files", "ceph.dir.pin", 1)
+
+            self._wait_subtrees(status, 1, trees)
+
+        # TODO add bystanders
