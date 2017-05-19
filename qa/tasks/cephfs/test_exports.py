@@ -17,9 +17,8 @@ class TestExports(CephFSTestCase):
         for i in range(timeout/pause):
             subtrees = self.fs.mds_asok(["get", "subtrees"], mds_id=status.get_rank(self.fs.id, rank)['name'])
             subtrees = filter(lambda s: s['dir']['path'].startswith('/'), subtrees)
-            log.info(subtrees)
             filtered = sorted([(s['dir']['path'], s['auth_first']) for s in subtrees])
-            log.info(filtered)
+            log.info("%s =?= %s", filtered, test)
             if filtered == test:
                 return subtrees
             time.sleep(pause)
@@ -114,16 +113,16 @@ class TestExports(CephFSTestCase):
 
         # See killpoints in src/doc/killpoints.txt or src/mds/Migrator.cc
         for i in range(1, 14):
-            tree = "/files.%d" % i
-            self.mount_a.create_n_files(tree, 100)
-            trees.append((tree, 1))
+            tree = "files.%d" % i
+            self.mount_a.create_n_files(tree+"/file", 100)
+            trees.append(("/"+tree, 1))
 
             self.fs.wait_for_daemons()
 
             status = self.fs.status()
             self.fs.mds_asok(["config", "set", "mds_kill_export_at", str(i)], mds_id=status.get_rank(self.fs.id, 0)['name'])
 
-            self.setfattr("/files", "ceph.dir.pin", 1)
+            self.mount_a.setfattr(tree, "ceph.dir.pin", "1")
 
             self._wait_subtrees(status, 1, trees)
 
