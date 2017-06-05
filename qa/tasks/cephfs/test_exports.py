@@ -111,11 +111,9 @@ class TestKillPoints(CephFSTestCase):
     # Two active MDS
     MDSS_REQUIRED = 2
 
-    init = False
-
     def setup_cluster(self):
         # Set Multi-MDS cluster
-        self.fs.set_flag("allow_multimds", 1, "--yes-i-really-mean-it")
+        self.fs.set_allow_multimds(True)
         self.fs.set_max_mds(2)
 
         self.fs.wait_for_daemons()
@@ -125,28 +123,8 @@ class TestKillPoints(CephFSTestCase):
             log.error("Incorrect number of MDS active: %d" %num_active_mds)
             return False
 
-        # Get a clean mount
-        self.mount_a.umount_wait()
-        self.mount_a.mount()
-        self.mount_a.wait_until_mounted()
-
-        # Create test data
-        if self.init is False:
-            self.populate_data(8)
-            self.init = True
-
-        return True
-
-    def populate_data(self, nfiles):
-            size_mb = 8
-            dname = "abc"
-            self.mount_a.run_shell(["mkdir", dname])
-            for i in range(nfiles):
-                fname =dname.join("/").join(str(i)).join(".txt")
-                self.mount_a.write_n_mb(fname, size_mb)
-
-            # Get the list of file to confirm the count of files
-            self.org_files = self.mount_a.ls()
+        self.mount_a.create_n_files("dir/file_", 8)
+        self.org_files = set(self.mount_a.ls("dir"))
 
     def verify_data(self):
         s1 = set(self.mount_a.ls())
@@ -189,11 +167,7 @@ class TestKillPoints(CephFSTestCase):
         assert(result["success"])
 
         # This should kill either or both MDS process
-        command = ["export", "dir", "/abc", "1"]
-        try:
-            result = self.fs.mds_asok(command, rank_0_id)
-        except Exception as e:
-            log.error(e.__str__())
+        self.mount_a.setfattr("dir", "ceph.dir.pin", "1")
 
         def log_crashed_mds():
             crashed_mds = self.fs.get_crashed_mds()
@@ -223,7 +197,7 @@ class TestKillPoints(CephFSTestCase):
         # Restart the crashed MDS daemon.
         crashed_mds = self.fs.get_crashed_mds()
         for k in crashed_mds:
-            print "Restarting rank %d" %k
+            log.info("Restarting rank %d" % k)
             self.fs.mds_fail(crashed_mds[k])
             self.fs.mds_restart(crashed_mds[k])
 
@@ -241,7 +215,7 @@ class TestKillPoints(CephFSTestCase):
 
         # Restart the killed daemon.
         for k in crashed_mds:
-            print "Restarting rank %d" %k
+            log.info("Restarting rank %d" % k)
             self.fs.mds_fail(crashed_mds[k])
             self.fs.mds_restart(crashed_mds[k])
 
