@@ -277,7 +277,7 @@ class TestKillPoints(CephFSTestCase):
 
         return success_count
 
-    def test_export(self):
+    def test_export_killpoints(self):
         self.init = False
         self.setup_cluster()
         success_count = 0
