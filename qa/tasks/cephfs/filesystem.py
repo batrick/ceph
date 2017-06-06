@@ -138,6 +138,41 @@ class FSStatus(object):
             log.warn(json.dumps(list(self.get_all()), indent=2))  # dump for debugging
             raise RuntimeError("MDS id '{0}' not found in map".format(name))
 
+    def get_crashed_mds(self, fscid=None):
+        return self.get_up_and_active_mds(fscid=fscid, invert=True)
+
+    def get_up_and_active_mds(self, fscid=None, invert=False):
+        """
+        Return MDS daemon names of those daemons in the up, active and non-laggy
+        state
+        :return:
+        """
+
+        if invert == True:
+            state = None
+        else:
+            state = "up:active"
+
+        is_laggy = None
+        result = {}
+        mdsmap = self.get_fsmap(fscid)['mdsmap']
+        for mds_status in sorted(mdsmap['info'].values(), lambda a, b: cmp(a['rank'], b['rank'])):
+            if mds_status['state'] == state or state is None:
+                try:
+                    is_laggy = mds_status['laggy_since']
+                except KeyError:
+                    pass
+
+            if invert == True:
+                if is_laggy is not None:
+                    result[mds_status['rank']] = mds_status['name']
+            else:
+                if is_laggy is None:
+                    result[mds_status['rank']] = mds_status['name']
+            is_laggy = None
+
+        return result
+
 class CephCluster(object):
     @property
     def admin_remote(self):
@@ -652,44 +687,10 @@ class Filesystem(MDSCluster):
         return result
 
     def get_crashed_mds(self):
-        """
-        Return MDS daemon names and ranks of those daemons in the
-        crashed state
-        :return:
-        """
-        return self.get_up_and_active_mds(True)
+        return self.status().get_crashed_mds(fscid=self.id)
 
     def get_up_and_active_mds(self, invert=False):
-        """
-        Return MDS daemon names of those daemons in the up, active and non-laggy
-        state
-        :return:
-        """
-
-        if invert == True:
-            state = None
-        else:
-            state = "up:active"
-
-        is_laggy = None
-        result = {}
-        status = self.get_mds_map()
-        for mds_status in sorted(status['info'].values(), lambda a, b: cmp(a['rank'], b['rank'])):
-            if mds_status['state'] == state or state is None:
-                try:
-                    is_laggy = mds_status['laggy_since']
-                except KeyError:
-                    pass
-
-            if invert == True:
-                if is_laggy is not None:
-                    result[mds_status['rank']] = mds_status['name']
-            else:
-                if is_laggy is None:
-                    result[mds_status['rank']] = mds_status['name']
-            is_laggy = None
-
-        return result
+        return self.status().get_up_and_active_mds(fscid=self.id, invert=invert)
 
     def get_active_names(self):
         """

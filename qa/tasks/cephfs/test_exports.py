@@ -142,57 +142,44 @@ class TestKillPoints(CephFSTestCase):
         # Wait till all MDS becomes active
         self.fs.wait_for_daemons()
 
-        # Get all active ranks
-        ranks = self.fs.get_all_mds_rank()
+        status = self.fs.status()
+        ranks = list(status.get_ranks(self.fs.id))
 
-        original_active = self.fs.get_active_names()
-
-        if len(ranks) != 2:
-            log.error("Incorrect number of MDS ranks, exiting the test")
-            return False
-
-        rank_0_id = original_active[0]
-        rank_1_id = original_active[1]
+        self.assertEqual(len(ranks), 2)
 
         killpoint = {}
-        killpoint[rank_0_id] = ('export', exportv)
-        killpoint[rank_1_id] = ('import', importv)
+        killpoint[ranks[0]['gid']] = ('export', exportv)
+        killpoint[ranks[1]['gid']] = ('import', importv)
 
         command = ["config", "set", "mds_kill_export_at", str(exportv)]
-        result = self.fs.mds_asok(command, rank_0_id)
+        result = self.fs.mds_asok(command, ranks[0]['name'])
         assert(result["success"])
 
         command = ["config", "set", "mds_kill_import_at", str(importv)]
-        result = self.fs.mds_asok(command, rank_1_id)
+        result = self.fs.mds_asok(command, ranks[1]['name'])
         assert(result["success"])
 
         # This should kill either or both MDS process
         self.mount_a.setfattr("dir", "ceph.dir.pin", "1")
 
-        def log_crashed_mds():
-            crashed_mds = self.fs.get_crashed_mds()
-            for k in crashed_mds:
+        def log_mds_status():
+            status = self.fs.status()
+            for k in status.get_crashed_mds(fscid=self.fs.id):
                 name = crashed_mds[k]
-                log.info("MDS %s crashed at type %s killpoint %d"
-                        %(name, killpoint[name][0], killpoint[name][1]))
-
-        def log_active_mds():
-            active_mds = self.fs.get_up_and_active_mds()
-            for k in active_mds:
+                log.info("MDS %s crashed" % name)
+            for k in status.get_up_and_active_mds(fscid=self.fs.id):
                 name = active_mds[k]
-                log.info("MDS %s active at type %s killpoint %d"
-                        %(name, killpoint[name][0], killpoint[name][1]))
+                present = getattr(killpoint, name)
+                if present:
+                    log.info("MDS %s active at type %s killpoint %d"
+                            %(name, present[0], present[1]))
 
         # Waiting time for monitor to promote replacement for dead MDS
         grace = int(self.fs.get_config("mds_beacon_grace", service_type="mon"))
 
-        #log_active_mds()
-        #log_crashed_mds()
-
         time.sleep(grace * 2)
 
-        log_active_mds()
-        log_crashed_mds()
+        log_mds_status()
 
         # Restart the crashed MDS daemon.
         crashed_mds = self.fs.get_crashed_mds()
