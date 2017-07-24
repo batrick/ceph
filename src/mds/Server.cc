@@ -174,7 +174,7 @@ void Server::create_logger()
       "Request type remove snapshot");
   plb.add_u64_counter(l_mdss_req_renamesnap, "req_renamesnap",
       "Request type rename snapshot");
-  logger = plb.create_perf_counters();
+  logger = plb.create_perf_counters().release();
   g_ceph_context->get_perfcounters_collection()->add(logger);
 }
 

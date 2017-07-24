@@ -92,7 +92,7 @@ static PerfCounters* setup_test_perfcounters1(CephContext *cct)
   bld.add_u64(TEST_PERFCOUNTERS1_ELEMENT_1, "element1");
   bld.add_time(TEST_PERFCOUNTERS1_ELEMENT_2, "element2");
   bld.add_time_avg(TEST_PERFCOUNTERS1_ELEMENT_3, "element3");
-  return bld.create_perf_counters();
+  return bld.create_perf_counters().release();
 }
 
 TEST(PerfCounters, SinglePerfCounters) {
@@ -137,7 +137,7 @@ static PerfCounters* setup_test_perfcounter2(CephContext *cct)
 	  TEST_PERFCOUNTERS2_ELEMENT_FIRST, TEST_PERFCOUNTERS2_ELEMENT_LAST);
   bld.add_u64(TEST_PERFCOUNTERS2_ELEMENT_FOO, "foo");
   bld.add_time(TEST_PERFCOUNTERS2_ELEMENT_BAR, "bar");
-  return bld.create_perf_counters();
+  return bld.create_perf_counters().release();
 }
 
 TEST(PerfCounters, MultiplePerfCounters) {

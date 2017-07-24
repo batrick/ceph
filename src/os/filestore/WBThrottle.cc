@@ -28,7 +28,7 @@ WBThrottle::WBThrottle(CephContext *cct) :
   b.add_u64(l_wbthrottle_ios_wb, "ios_wb", "Written operations");
   b.add_u64(l_wbthrottle_inodes_dirtied, "inodes_dirtied", "Entries waiting for write");
   b.add_u64(l_wbthrottle_inodes_wb, "inodes_wb", "Written entries");
-  logger = b.create_perf_counters();
+  logger = b.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(logger);
   for (unsigned i = l_wbthrottle_first + 1; i != l_wbthrottle_last; ++i)
     logger->set(i, 0);

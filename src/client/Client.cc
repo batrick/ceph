@@ -480,7 +480,7 @@ void Client::_finish_init()
   plb.add_time_avg(l_c_reply, "reply", "Latency of receiving a reply on metadata request");
   plb.add_time_avg(l_c_lat, "lat", "Latency of processing a metadata request");
   plb.add_time_avg(l_c_wrlat, "wrlat", "Latency of a file data write operation");
-  logger.reset(plb.create_perf_counters());
+  logger = plb.create_perf_counters();
   cct->get_perfcounters_collection()->add(logger.get());
 
   client_lock.Unlock();

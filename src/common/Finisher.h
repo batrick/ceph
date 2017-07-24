@@ -149,7 +149,7 @@ class Finisher {
 			  l_finisher_first, l_finisher_last);
     b.add_u64(l_finisher_queue_len, "queue_len");
     b.add_time_avg(l_finisher_complete_lat, "complete_latency");
-    logger = b.create_perf_counters();
+    logger = b.create_perf_counters().release();
     cct->get_perfcounters_collection()->add(logger);
     logger->set(l_finisher_queue_len, 0);
     logger->set(l_finisher_complete_lat, 0);

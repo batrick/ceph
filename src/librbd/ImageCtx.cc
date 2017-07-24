@@ -391,7 +391,7 @@ struct C_InvalidateCache : public Context {
     plb.add_u64_counter(l_librbd_readahead_bytes, "readahead_bytes", "Data size in read ahead");
     plb.add_u64_counter(l_librbd_invalidate_cache, "invalidate_cache", "Cache invalidates");
 
-    perfcounter = plb.create_perf_counters();
+    perfcounter = plb.create_perf_counters().release();
     cct->get_perfcounters_collection()->add(perfcounter);
   }
 

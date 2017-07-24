@@ -384,7 +384,7 @@ int RocksDBStore::do_open(ostream &out, bool create_if_missing)
   plb.add_time_avg(l_rocksdb_write_delay_time, "rocksdb_write_delay_time", "Rocksdb write delay time");
   plb.add_time_avg(l_rocksdb_write_pre_and_post_process_time, 
       "rocksdb_write_pre_and_post_time", "total time spent on writing a record, excluding write process");
-  logger = plb.create_perf_counters();
+  logger = plb.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(logger);
 
   if (compact_on_mount) {

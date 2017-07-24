@@ -12362,7 +12362,7 @@ void MDCache::register_perfcounters()
     pcb.add_u64_counter(l_mdc_recovery_completed, "recovery_completed",
         "File recoveries completed", "recd", PerfCountersBuilder::PRIO_INTERESTING);
 
-    logger.reset(pcb.create_perf_counters());
+    logger = pcb.create_perf_counters();
     g_ceph_context->get_perfcounters_collection()->add(logger.get());
     recovery_queue.set_logger(logger.get());
     stray_manager.set_logger(logger.get());

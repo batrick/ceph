@@ -275,7 +275,6 @@ class PerfCountersBuilder
 public:
   PerfCountersBuilder(CephContext *cct, const std::string &name,
 		    int first, int last);
-  ~PerfCountersBuilder();
 
   // prio values: higher is better, and higher values get included in
   // 'ceph daemonperf' (and similar) results.
@@ -313,7 +312,7 @@ public:
     const char* nick = NULL,
     int prio=0);
 
-  PerfCounters* create_perf_counters();
+  std::unique_ptr<PerfCounters> create_perf_counters();
 private:
   PerfCountersBuilder(const PerfCountersBuilder &rhs);
   PerfCountersBuilder& operator=(const PerfCountersBuilder &rhs);
@@ -321,7 +320,7 @@ private:
                 const char *description, const char *nick, int prio, int ty,
                 unique_ptr<PerfHistogram<>> histogram = nullptr);
 
-  PerfCounters *m_perf_counters;
+  std::unique_ptr<PerfCounters> m_perf_counters;
 };
 
 #endif

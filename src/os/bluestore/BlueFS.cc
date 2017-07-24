@@ -96,7 +96,7 @@ void BlueFS::_init_logger()
   b.add_u64_counter(l_bluefs_bytes_written_sst, "bytes_written_sst",
 		    "Bytes written to SSTs", "sst",
 		    PerfCountersBuilder::PRIO_CRITICAL);
-  logger = b.create_perf_counters();
+  logger = b.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(logger);
 }
 

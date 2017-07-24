@@ -3901,7 +3901,7 @@ void BlueStore::_init_logger()
   b.add_u64_counter(l_bluestore_gc_merged, "bluestore_gc_merged",
 		    "Sum for extents that have been merged due to garbage "
 		    "collection");
-  logger = b.create_perf_counters();
+  logger = b.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(logger);
 }
 

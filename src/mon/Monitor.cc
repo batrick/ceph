@@ -568,7 +568,7 @@ int Monitor::preinit()
     pcb.add_u64_counter(l_mon_election_call, "election_call", "Elections started");
     pcb.add_u64_counter(l_mon_election_win, "election_win", "Elections won");
     pcb.add_u64_counter(l_mon_election_lose, "election_lose", "Elections lost");
-    logger = pcb.create_perf_counters();
+    logger = pcb.create_perf_counters().release();
     cct->get_perfcounters_collection()->add(logger);
   }
 
@@ -598,7 +598,7 @@ int Monitor::preinit()
     pcb.add_u64(l_cluster_num_mds_in, "num_mds_in", "MDS in state \"in\" (they are in cluster)");
     pcb.add_u64(l_cluster_num_mds_failed, "num_mds_failed", "Failed MDS");
     pcb.add_u64(l_cluster_mds_epoch, "mds_epoch", "Current epoch of MDS map");
-    cluster_logger = pcb.create_perf_counters();
+    cluster_logger = pcb.create_perf_counters().release();
   }
 
   paxos->init_logger();

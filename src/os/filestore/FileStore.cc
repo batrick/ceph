@@ -631,7 +631,7 @@ FileStore::FileStore(CephContext* cct, const std::string &base,
   plb.add_time_avg(l_filestore_queue_transaction_latency_avg, "queue_transaction_latency_avg", "Store operation queue latency");
   plb.add_time(l_filestore_sync_pause_max_lat, "sync_pause_max_latency", "Max latency of op_wq pause before syncfs");
 
-  logger = plb.create_perf_counters();
+  logger = plb.create_perf_counters().release();
 
   cct->get_perfcounters_collection()->add(logger);
   cct->_conf->add_observer(this);

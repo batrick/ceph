@@ -678,7 +678,7 @@ void ObjectCacher::perf_start()
   plb.add_time(l_objectcacher_write_time_blocked, "write_time_blocked",
 	       "Time spent blocking a write due to dirty limits");
 
-  perfcounter = plb.create_perf_counters();
+  perfcounter = plb.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(perfcounter);
 }
 

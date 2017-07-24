@@ -647,7 +647,7 @@ DPDKQueuePair::DPDKQueuePair(CephContext *c, EventCenter *cen, DPDKDevice* dev, 
   plb.add_u64_counter(l_dpdk_qp_tx_linearize_ops, "dpdk_send_linearize_ops", "DPDK send linearize operations");
   plb.add_u64_counter(l_dpdk_qp_tx_queue_length, "dpdk_send_queue_length", "DPDK send queue length");
 
-  perf_logger = plb.create_perf_counters();
+  perf_logger = plb.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(perf_logger);
 
   if (!_qid)

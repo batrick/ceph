@@ -3175,7 +3175,7 @@ void OSD::create_logger()
   osd_plb.add_u64_counter(
     l_osd_pg_biginfo, "osd_pg_biginfo", "PG updated its biginfo attr");
 
-  logger = osd_plb.create_perf_counters();
+  logger = osd_plb.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(logger);
 }
 
@@ -3217,7 +3217,7 @@ void OSD::create_recoverystate_perf()
   rs_perf.add_time_avg(rs_waitupthru_latency, "waitupthru_latency", "Waitupthru recovery state latency");
   rs_perf.add_time_avg(rs_notrecovering_latency, "notrecovering_latency", "Notrecovering recovery state latency");
 
-  recoverystate_perf = rs_perf.create_perf_counters();
+  recoverystate_perf = rs_perf.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(recoverystate_perf);
 }
 

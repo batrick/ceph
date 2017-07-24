@@ -125,7 +125,7 @@ int LevelDBStore::do_open(ostream &out, bool create_if_missing)
   plb.add_u64_counter(l_leveldb_compact_range, "leveldb_compact_range", "Compactions by range");
   plb.add_u64_counter(l_leveldb_compact_queue_merge, "leveldb_compact_queue_merge", "Mergings of ranges in compaction queue");
   plb.add_u64(l_leveldb_compact_queue_len, "leveldb_compact_queue_len", "Length of compaction queue");
-  logger = plb.create_perf_counters();
+  logger = plb.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(logger);
 
   if (g_conf->leveldb_compact_on_mount) {

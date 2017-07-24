@@ -475,13 +475,6 @@ PerfCountersBuilder::PerfCountersBuilder(CephContext *cct, const std::string &na
 {
 }
 
-PerfCountersBuilder::~PerfCountersBuilder()
-{
-  if (m_perf_counters)
-    delete m_perf_counters;
-  m_perf_counters = NULL;
-}
-
 void PerfCountersBuilder::add_u64_counter(
   int idx, const char *name,
   const char *description, const char *nick, int prio)
@@ -554,7 +547,7 @@ void PerfCountersBuilder::add_impl(
   data.histogram = std::move(histogram);
 }
 
-PerfCounters *PerfCountersBuilder::create_perf_counters()
+std::unique_ptr<PerfCounters> PerfCountersBuilder::create_perf_counters()
 {
   PerfCounters::perf_counter_data_vec_t::const_iterator d = m_perf_counters->m_data.begin();
   PerfCounters::perf_counter_data_vec_t::const_iterator d_end = m_perf_counters->m_data.end();
@@ -563,8 +556,6 @@ PerfCounters *PerfCountersBuilder::create_perf_counters()
     assert(d->type & (PERFCOUNTER_U64 | PERFCOUNTER_TIME));
   }
 
-  PerfCounters *ret = m_perf_counters;
-  m_perf_counters = NULL;
-  return ret;
+  auto p = std::move(m_perf_counters);
+  return p;
 }
-

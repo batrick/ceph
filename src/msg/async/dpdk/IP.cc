@@ -96,7 +96,7 @@ ipv4::ipv4(CephContext *c, EventCenter *cen, interface* netif)
 {
   PerfCountersBuilder plb(cct, "ipv4", l_dpdk_qp_first, l_dpdk_qp_last);
   plb.add_u64_counter(l_dpdk_total_linearize_operations, "dpdk_ip_linearize_operations", "DPDK IP Packet linearization operations");
-  perf_logger = plb.create_perf_counters();
+  perf_logger = plb.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(perf_logger);
   frag_handler = new C_handle_frag_timeout(this);
 }

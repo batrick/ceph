@@ -365,7 +365,7 @@ void Objecter::init()
     pcb.add_u64_counter(l_osdc_osdop_omap_del, "omap_del",
 			"OSD OMAP delete operations");
 
-    logger = pcb.create_perf_counters();
+    logger = pcb.create_perf_counters().release();
     cct->get_perfcounters_collection()->add(logger);
   }
 

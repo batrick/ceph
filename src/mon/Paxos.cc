@@ -119,7 +119,7 @@ void Paxos::init_logger()
   pcb.add_u64_avg(l_paxos_share_state_bytes, "share_state_bytes", "Data in shared state");
   pcb.add_u64_counter(l_paxos_new_pn, "new_pn", "New proposal number queries");
   pcb.add_time_avg(l_paxos_new_pn_latency, "new_pn_latency", "New proposal number getting latency");
-  logger = pcb.create_perf_counters();
+  logger = pcb.create_perf_counters().release();
   g_ceph_context->get_perfcounters_collection()->add(logger);
 }
 

@@ -57,7 +57,7 @@ Throttle::Throttle(CephContext *cct, const std::string& n, int64_t m, bool _use_
     b.add_u64_counter(l_throttle_put_sum, "put_sum", "Put data");
     b.add_time_avg(l_throttle_wait, "wait", "Waiting latency");
 
-    logger = b.create_perf_counters();
+    logger = b.create_perf_counters().release();
     cct->get_perfcounters_collection()->add(logger);
     logger->set(l_throttle_max, max);
   }
@@ -285,7 +285,7 @@ BackoffThrottle::BackoffThrottle(CephContext *cct, const std::string& n, unsigne
     b.add_u64_counter(l_backoff_throttle_put_sum, "put_sum", "Put data");
     b.add_time_avg(l_backoff_throttle_wait, "wait", "Waiting latency");
 
-    logger = b.create_perf_counters();
+    logger = b.create_perf_counters().release();
     cct->get_perfcounters_collection()->add(logger);
     logger->set(l_backoff_throttle_max, max);
   }

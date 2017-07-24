@@ -2570,7 +2570,7 @@ void MDSRank::create_logger()
     mds_plb.add_u64_counter(
       l_mds_imported_inodes, "imported_inodes", "Imported inodes", "imi",
       PerfCountersBuilder::PRIO_INTERESTING);
-    logger = mds_plb.create_perf_counters();
+    logger = mds_plb.create_perf_counters().release();
     g_ceph_context->get_perfcounters_collection()->add(logger);
   }
 
@@ -2591,7 +2591,7 @@ void MDSRank::create_logger()
     mdm_plb.add_u64(l_mdm_rss, "rss", "RSS");
     mdm_plb.add_u64(l_mdm_heap, "heap", "Heap size");
     mdm_plb.add_u64(l_mdm_buf, "buf", "Buffer size");
-    mlogger = mdm_plb.create_perf_counters();
+    mlogger = mdm_plb.create_perf_counters().release();
     g_ceph_context->get_perfcounters_collection()->add(mlogger);
   }
 

@@ -77,7 +77,7 @@ void MDLog::create_logger()
   plb.add_u64_counter(l_mdl_replayed, "replayed", "Events replayed");
 
   // logger
-  logger = plb.create_perf_counters();
+  logger = plb.create_perf_counters().release();
   g_ceph_context->get_perfcounters_collection()->add(logger);
 }
 

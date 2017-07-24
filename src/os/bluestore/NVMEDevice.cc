@@ -152,7 +152,7 @@ class SharedDriverQueueData {
     b.add_time_avg(l_bluestore_nvmedevice_read_queue_lat, "read_queue_lat", "Average queue read request latency");
     b.add_time_avg(l_bluestore_nvmedevice_flush_queue_lat, "flush_queue_lat", "Average queue flush request latency");
     b.add_u64_counter(l_bluestore_nvmedevice_buffer_alloc_failed, "buffer_alloc_failed", "Alloc data buffer failed count");
-    logger = b.create_perf_counters();
+    logger = b.create_perf_counters().release();
     g_ceph_context->get_perfcounters_collection()->add(logger);
    }
 

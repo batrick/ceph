@@ -239,7 +239,7 @@ class Worker {
     plb.add_time(l_msgr_running_recv_time, "msgr_running_recv_time", "The total time of message receiving");
     plb.add_time(l_msgr_running_fast_dispatch_time, "msgr_running_fast_dispatch_time", "The total time of fast dispatch");
 
-    perf_logger = plb.create_perf_counters();
+    perf_logger = plb.create_perf_counters().release();
     cct->get_perfcounters_collection()->add(perf_logger);
   }
   virtual ~Worker() {

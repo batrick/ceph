@@ -798,7 +798,7 @@ void CephContext::enable_perf_counter()
   PerfCountersBuilder plb(this, "cct", l_cct_first, l_cct_last);
   plb.add_u64(l_cct_total_workers, "total_workers", "Total workers");
   plb.add_u64(l_cct_unhealthy_workers, "unhealthy_workers", "Unhealthy workers");
-  PerfCounters *perf_tmp = plb.create_perf_counters();
+  PerfCounters *perf_tmp = plb.create_perf_counters().release();
 
   ceph_spin_lock(&_cct_perf_lock);
   assert(_cct_perf == NULL);

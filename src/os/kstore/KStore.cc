@@ -662,7 +662,7 @@ void KStore::_init_logger()
   b.add_time_avg(l_kstore_state_kv_done_lat, "state_kv_done_lat", "Average kv_done state latency");
   b.add_time_avg(l_kstore_state_finishing_lat, "state_finishing_lat", "Average finishing state latency");
   b.add_time_avg(l_kstore_state_done_lat, "state_done_lat", "Average done state latency");
-  logger = b.create_perf_counters();
+  logger = b.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(logger);
 }
 

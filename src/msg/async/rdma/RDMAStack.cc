@@ -79,7 +79,7 @@ RDMADispatcher::RDMADispatcher(CephContext* c, RDMAStack* s)
   plb.add_u64_counter(l_msgr_rdma_created_queue_pair, "created_queue_pair", "Active queue pair number");
   plb.add_u64_counter(l_msgr_rdma_active_queue_pair, "active_queue_pair", "Created queue pair number");
 
-  perf_logger = plb.create_perf_counters();
+  perf_logger = plb.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(perf_logger);
 }
 
@@ -419,7 +419,7 @@ RDMAWorker::RDMAWorker(CephContext *c, unsigned i)
   plb.add_u64_counter(l_msgr_rdma_rx_bytes, "rx_bytes", "The bytes of rx chunks transmitted");
   plb.add_u64_counter(l_msgr_rdma_pending_sent_conns, "pending_sent_conns", "The count of pending sent conns");
 
-  perf_logger = plb.create_perf_counters();
+  perf_logger = plb.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(perf_logger);
 }
 

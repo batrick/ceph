@@ -103,7 +103,7 @@ void PurgeQueue::create_logger()
   pcb.add_u64_counter(l_pq_executed, "pq_executed", "Purge queue tasks executed", "purg",
       PerfCountersBuilder::PRIO_INTERESTING);
 
-  logger.reset(pcb.create_perf_counters());
+  logger = pcb.create_perf_counters();
   g_ceph_context->get_perfcounters_collection()->add(logger.get());
 }
 

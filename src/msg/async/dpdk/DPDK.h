@@ -843,7 +843,7 @@ class DPDKDevice {
     plb.add_u64_counter(l_dpdk_dev_rx_dropped_errors, "dpdk_device_receive_dropped_errors", "DPDK received dropped errors");
     plb.add_u64_counter(l_dpdk_dev_rx_nombuf_errors, "dpdk_device_receive_nombuf_errors", "DPDK received RX mbuf allocation errors");
 
-    perf_logger = plb.create_perf_counters();
+    perf_logger = plb.create_perf_counters().release();
     cct->get_perfcounters_collection()->add(perf_logger);
   }
 

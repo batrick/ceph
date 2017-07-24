@@ -65,7 +65,7 @@ int KineticStore::do_open(ostream &out, bool create_if_missing)
   PerfCountersBuilder plb(g_ceph_context, "kinetic", l_kinetic_first, l_kinetic_last);
   plb.add_u64_counter(l_kinetic_gets, "kinetic_get", "Gets");
   plb.add_u64_counter(l_kinetic_txns, "kinetic_transaction", "Transactions");
-  logger = plb.create_perf_counters();
+  logger = plb.create_perf_counters().release();
   cct->get_perfcounters_collection()->add(logger);
   return 0;
 }

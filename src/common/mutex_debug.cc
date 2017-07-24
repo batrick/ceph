@@ -41,7 +41,7 @@ mutex_debugging_base::mutex_debugging_base(const std::string &n, bool bt,
 			  l_mutex_first, l_mutex_last);
     b.add_time_avg(l_mutex_wait, "wait",
 		   "Average time of mutex in locked state");
-    logger = b.create_perf_counters();
+    logger = b.create_perf_counters().release();
     cct->get_perfcounters_collection()->add(logger);
     logger->set(l_mutex_wait, 0);
   }
