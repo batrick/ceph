@@ -41,6 +41,7 @@ enum {
 #include "include/types.h"
 #include "include/Context.h"
 
+#include "common/perf_counters.h"
 #include "common/Thread.h"
 #include "common/Cond.h"
 
@@ -54,8 +55,6 @@ class LogEvent;
 class MDSRank;
 class LogSegment;
 class ESubtreeMap;
-
-class PerfCounters;
 
 #include <map>
 using std::map;
@@ -81,7 +80,7 @@ protected:
   inodeno_t ino;
   Journaler *journaler;
 
-  PerfCounters *logger;
+  std::unique_ptr<PerfCounters> logger;
 
 
   // -- replay --
@@ -198,7 +197,6 @@ public:
                       capped(false),
                       safe_pos(0),
                       journaler(0),
-                      logger(0),
                       replay_thread(this),
                       already_replayed(false),
                       recovery_thread(this),

@@ -62,7 +62,7 @@ MDSRank::MDSRank(
     balancer(NULL), scrubstack(NULL),
     damage_table(whoami_),
     inotable(NULL), snapserver(NULL), snapclient(NULL),
-    sessionmap(this), logger(NULL), mlogger(NULL),
+    sessionmap(this),
     op_tracker(g_ceph_context, g_conf->mds_enable_op_tracker,
                g_conf->osd_num_op_tracker_shard),
     last_state(MDSMap::STATE_BOOT),
@@ -137,14 +137,10 @@ MDSRank::~MDSRank()
   if (locker) { delete locker; locker = 0; }
 
   if (logger) {
-    g_ceph_context->get_perfcounters_collection()->remove(logger);
-    delete logger;
-    logger = 0;
+    g_ceph_context->get_perfcounters_collection()->remove(logger.get());
   }
   if (mlogger) {
-    g_ceph_context->get_perfcounters_collection()->remove(mlogger);
-    delete mlogger;
-    mlogger = 0;
+    g_ceph_context->get_perfcounters_collection()->remove(mlogger.get());
   }
 
   delete finisher;
@@ -2570,8 +2566,8 @@ void MDSRank::create_logger()
     mds_plb.add_u64_counter(
       l_mds_imported_inodes, "imported_inodes", "Imported inodes", "imi",
       PerfCountersBuilder::PRIO_INTERESTING);
-    logger = mds_plb.create_perf_counters().release();
-    g_ceph_context->get_perfcounters_collection()->add(logger);
+    logger = mds_plb.create_perf_counters();
+    g_ceph_context->get_perfcounters_collection()->add(logger.get());
   }
 
   {
@@ -2591,8 +2587,8 @@ void MDSRank::create_logger()
     mdm_plb.add_u64(l_mdm_rss, "rss", "RSS");
     mdm_plb.add_u64(l_mdm_heap, "heap", "Heap size");
     mdm_plb.add_u64(l_mdm_buf, "buf", "Buffer size");
-    mlogger = mdm_plb.create_perf_counters().release();
-    g_ceph_context->get_perfcounters_collection()->add(mlogger);
+    mlogger = mdm_plb.create_perf_counters();
+    g_ceph_context->get_perfcounters_collection()->add(mlogger.get());
   }
 
   mdlog->create_logger();

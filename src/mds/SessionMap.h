@@ -388,7 +388,7 @@ class SessionMapStore {
 protected:
   version_t version;
   ceph::unordered_map<entity_name_t, Session*> session_map;
-  PerfCounters *logger;
+  std::unique_ptr<PerfCounters> logger;
 public:
   mds_rank_t rank;
 
@@ -430,7 +430,7 @@ public:
     session_map.clear();
   }
 
-  SessionMapStore() : version(0), logger(nullptr), rank(MDS_RANK_NONE) {}
+  SessionMapStore() : version(0), rank(MDS_RANK_NONE) {}
   virtual ~SessionMapStore() {};
 };
 
@@ -456,10 +456,8 @@ public:
       delete p.second;
 
     if (logger) {
-      g_ceph_context->get_perfcounters_collection()->remove(logger);
+      g_ceph_context->get_perfcounters_collection()->remove(logger.get());
     }
-
-    delete logger;
   }
 
   void register_perfcounters();

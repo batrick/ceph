@@ -52,8 +52,8 @@ void SessionMap::register_perfcounters()
       "Sessions added");
   plb.add_u64_counter(l_mdssm_session_remove, "session_remove",
       "Sessions removed");
-  logger = plb.create_perf_counters().release();
-  g_ceph_context->get_perfcounters_collection()->add(logger);
+  logger = plb.create_perf_counters();
+  g_ceph_context->get_perfcounters_collection()->add(logger.get());
 }
 
 void SessionMap::dump()

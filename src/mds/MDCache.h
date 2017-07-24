@@ -21,6 +21,8 @@
 #include "include/filepath.h"
 #include "include/elist.h"
 
+#include "common/perf_counters.h"
+
 #include "osdc/Filer.h"
 #include "CInode.h"
 #include "CDentry.h"

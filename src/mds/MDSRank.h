@@ -19,6 +19,7 @@
 #include "common/LogClient.h"
 #include "common/Timer.h"
 #include "common/TrackedOp.h"
+#include "common/perf_counters.h"
 
 #include "messages/MCommand.h"
 
@@ -31,10 +32,6 @@
 #include "MDLog.h"
 #include "PurgeQueue.h"
 #include "osdc/Journaler.h"
-
-// Full .h import instead of forward declaration for PerfCounter, for the
-// benefit of those including this header and using MDSRank::logger
-#include "common/perf_counters.h"
 
 enum {
   l_mds_first = 2000,
@@ -174,7 +171,7 @@ class MDSRank {
       return sessionmap.get_session(entity_name_t::CLIENT(client.v));
     }
 
-    PerfCounters       *logger, *mlogger;
+    std::unique_ptr<PerfCounters> logger, mlogger;
     OpTracker    op_tracker;
 
     // The last different state I held before current

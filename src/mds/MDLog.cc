@@ -41,9 +41,7 @@ MDLog::~MDLog()
 {
   if (journaler) { delete journaler; journaler = 0; }
   if (logger) {
-    g_ceph_context->get_perfcounters_collection()->remove(logger);
-    delete logger;
-    logger = 0;
+    g_ceph_context->get_perfcounters_collection()->remove(logger.get());
   }
 }
 
@@ -77,8 +75,8 @@ void MDLog::create_logger()
   plb.add_u64_counter(l_mdl_replayed, "replayed", "Events replayed");
 
   // logger
-  logger = plb.create_perf_counters().release();
-  g_ceph_context->get_perfcounters_collection()->add(logger);
+  logger = plb.create_perf_counters();
+  g_ceph_context->get_perfcounters_collection()->add(logger.get());
 }
 
 void MDLog::set_write_iohint(unsigned iohint_flags)
@@ -156,7 +154,7 @@ void MDLog::create(MDSInternalContextBase *c)
   // Instantiate Journaler and start async write to RADOS
   assert(journaler == NULL);
   journaler = new Journaler("mdlog", ino, mds->mdsmap->get_metadata_pool(),
-                            CEPH_FS_ONDISK_MAGIC, mds->objecter, logger,
+                            CEPH_FS_ONDISK_MAGIC, mds->objecter, logger.get(),
                             l_mdl_jlat, mds->finisher);
   assert(journaler->is_readonly());
   journaler->set_write_error_handler(new C_MDL_WriteError(this));
@@ -940,7 +938,7 @@ void MDLog::_recovery_thread(MDSInternalContextBase *completion)
     dout(1) << "Erasing journal " << jp.back << dendl;
     C_SaferCond erase_waiter;
     Journaler back("mdlog", jp.back, mds->mdsmap->get_metadata_pool(),
-        CEPH_FS_ONDISK_MAGIC, mds->objecter, logger, l_mdl_jlat,
+        CEPH_FS_ONDISK_MAGIC, mds->objecter, logger.get(), l_mdl_jlat,
         mds->finisher);
 
     // Read all about this journal (header + extents)
@@ -980,7 +978,7 @@ void MDLog::_recovery_thread(MDSInternalContextBase *completion)
   /* Read the header from the front journal */
   Journaler *front_journal = new Journaler("mdlog", jp.front,
       mds->mdsmap->get_metadata_pool(), CEPH_FS_ONDISK_MAGIC, mds->objecter,
-      logger, l_mdl_jlat, mds->finisher);
+      logger.get(), l_mdl_jlat, mds->finisher);
 
   // Assign to ::journaler so that we can be aborted by ::shutdown while
   // waiting for journaler recovery
@@ -1066,7 +1064,7 @@ void MDLog::_reformat_journal(JournalPointer const &jp_in, Journaler *old_journa
 
   /* Create the new Journaler file */
   Journaler *new_journal = new Journaler("mdlog", jp.back,
-      mds->mdsmap->get_metadata_pool(), CEPH_FS_ONDISK_MAGIC, mds->objecter, logger, l_mdl_jlat, mds->finisher);
+      mds->mdsmap->get_metadata_pool(), CEPH_FS_ONDISK_MAGIC, mds->objecter, logger.get(), l_mdl_jlat, mds->finisher);
   dout(4) << "Writing new journal header " << jp.back << dendl;
   file_layout_t new_layout = old_journal->get_layout();
   new_journal->set_writeable();

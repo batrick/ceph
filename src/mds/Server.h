@@ -72,7 +72,7 @@ private:
   MDSRank *mds;
   MDCache *mdcache;
   MDLog *mdlog;
-  PerfCounters *logger;
+  std::unique_ptr<PerfCounters> logger;
 
   // OSDMap full status, used to generate ENOSPC on some operations
   bool is_full;
@@ -92,8 +92,7 @@ public:
 
   explicit Server(MDSRank *m);
   ~Server() {
-    g_ceph_context->get_perfcounters_collection()->remove(logger);
-    delete logger;
+    g_ceph_context->get_perfcounters_collection()->remove(logger.get());
     delete reconnect_done;
   }
 
