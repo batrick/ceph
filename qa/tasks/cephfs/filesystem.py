@@ -256,8 +256,8 @@ class MDSCluster(CephCluster):
 
         self._one_or_all(mds_id, _fail_restart)
 
-    def newfs(self, _name, create=True):
-        return Filesystem(self._ctx, name=_name, create)
+    def newfs(self, name, **kwargs):
+        return Filesystem(self._ctx, name=name, **kwargs)
 
     def status(self):
         return FSStatus(self.mon_manager)
