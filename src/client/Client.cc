@@ -2005,11 +2005,11 @@ MetaSession *Client::_open_mds_session(mds_rank_t mds)
   // has previously sent us a REJECT.
   if (rejected_by_mds.count(mds)) {
     if (rejected_by_mds[mds] == session->inst) {
-      ldout(cct, 4) << "_open_mds_session mds." << mds << " skipping "
+      ldout(cct, 7) << "_open_mds_session mds." << mds << " skipping "
                        "because we were rejected" << dendl;
       return session;
     } else {
-      ldout(cct, 4) << "_open_mds_session mds." << mds << " old inst "
+      ldout(cct, 7) << "_open_mds_session mds." << mds << " old inst "
                        "rejected us, trying with new inst" << dendl;
       rejected_by_mds.erase(mds);
     }
@@ -2023,7 +2023,7 @@ MetaSession *Client::_open_mds_session(mds_rank_t mds)
 
 void Client::_close_mds_session(MetaSession *s)
 {
-  ldout(cct, 2) << "_close_mds_session mds." << s->mds_num << " seq " << s->seq << dendl;
+  ldout(cct, 7) << "_close_mds_session mds." << s->mds_num << " seq " << s->seq << dendl;
   s->state = MetaSession::STATE_CLOSING;
   s->con->send_message(new MClientSession(CEPH_SESSION_REQUEST_CLOSE, s->seq));
 }
@@ -2119,7 +2119,7 @@ bool Client::_any_stale_sessions() const
 
 void Client::_kick_stale_sessions()
 {
-  ldout(cct, 1) << "kick_stale_sessions" << dendl;
+  ldout(cct, 7) << "kick_stale_sessions" << dendl;
 
   for (map<mds_rank_t,MetaSession*>::iterator p = mds_sessions.begin();
        p != mds_sessions.end(); ) {
@@ -2290,7 +2290,7 @@ void Client::handle_client_reply(MClientReply *reply)
 
   if (request->got_unsafe && !is_safe) {
     //duplicate response
-    ldout(cct, 0) << "got a duplicate reply on tid " << tid << " from mds "
+    ldout(cct, 7) << "got a duplicate reply on tid " << tid << " from mds "
 	    << mds_num << " safe:" << is_safe << dendl;
     reply->put();
     return;
@@ -2598,7 +2598,7 @@ void Client::handle_mds_map(MMDSMap* m)
     return;
   }  
 
-  ldout(cct, 1) << "handle_mds_map epoch " << m->get_epoch() << dendl;
+  ldout(cct, 5) << "handle_mds_map epoch " << m->get_epoch() << dendl;
 
   std::unique_ptr<MDSMap> oldmap(new MDSMap);
   oldmap.swap(mdsmap);
