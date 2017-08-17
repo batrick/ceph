@@ -40,8 +40,6 @@
 
 #include "messages/MMDSSlaveRequest.h"
 
-#include <errno.h>
-
 #include "common/config.h"
 
 

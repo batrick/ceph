@@ -12,7 +12,6 @@
  * 
  */
 
-#include <errno.h>
 #include <fstream>
 #include <iostream>
 #include <sstream>

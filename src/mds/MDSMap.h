@@ -16,8 +16,6 @@
 #ifndef CEPH_MDSMAP_H
 #define CEPH_MDSMAP_H
 
-#include <errno.h>
-
 #include "include/types.h"
 #include "common/Clock.h"
 #include "msg/Message.h"

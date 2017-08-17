@@ -57,8 +57,6 @@
 #include "include/compat.h"
 #include "osd/OSDMap.h"
 
-#include <errno.h>
-
 #include <list>
 #include <iostream>
 using namespace std;

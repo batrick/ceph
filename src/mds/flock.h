@@ -3,8 +3,6 @@
 #ifndef CEPH_MDS_FLOCK_H
 #define CEPH_MDS_FLOCK_H
 
-#include <errno.h>
-
 #include "common/debug.h"
 #include "mdstypes.h"
 

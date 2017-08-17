@@ -15,8 +15,6 @@
 #ifndef CEPH_MDS_EMETABLOB_H
 #define CEPH_MDS_EMETABLOB_H
 
-#include <stdlib.h>
-
 #include "../CInode.h"
 #include "../CDir.h"
 #include "../CDentry.h"
@@ -83,7 +81,7 @@ public:
 	    version_t v, const inode_t& i, const fragtree_t &dft, 
 	    const map<string,bufferptr> &xa, const string& sym,
 	    snapid_t os, const bufferlist &sbl, __u8 st,
-	    const old_inodes_t *oi = NULL) :
+	    const old_inodes_t *oi = nullptr) :
       dn(d), dnfirst(df), dnlast(dl), dnv(v), inode(i), xattrs(xa),
       oldest_snap(os), state(st)
     {
@@ -582,7 +580,7 @@ private:
   }
 
   void update_segment(LogSegment *ls);
-  void replay(MDSRank *mds, LogSegment *ls, MDSlaveUpdate *su=NULL);
+  void replay(MDSRank *mds, LogSegment *ls, MDSlaveUpdate *su=nullptr);
 };
 WRITE_CLASS_ENCODER_FEATURES(EMetaBlob)
 WRITE_CLASS_ENCODER_FEATURES(EMetaBlob::fullbit)
