@@ -12,8 +12,6 @@
  *
  */
 
-#include <unistd.h>
-
 #include "include/compat.h"
 #include "include/types.h"
 #include "include/str_list.h"

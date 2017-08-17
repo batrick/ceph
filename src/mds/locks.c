@@ -6,7 +6,6 @@ typedef char bool;
 #include "include/int_types.h"
 
 #include <string.h>
-#include <fcntl.h>
 
 #include "include/ceph_fs.h"
 #include "locks.h"
