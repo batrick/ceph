@@ -195,9 +195,11 @@ class FsNewHandler : public FileSystemCommandHandler
       return -EAGAIN;
     }
     mon->osdmon()->do_application_enable(data,
-					 pg_pool_t::APPLICATION_NAME_CEPHFS);
+					 pg_pool_t::APPLICATION_NAME_CEPHFS,
+					 "data", fs_name);
     mon->osdmon()->do_application_enable(metadata,
-					 pg_pool_t::APPLICATION_NAME_CEPHFS);
+					 pg_pool_t::APPLICATION_NAME_CEPHFS,
+					 "metadata", fs_name);
     mon->osdmon()->propose_pending();
 
     // All checks passed, go ahead and create.
