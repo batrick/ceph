@@ -25,6 +25,11 @@ overrides:
         debug client: 20
         debug objecter: 20
         debug objectcacher: 20
+    ceph-deploy:
+      fs: null
+      bluestore: null
+      conf:
+        osd: null
 
 tasks:
   - cephfs_test_runner:
