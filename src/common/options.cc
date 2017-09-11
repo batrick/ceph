@@ -5309,8 +5309,20 @@ std::vector<Option> get_mds_options() {
     .set_description(""),
 
     Option("mds_cache_size", Option::TYPE_INT, Option::LEVEL_ADVANCED)
-    .set_default(100000)
-    .set_description(""),
+    .set_default(0)
+    .set_description("maximum number of inodes in MDS cache (<=0 is unlimited)"),
+
+    Option("mds_cache_memory_limit", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(1*(1LL<<30))
+    .set_description("maximum memory usage of MDS cache"),
+
+    Option("mds_cache_reservation", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
+    .set_default(.05)
+    .set_description("amount of memory to reserve"),
+
+    Option("mds_health_cache_threshold", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
+    .set_default(1.5)
+    .set_description("threshold for cache size to generate health warning"),
 
     Option("mds_cache_mid", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(.7)
@@ -5382,10 +5394,6 @@ std::vector<Option> get_mds_options() {
 
     Option("mds_health_summarize_threshold", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(10)
-    .set_description(""),
-
-    Option("mds_health_cache_threshold", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
-    .set_default(1.5)
     .set_description(""),
 
     Option("mds_reconnect_timeout", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
