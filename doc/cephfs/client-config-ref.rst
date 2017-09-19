@@ -212,3 +212,15 @@ Developer Options
 :Type: String
 :Default: ``""`` (disabled)
 
+``min_caps_per_client``
+
+:Description: Set the minimum cache number of client
+:Type: Integer
+:Default: ``100``
+
+``max_ratio_caps_per_client``
+
+:Description: Set the maximum cache number ratio of client
+:Type: Float
+:Default: ``0.8``
+
