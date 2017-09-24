@@ -876,6 +876,14 @@ target_link_libraries(ceph-mds mds ${CMAKE_DL_LIBS} global-static ceph-common
   Boost::thread)
 install(TARGETS ceph-mds DESTINATION bin)
 
+add_subdirectory(table)
+set(ceph_table_srcs
+  ceph_table.cc)
+add_executable(ceph-table ${ceph_table_srcs})
+target_link_libraries(ceph-table table ${CMAKE_DL_LIBS} global-static common
+  Boost::thread)
+install(TARGETS ceph-table DESTINATION bin)
+
 add_subdirectory(erasure-code)
 
 # Support/Tools
