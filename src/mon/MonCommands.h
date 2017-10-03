@@ -291,7 +291,7 @@ COMMAND("fs dump "
 COMMAND_WITH_FLAG("mds getmap " \
 	"name=epoch,type=CephInt,req=false,range=0", \
 	"get MDS map, optionally from epoch", "mds", "r", "cli,rest", FLAG(DEPRECATED))
-COMMAND("mds metadata name=who,type=CephString,req=false",
+COMMAND("mds metadata name=role,type=CephString,req=false",
 	"fetch metadata for mds <who>",
 	"mds", "r", "cli,rest")
 COMMAND("mds count-metadata name=property,type=CephString",
@@ -301,14 +301,14 @@ COMMAND("mds versions",
 	"check running versions of MDSs",
 	"mds", "r", "cli,rest")
 COMMAND_WITH_FLAG("mds tell " \
-	"name=who,type=CephString " \
+	"name=role,type=CephString " \
 	"name=args,type=CephString,n=N", \
 	"send command to particular mds", "mds", "rw", "cli,rest", FLAG(OBSOLETE))
 COMMAND("mds compat show", "show mds compatibility settings", \
 	"mds", "r", "cli,rest")
-COMMAND_WITH_FLAG("mds stop name=who,type=CephString", "stop mds", \
+COMMAND_WITH_FLAG("mds stop name=role,type=CephString", "stop mds", \
 	"mds", "rw", "cli,rest", FLAG(DEPRECATED))
-COMMAND("mds deactivate name=who,type=CephString",
+COMMAND("mds deactivate name=role,type=CephString",
         "clean up specified MDS rank (use with `set max_mds` to shrink cluster)", \
 	"mds", "rw", "cli,rest")
 COMMAND_WITH_FLAG("mds set_max_mds " \
@@ -327,7 +327,7 @@ COMMAND("mds set_state " \
 	"name=gid,type=CephInt,range=0 " \
 	"name=state,type=CephInt,range=0|20", \
 	"set mds state of <gid> to <numeric-state>", "mds", "rw", "cli,rest")
-COMMAND("mds fail name=who,type=CephString", \
+COMMAND("mds fail name=role,type=CephString", \
 	"Mark MDS failed: trigger a failover if a standby is available",
         "mds", "rw", "cli,rest")
 COMMAND("mds repaired name=rank,type=CephString", \
@@ -335,7 +335,7 @@ COMMAND("mds repaired name=rank,type=CephString", \
 COMMAND("mds rm " \
 	"name=gid,type=CephInt,range=0", \
 	"remove nonactive mds", "mds", "rw", "cli,rest")
-COMMAND("mds rmfailed name=who,type=CephString name=confirm,type=CephString,req=false", \
+COMMAND("mds rmfailed name=role,type=CephString name=confirm,type=CephString,req=false", \
 	"remove failed mds", "mds", "rw", "cli,rest")
 COMMAND_WITH_FLAG("mds cluster_down", "take MDS cluster down", "mds", "rw", "cli,rest", FLAG(DEPRECATED))
 COMMAND_WITH_FLAG("mds cluster_up", "bring MDS cluster up", "mds", "rw", "cli,rest", FLAG(DEPRECATED))
