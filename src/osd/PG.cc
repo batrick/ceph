@@ -1862,7 +1862,9 @@ bool PG::op_has_sufficient_caps(OpRequestRef& op)
     req->get_hobj().get_key();
 
   bool cap = caps.is_capable(pool.name, req->get_hobj().nspace,
-                             pool.auid, key,
+                             pool.auid,
+			     pool.info.application_metadata,
+			     key,
 			     op->need_read_cap(),
 			     op->need_write_cap(),
 			     op->classes());
@@ -1872,6 +1874,7 @@ bool PG::op_has_sufficient_caps(OpRequestRef& op)
            << " pool=" << pool.id << " (" << pool.name
            << " " << req->get_hobj().nspace
 	   << ") owner=" << pool.auid
+	   << " pool_app_metadata=" << pool.info.application_metadata
 	   << " need_read_cap=" << op->need_read_cap()
 	   << " need_write_cap=" << op->need_write_cap()
 	   << " classes=" << op->classes()
