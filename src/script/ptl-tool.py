@@ -133,13 +133,12 @@ def build_branch(args):
         log.info("Detaching HEAD onto base: {}".format(base))
         try:
             base_path = args.base_path + base
-            base = filter(lambda r: r.path == base_path, G.refs)[0]
         except IndexError:
             log.error("Branch " + base + " does not exist!")
             sys.exit(1)
 
         # So we know that we're not on an old test branch, detach HEAD onto ref:
-        base.checkout()
+        git.Git().checkout(base)
 
     for pr in args.prs:
         log.info("Merging PR #{pr}".format(pr=pr))
