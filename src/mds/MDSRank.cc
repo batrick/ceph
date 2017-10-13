@@ -34,6 +34,7 @@
 #include "common/HeartbeatMap.h"
 #include "ScrubStack.h"
 
+#include <unistd.h>
 
 #include "MDSRank.h"
 
@@ -1383,6 +1384,10 @@ void MDSRank::reconnect_start()
 void MDSRank::reconnect_done()
 {
   dout(1) << "reconnect_done" << dendl;
+  uint64_t delay = g_conf->get_val<uint64_t>("mds_slow_reconnect");
+  if (delay > 0) {
+    usleep(delay);
+  }
   request_state(MDSMap::STATE_REJOIN);    // move to rejoin state
 }
 
