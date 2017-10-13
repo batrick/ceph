@@ -5775,6 +5775,14 @@ std::vector<Option> get_mds_options() {
     .set_default(false)
     .set_description(""),
 
+    Option("mds_slow_reconnect", Option::TYPE_UINT, Option::LEVEL_DEV)
+    .set_default(0)
+    .set_description("delay reconnect state exit by number of microseconds"),
+
+    Option("mds_slow_rejoin", Option::TYPE_UINT, Option::LEVEL_DEV)
+    .set_default(0)
+    .set_description("delay rejoin state exit by number of microseconds"),
+
     Option("mds_enable_op_tracker", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(true)
     .set_description(""),

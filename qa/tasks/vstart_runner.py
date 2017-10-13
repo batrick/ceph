@@ -647,6 +647,8 @@ class LocalCephCluster(CephCluster):
         for subsys, kvs in self._conf.items():
             existing_str += "\n[{0}]\n".format(subsys)
             for key, val in kvs.items():
+                existing_str += "{0} = {1}\n".format(key, val)
+                break
                 # Comment out existing instance if it exists
                 log.info("Searching for existing instance {0}/{1}".format(
                     key, subsys
@@ -665,11 +667,11 @@ class LocalCephCluster(CephCluster):
                         ))
                         existing_str = existing_str[0:start] + "#" + existing_str[start:]
 
-                existing_str += "{0} = {1}\n".format(key, val)
 
         open(conf_path, "w").write(existing_str)
 
     def set_ceph_conf(self, subsys, key, value):
+        log.info("writing {} {} {}".format(subsys, key, value))
         self._conf[subsys][key] = value
         self._write_conf()
 

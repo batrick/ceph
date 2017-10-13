@@ -133,8 +133,30 @@ class TestFailover(CephFSTestCase):
         self.fs.mon_manager.raw_cluster_cmd('fs', 'set', self.fs.name, 'standby_count_wanted', '0')
         self.wait_for_health_clear(timeout=30)
 
+    def test_dual_failover(self):
+        """
+        That two actives which fail and come back will resolve properly when one is delayed in reconnect.
+        """
 
+        # Need all my standbys up as well as the active daemons
+        self.fs.set_max_mds(2)
+        self.wait_for_daemon_start()
 
+        # Stop standbys
+        standbys = self.mds_cluster.get_standby_daemons()
+        for s in standbys:
+            self.fs.mds_stop(s)
+
+        # Give one active a all a different value to wait in resolve
+        actives = self.fs.get_active_names()
+        self.set_conf("mds.{}".format(actives[0]), "mds_slow_reconnect", "10000000")
+        self.set_conf("mds.{}".format(actives[1]), "mds_slow_reconnect", "5000000")
+
+        # Now restart both:
+        self.fs.mds_restart(actives[0])
+        self.fs.mds_restart(actives[1])
+
+        self.fs.wait_for_daemons(timeout=30)
 
 class TestStandbyReplay(CephFSTestCase):
     MDSS_REQUIRED = 4
