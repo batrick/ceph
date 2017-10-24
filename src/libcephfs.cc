@@ -1790,7 +1790,7 @@ extern "C" uint32_t ceph_get_cap_return_timeout(class ceph_mount_info *cmount)
 {
   if (!cmount->is_mounted())
     return 0;
-  return cmount->get_client()->mdsmap->get_session_timeout().sec();
+  return cmount->get_client()->mdsmap->get_session_autoclose().sec();
 }
 
 extern "C" int ceph_set_deleg_timeout(class ceph_mount_info *cmount, uint32_t timeout)

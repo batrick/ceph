@@ -13090,9 +13090,9 @@ int Client::set_deleg_timeout(uint32_t timeout)
 
   /*
    * The whole point is to prevent blacklisting so we must time out the
-   * delegation before the session timeout kicks in.
+   * delegation before the session autoclose timeout kicks in.
    */
-  if (timeout >= mdsmap->get_session_timeout())
+  if (timeout >= mdsmap->get_session_autoclose())
     return -EINVAL;
 
   deleg_timeout = timeout;
