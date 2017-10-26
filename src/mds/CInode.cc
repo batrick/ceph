@@ -3817,6 +3817,7 @@ void CInode::validate_disk_state(CInode::validated_data *results,
 
     ~ValidationContinuation() override {
       delete shadow_in;
+      in->mdcache->num_shadow_inodes--;
     }
 
     /**
@@ -3984,6 +3985,7 @@ next:
         in->mdcache->create_unlinked_system_inode(shadow_in,
                                                   in->inode.ino,
                                                   in->inode.mode);
+	in->mdcache->num_shadow_inodes++;
         shadow_in->fetch(get_internal_callback(INODE));
         return false;
       } else {
