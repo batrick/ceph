@@ -738,7 +738,7 @@ bool MDSMonitor::prepare_beacon(MonOpRequestRef op)
         info->state_seq = seq;
       });
 
-      if (state == MDSMap::STATE_ACTIVE) {
+      if (info.state != MDSMap::STATE_ACTIVE && state == MDSMap::STATE_ACTIVE) {
         auto fscid = pending_fsmap.mds_roles.at(gid);
         auto fs = pending_fsmap.get_filesystem(fscid);
         mon->clog->info() << info.human_name() << " is now active in "
