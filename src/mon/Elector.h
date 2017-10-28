@@ -122,10 +122,6 @@ class Elector {
    */
   bool     electing_me;
   /**
-   * Holds the time at which we started the election.
-   */
-  utime_t  start_stamp;
-  /**
    * Set containing all those that acked our proposal to become the Leader.
    *
    * If we are acked by everyone in the MonMap, we will declare
