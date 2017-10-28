@@ -455,8 +455,7 @@ int MonClient::authenticate(double timeout)
   if (!_opened())
     _reopen_session();
 
-  utime_t until = ceph_clock_now();
-  until += timeout;
+  auto until = ceph::coarse_mono_clock::now()+timeout;
   if (timeout > 0.0)
     ldout(cct, 10) << "authenticate will time out at " << until << dendl;
   while (!active_con && !authenticate_err) {
@@ -922,9 +921,8 @@ int MonClient::_check_auth_rotating()
 int MonClient::wait_auth_rotating(double timeout)
 {
   Mutex::Locker l(monc_lock);
-  utime_t now = ceph_clock_now();
-  utime_t until = now;
-  until += timeout;
+  auto now = ceph::coarse_mono_clock::now();
+  auto until = now+timeout;
 
   // Must be initialized
   assert(auth != nullptr);
