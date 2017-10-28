@@ -817,7 +817,8 @@ void Paxos::accept_timeout()
 
 struct C_Committed : public Context {
   Paxos *paxos;
-  explicit C_Committed(Paxos *p) : paxos(p) {}
+  ceph::mono_time start;
+  explicit C_Committed(Paxos *p) : paxos(p), start(ceph::coarse_mono_clock::now()) {}
   void finish(int r) override {
     assert(r >= 0);
     Mutex::Locker l(paxos->mon->lock);
@@ -825,7 +826,7 @@ struct C_Committed : public Context {
       paxos->abort_commit();
       return;
     }
-    paxos->commit_finish();
+    paxos->commit_finish(start);
   }
 };
 
@@ -861,7 +862,6 @@ void Paxos::commit_start()
   logger->inc(l_paxos_commit);
   logger->inc(l_paxos_commit_keys, t->get_keys());
   logger->inc(l_paxos_commit_bytes, t->get_bytes());
-  commit_start_stamp = ceph_clock_now();
 
   get_store()->queue_transaction(t, new C_Committed(this));
 
@@ -880,11 +880,11 @@ void Paxos::commit_start()
   }
 }
 
-void Paxos::commit_finish()
+void Paxos::commit_finish(ceph::mono_time start)
 {
   dout(20) << __func__ << " " << (last_committed+1) << dendl;
-  utime_t end = ceph_clock_now();
-  logger->tinc(l_paxos_commit_latency, end - commit_start_stamp);
+  auto end = ceph::coarse_mono_clock::now();
+  logger->tinc(l_paxos_commit_latency, to_timespan(end-start));
 
   assert(g_conf->paxos_kill_at != 8);
 

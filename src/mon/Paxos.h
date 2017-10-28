@@ -872,7 +872,6 @@ private:
    */
 
 
-  utime_t commit_start_stamp;
   friend struct C_Committed;
 
   /**

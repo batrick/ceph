@@ -154,15 +154,16 @@ epoch_t LastEpochClean::get_lower_bound(const OSDMap& latest) const
 
 struct C_UpdateCreatingPGs : public Context {
   OSDMonitor *osdmon;
-  utime_t start;
+  ceph::mono_time start;
   epoch_t epoch;
   C_UpdateCreatingPGs(OSDMonitor *osdmon, epoch_t e) :
-    osdmon(osdmon), start(ceph_clock_now()), epoch(e) {}
+    osdmon(osdmon), start(ceph::coarse_mono_clock::now()), epoch(e) {}
   void finish(int r) override {
     if (r >= 0) {
-      utime_t end = ceph_clock_now();
+      auto end = ceph::coarse_mono_clock::now();
+      double duration = std::chrono::duration<double>(end-start).count();
       dout(10) << "osdmap epoch " << epoch << " mapping took "
-	       << (end - start) << " seconds" << dendl;
+	       << duration << " seconds" << dendl;
       osdmon->update_creating_pgs();
       osdmon->check_pg_creates_subs();
     }
