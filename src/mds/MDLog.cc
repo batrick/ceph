@@ -602,22 +602,30 @@ void MDLog::trim(int m)
   utime_t stop = ceph_clock_now();
   stop += 2.0;
 
-  map<uint64_t,LogSegment*>::iterator p = segments.begin();
-  while (p != segments.end() &&
-	 ((max_events >= 0 &&
-	   num_events - expiring_events - expired_events > max_events) ||
-	  (segments.size() - expiring_segments.size() - expired_segments.size() > max_segments))) {
-    
+  int op_prio = CEPH_MSG_PRIO_LOW +
+		(CEPH_MSG_PRIO_HIGH - CEPH_MSG_PRIO_LOW) *
+		expiring_segments.size() / max_segments;
+  if (op_prio > CEPH_MSG_PRIO_HIGH)
+    op_prio = CEPH_MSG_PRIO_HIGH;
+
+  unsigned new_expiring_segments = 0;
+  while (true) {
+    map<uint64_t,LogSegment*>::iterator p = segments.begin();
+    if (p == segments.end())
+      break;
+
     if (stop < ceph_clock_now())
       break;
 
-    int num_expiring_segments = (int)expiring_segments.size();
-    if (num_expiring_segments >= g_conf->mds_log_max_expiring)
+    unsigned num_remaining_segments = (segments.size() - expired_segments.size() - expiring_segments.size());
+    if ((num_remaining_segments <= max_segments) &&
+	(max_events < 0 || num_events - expiring_events - expired_events <= max_events))
       break;
 
-    int op_prio = CEPH_MSG_PRIO_LOW +
-		  (CEPH_MSG_PRIO_HIGH - CEPH_MSG_PRIO_LOW) *
-		  num_expiring_segments / g_conf->mds_log_max_expiring;
+    // if mds creates N segments each tick, 'num_remaining_segments - max_segments'
+    // should not exceed '2 * N'
+    if (new_expiring_segments * 2 > num_remaining_segments)
+      break;
 
     // look at first segment
     LogSegment *ls = p->second;
@@ -638,6 +646,7 @@ void MDLog::trim(int m)
 	      << ", " << ls->num_events << " events" << dendl;
     } else {
       assert(expiring_segments.count(ls) == 0);
+      new_expiring_segments++;
       expiring_segments.insert(ls);
       expiring_events += ls->num_events;
       submit_mutex.Unlock();
