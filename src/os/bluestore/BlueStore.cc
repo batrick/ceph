@@ -1710,7 +1710,8 @@ void BlueStore::SharedBlobSet::dump(CephContext *cct, int lvl)
 {
   std::lock_guard<std::mutex> l(lock);
   for (auto& i : sb_map) {
-    ldout(cct, lvl) << i.first << " : " << *i.second << dendl;
+    ldout(cct, lvl) << i.first << " : " << i.second << dendl;
+    ldout(cct, lvl) << i.first << " :  " << *i.second << dendl;
   }
 }
 
