@@ -227,13 +227,6 @@
 :Default: ``0``
 
 
-``mds bal frag``
-
-:Description: Determines whether the MDS will fragment directories.
-:Type:  Boolean
-:Default:  ``false``
-
-
 ``mds bal split size``
 
 :Description: The maximum directory size before the MDS will split a directory 
