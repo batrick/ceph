@@ -34,6 +34,7 @@
 #include "msg/Messenger.h"
 #include "osdc/ObjectCacher.h"
 
+#include "FhRef.h"
 #include "InodeRef.h"
 #include "MetaSession.h"
 #include "UserPerm.h"
@@ -118,7 +119,7 @@ struct Cap;
 class Dir;
 class Dentry;
 struct SnapRealm;
-struct Fh;
+class Fh;
 struct CapSnap;
 
 struct MetaRequest;
@@ -453,8 +454,8 @@ protected:
 
   // file handles, etc.
   interval_set<int> free_fd_set;  // unused fds
-  ceph::unordered_map<int, Fh*> fd_map;
-  set<Fh*> ll_unclosed_fh_set;
+  std::unordered_map<int, FhRef> fd_map;
+  std::set<FhRef> ll_unclosed_fh_set;
   ceph::unordered_set<dir_result_t*> opened_dirs;
   
   int get_fd() {
@@ -756,9 +757,7 @@ private:
   int _ll_put(Inode *in, int num);
   void _ll_drop_pins();
 
-  Fh *_create_fh(Inode *in, int flags, int cmode, const UserPerm& perms);
   int _release_fh(Fh *fh);
-  void _put_fh(Fh *fh);
 
   int _do_remount(void);
   friend class C_Client_Remount;
@@ -824,11 +823,11 @@ private:
   void _setxattr_maybe_wait_for_osdmap(const char *name, const void *value, size_t len);
   int _removexattr(Inode *in, const char *nm, const UserPerm& perms);
   int _removexattr(InodeRef &in, const char *nm, const UserPerm& perms);
-  int _open(Inode *in, int flags, mode_t mode, Fh **fhp,
+  int _open(Inode *in, int flags, mode_t mode, FhRef *fhp,
 	    const UserPerm& perms);
   int _renew_caps(Inode *in);
   int _create(Inode *in, const char *name, int flags, mode_t mode, InodeRef *inp,
-	      Fh **fhp, int stripe_unit, int stripe_count, int object_size,
+	      FhRef *fhp, int stripe_unit, int stripe_count, int object_size,
 	      const char *data_pool, bool *created, const UserPerm &perms);
 
   loff_t _lseek(Fh *fh, loff_t offset, int whence);
@@ -1187,7 +1186,7 @@ public:
 	      const UserPerm& perm);
   int ll_open(Inode *in, int flags, Fh **fh, const UserPerm& perms);
   int _ll_create(Inode *parent, const char *name, mode_t mode,
-	      int flags, InodeRef *in, int caps, Fh **fhp,
+	      int flags, InodeRef *in, int caps, FhRef *fhp,
 	      const UserPerm& perms);
   int ll_create(Inode *parent, const char *name, mode_t mode, int flags,
 		struct stat *attr, Inode **out, Fh **fhp,

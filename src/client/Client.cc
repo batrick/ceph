@@ -312,11 +312,9 @@ Client::~Client()
 void Client::tear_down_cache()
 {
   // fd's
-  for (ceph::unordered_map<int, Fh*>::iterator it = fd_map.begin();
-       it != fd_map.end();
-       ++it) {
-    Fh *fh = it->second;
-    ldout(cct, 1) << "tear_down_cache forcing close of fh " << it->first << " ino " << fh->inode->ino << dendl;
+  for (auto &p : fd_map) {
+    auto &fh = p.second;
+    ldout(cct, 1) << "tear_down_cache forcing close of fh " << p.first << " ino " << fh.inode->ino << dendl;
     _release_fh(fh);
   }
   fd_map.clear();
@@ -5838,20 +5836,18 @@ void Client::_unmount()
   cwd.reset();
 
   // clean up any unclosed files
-  while (!fd_map.empty()) {
-    Fh *fh = fd_map.begin()->second;
-    fd_map.erase(fd_map.begin());
+  for (auto &p : fd_map) {
+    auto &fh = p.second;
     ldout(cct, 0) << " destroyed lost open file " << fh << " on " << *fh->inode << dendl;
     _release_fh(fh);
   }
+  fd_map.clear();
   
-  while (!ll_unclosed_fh_set.empty()) {
-    set<Fh*>::iterator it = ll_unclosed_fh_set.begin();
-    Fh *fh = *it;
-    ll_unclosed_fh_set.erase(fh);
+  for (auto &fh : ll_unclosed_fh_set) {
     ldout(cct, 0) << " destroyed lost open file " << fh << " on " << *(fh->inode) << dendl;
     _release_fh(fh);
   }
+  ll_unclosed_fh_set.clear();
 
   while (!opened_dirs.empty()) {
     dir_result_t *dirp = *opened_dirs.begin();
@@ -8107,8 +8103,6 @@ int Client::open(const char *relpath, int flags, const UserPerm& perms,
   if (unmounting)
     return -ENOTCONN;
 
-  Fh *fh = NULL;
-
 #if defined(__linux__) && defined(O_PATH)
   /* When the O_PATH is being specified, others flags than O_DIRECTORY
    * and O_NOFOLLOW are ignored. Please refer do_entry_open() function
@@ -8134,6 +8128,7 @@ int Client::open(const char *relpath, int flags, const UserPerm& perms,
 #endif
     return -ELOOP;
 
+  FhRef fh;
   if (r == -ENOENT && (flags & O_CREAT)) {
     filepath dirpath = path;
     string dname = dirpath.last_dentry();
@@ -8169,8 +8164,8 @@ int Client::open(const char *relpath, int flags, const UserPerm& perms,
     // allocate a integer file descriptor
     assert(fh);
     r = get_fd();
-    assert(fd_map.count(r) == 0);
-    fd_map[r] = fh;
+    auto em = fd_map.emplace(std::piecewise_construct, std::forward_as_tuple(r), std::forward_as_tuple(fh));
+    assert(em.second); /* not already present */
   }
   
  out:
@@ -8316,39 +8311,6 @@ int Client::lookup_name(Inode *ino, Inode *parent, const UserPerm& perms)
   return r;
 }
 
-
-Fh *Client::_create_fh(Inode *in, int flags, int cmode, const UserPerm& perms)
-{
-  assert(in);
-  Fh *f = new Fh(in, flags, cmode, perms);
-
-  ldout(cct, 10) << "_create_fh " << in->ino << " mode " << cmode << dendl;
-
-  if (in->snapid != CEPH_NOSNAP) {
-    in->snap_cap_refs++;
-    ldout(cct, 5) << "open success, fh is " << f << " combined IMMUTABLE SNAP caps " 
-	    << ccap_string(in->caps_issued()) << dendl;
-  }
-
-  const md_config_t *conf = cct->_conf;
-  f->readahead.set_trigger_requests(1);
-  f->readahead.set_min_readahead_size(conf->client_readahead_min);
-  uint64_t max_readahead = Readahead::NO_LIMIT;
-  if (conf->client_readahead_max_bytes) {
-    max_readahead = MIN(max_readahead, (uint64_t)conf->client_readahead_max_bytes);
-  }
-  if (conf->client_readahead_max_periods) {
-    max_readahead = MIN(max_readahead, in->layout.get_period()*(uint64_t)conf->client_readahead_max_periods);
-  }
-  f->readahead.set_max_readahead_size(max_readahead);
-  vector<uint64_t> alignments;
-  alignments.push_back(in->layout.get_period());
-  alignments.push_back(in->layout.stripe_unit);
-  f->readahead.set_alignments(alignments);
-
-  return f;
-}
-
 int Client::_release_fh(Fh *f)
 {
   //ldout(cct, 3) << "op: client->close(open_files[ " << fh << " ]);" << dendl;
@@ -8379,20 +8341,10 @@ int Client::_release_fh(Fh *f)
     ldout(cct, 10) << "_release_fh " << f << " on inode " << *in << " no async_err state" << dendl;
   }
 
-  _put_fh(f);
-
   return err;
 }
 
-void Client::_put_fh(Fh *f)
-{
-  int left = f->put();
-  if (!left) {
-    delete f;
-  }
-}
-
-int Client::_open(Inode *in, int flags, mode_t mode, Fh **fhp,
+int Client::_open(Inode *in, int flags, mode_t mode, FhRef *fhp,
 		  const UserPerm& perms)
 {
   if (in->snapid != CEPH_NOSNAP &&
@@ -8461,7 +8413,7 @@ int Client::_open(Inode *in, int flags, mode_t mode, Fh **fhp,
   // success?
   if (result >= 0) {
     if (fhp)
-      *fhp = _create_fh(in, flags, cmode, perms);
+      *fhp = in->create_fh(flags, cmode, perms);
   } else {
     in->put_open_ref(cmode);
   }
@@ -8851,7 +8803,7 @@ Client::C_Readahead::C_Readahead(Client *c, Fh *f) :
 
 Client::C_Readahead::~C_Readahead() {
   f->readahead.dec_pending();
-  client->_put_fh(f);
+  f->put();
 }
 
 void Client::C_Readahead::finish(int r) {
@@ -11596,7 +11548,7 @@ int Client::ll_mknodx(Inode *parent, const char *name, mode_t mode,
 }
 
 int Client::_create(Inode *dir, const char *name, int flags, mode_t mode,
-		    InodeRef *inp, Fh **fhp, int stripe_unit, int stripe_count,
+		    InodeRef *inp, FhRef *fhp, int stripe_unit, int stripe_count,
 		    int object_size, const char *data_pool, bool *created,
 		    const UserPerm& perms)
 {
@@ -11670,7 +11622,7 @@ int Client::_create(Inode *dir, const char *name, int flags, mode_t mode,
   /* If the caller passed a value in fhp, do the open */
   if(fhp) {
     (*inp)->get_open_ref(cmode);
-    *fhp = _create_fh(inp->get(), flags, cmode, perms);
+    *fhp = (*inp)->create_fh(flags, cmode, perms);
   }
 
  reply_error:
@@ -12496,25 +12448,24 @@ int Client::ll_open(Inode *in, int flags, Fh **fhp, const UserPerm& perms)
       goto out;
   }
 
-  r = _open(in, flags, 0, fhp /* may be NULL */, perms);
+  FhRef fh;
+  r = _open(in, flags, 0, &fh, perms);
 
  out:
-  Fh *fhptr = fhp ? *fhp : NULL;
-  if (fhptr) {
-    ll_unclosed_fh_set.insert(fhptr);
-  }
-  tout(cct) << (unsigned long)fhptr << std::endl;
+  tout(cct) << (unsigned long)fh.get() << std::endl;
   ldout(cct, 3) << "ll_open " << vino << " " << ceph_flags_sys2wire(flags) <<
-      " = " << r << " (" << fhptr << ")" << dendl;
+      " = " << r << " (" << fh.get() << ")" << dendl;
+  if (fh) {
+    ll_unclosed_fh_set.insert(fh.get());
+    *fhp = fh.detach();
+  }
   return r;
 }
 
 int Client::_ll_create(Inode *parent, const char *name, mode_t mode,
-		      int flags, InodeRef *in, int caps, Fh **fhp,
+		      int flags, InodeRef *in, int caps, FhRef *fhp,
 		      const UserPerm& perms)
 {
-  *fhp = NULL;
-
   vinodeno_t vparent = _get_vino(parent);
 
   ldout(cct, 3) << "_ll_create " << vparent << " " << name << " 0" << oct <<
@@ -12565,7 +12516,7 @@ int Client::_ll_create(Inode *parent, const char *name, mode_t mode,
 	goto out;
       }
     }
-    if (*fhp == NULL) {
+    if (!*fhp) {
       r = _open(in->get(), flags, mode, fhp, perms);
       if (r < 0)
 	goto out;
@@ -12605,10 +12556,13 @@ int Client::ll_create(Inode *parent, const char *name, mode_t mode,
   if (unmounting)
     return -ENOTCONN;
 
+  FhRef fh;
   int r = _ll_create(parent, name, mode, flags, &in, CEPH_STAT_CAP_INODE_ALL,
-		      fhp, perms);
+		      &fh, perms);
   if (r >= 0) {
     assert(in);
+
+    *fhp = fh.detach();
 
     // passing an Inode in outp requires an additional ref
     if (outp) {
@@ -12635,9 +12589,12 @@ int Client::ll_createx(Inode *parent, const char *name, mode_t mode,
   if (unmounting)
     return -ENOTCONN;
 
-  int r = _ll_create(parent, name, mode, oflags, &in, caps, fhp, perms);
+  FhRef fh;
+  int r = _ll_create(parent, name, mode, oflags, &in, caps, &fh, perms);
   if (r >= 0) {
     assert(in);
+
+    *fhp = fh.detach();
 
     // passing an Inode in outp requires an additional ref
     if (outp) {
@@ -13058,9 +13015,9 @@ int Client::ll_release(Fh *fh)
   if (unmounting)
     return -ENOTCONN;
 
-  if (ll_unclosed_fh_set.count(fh))
-    ll_unclosed_fh_set.erase(fh);
-  return _release_fh(fh);
+  int r = _release_fh(fh);
+  ll_unclosed_fh_set.erase(fh);
+  return r;
 }
 
 int Client::ll_getlk(Fh *fh, struct flock *fl, uint64_t owner)

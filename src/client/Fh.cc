@@ -18,15 +18,15 @@
 
 #include "Fh.h"
 
-Fh::Fh(InodeRef in, int flags, int cmode, const UserPerm &perms) :
-    inode(in), _ref(1), pos(0), mds(0), mode(cmode), flags(flags), pos_locked(false),
-    actor_perms(perms), readahead()
+Fh::Fh(Inode *in, int flags, int cmode, const UserPerm &perms) :
+    inode(in), mode(cmode), flags(flags),
+    actor_perms(perms), readahead(), xlist_inode_item(this)
 {
-  inode->add_fh(this);
+  in->fhs.push_back(&xlist_inode_item);
 }
 
 Fh::~Fh()
 {
-  inode->rm_fh(this);
+  xlist_inode_item.remove_myself();
 }
 

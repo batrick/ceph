@@ -15,6 +15,7 @@
 
 #include "osdc/ObjectCacher.h"
 
+#include "FhRef.h"
 #include "InodeRef.h"
 #include "MetaSession.h"
 #include "UserPerm.h"
@@ -255,8 +256,6 @@ struct Inode {
 
   xlist<MetaRequest*> unsafe_ops;
 
-  std::set<Fh*> fhs;
-
   Inode(Client *c, vinodeno_t vino, file_layout_t *newlayout)
     : client(c), ino(vino.ino), snapid(vino.snapid), faked_ino(0),
       rdev(0), mode(0), uid(0), gid(0), nlink(0),
@@ -313,8 +312,6 @@ struct Inode {
   bool have_valid_size();
   Dir *open_dir();
 
-  void add_fh(Fh *f) {fhs.insert(f);}
-  void rm_fh(Fh *f) {fhs.erase(f);}
   void set_async_err(int r);
   void dump(Formatter *f) const;
 
@@ -324,6 +321,10 @@ struct Inode {
   bool has_recalled_deleg();
   int set_deleg(Fh *fh, unsigned type, ceph_deleg_cb_t cb, void *priv);
   void unset_deleg(Fh *fh);
+
+  FhRef create_fh(int flags, int cmode, const UserPerm &perms);
+
+  xlist<Fh *> fhs;
 
 private:
   // how many opens for write on this Inode?
@@ -343,7 +344,6 @@ private:
 
   void break_deleg(bool skip_read);
   bool delegations_broken(bool skip_read);
-
 };
 
 ostream& operator<<(ostream &out, const Inode &in);

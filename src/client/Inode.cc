@@ -12,6 +12,13 @@
 
 #include "mds/flock.h"
 
+#include "common/dout.h"
+
+//#define dout_context g_ceph_context
+//#define dout_subsys ceph_subsys_client
+//#undef dout_prefix
+//#define dout_prefix *_dout << "client." << client->get_nodeid() << ".ino(" << vino << ") "
+
 Inode::~Inode()
 {
   cap_item.remove_myself();
@@ -712,4 +719,35 @@ void Inode::unset_deleg(Fh *fh)
       break;
     }
   }
+}
+
+FhRef Inode::create_fh(int flags, int cmode, const UserPerm& perms)
+{
+  auto f = Fh::create(this, flags, cmode, perms);
+
+  lsubdout(client->cct, client, 10) << "Inode::create_fh " << ino << " mode " << cmode << dendl;
+
+  if (snapid != CEPH_NOSNAP) {
+    snap_cap_refs++;
+    lsubdout(client->cct, client, 5) << "Inode::create_fh open success, fh is " <<
+        f << " combined IMMUTABLE SNAP caps " << ccap_string(caps_issued()) << dendl;
+  }
+
+  const md_config_t *conf = client->cct->_conf;
+  f->readahead.set_trigger_requests(1);
+  f->readahead.set_min_readahead_size(conf->client_readahead_min);
+  uint64_t max_readahead = Readahead::NO_LIMIT;
+  if (conf->client_readahead_max_bytes) {
+    max_readahead = MIN(max_readahead, (uint64_t)conf->client_readahead_max_bytes);
+  }
+  if (conf->client_readahead_max_periods) {
+    max_readahead = MIN(max_readahead, layout.get_period()*(uint64_t)conf->client_readahead_max_periods);
+  }
+  f->readahead.set_max_readahead_size(max_readahead);
+  vector<uint64_t> alignments;
+  alignments.push_back(layout.get_period());
+  alignments.push_back(layout.stripe_unit);
+  f->readahead.set_alignments(alignments);
+
+  return std::move(f);
 }
