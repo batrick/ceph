@@ -238,7 +238,6 @@ Client::Client(Messenger *m, MonClient *mc, Objecter *objecter_)
     getgroups_cb(NULL),
     umask_cb(NULL),
     can_invalidate_dentries(false),
-    require_remount(false),
     async_ino_invalidator(m->cct),
     async_dentry_invalidator(m->cct),
     interrupt_finisher(m->cct),
@@ -4009,6 +4008,23 @@ void Client::remove_session_caps(MetaSession *s)
   sync_cond.Signal();
 }
 
+int Client::_do_remount(void)
+{
+  errno = 0;
+  int r = remount_cb(callback_handle);
+  if (r != 0) {
+    int e = errno;
+    client_t whoami = get_nodeid();
+    lderr(cct) << "tried to remount (to trim kernel dentries) and got error "
+                       << r << " (errno = " << e << "; " << strerror(e) << ")" << dendl;
+    if (cct->_conf->client_die_on_failed_remount && !unmounting) {
+      lderr(cct) << "failed to remount for kernel dentry trimming; quitting!" << dendl;
+      ceph_abort();
+    }
+  }
+  return r;
+}
+
 class C_Client_Remount : public Context  {
 private:
   Client *client;
@@ -4016,17 +4032,7 @@ public:
   explicit C_Client_Remount(Client *c) : client(c) {}
   void finish(int r) override {
     assert(r == 0);
-    errno = 0;
-    r = client->remount_cb(client->callback_handle);
-    if (r != 0) {
-      int e = errno;
-      client_t whoami = client->get_nodeid();
-      lderr(client->cct) << "tried to remount (to trim kernel dentries) and got error "
-			 << r << " (errno = " << e << "; " << strerror(e) << ")" << dendl;
-      if (client->require_remount && !client->unmounting) {
-	assert(0 == "failed to remount for kernel dentry trimming");
-      }
-    }
+    client->_do_remount();
   }
 };
 
@@ -10051,21 +10057,13 @@ int Client::test_dentry_handling(bool can_invalidate)
   if (can_invalidate_dentries) {
     assert(dentry_invalidate_cb);
     ldout(cct, 1) << "using dentry_invalidate_cb" << dendl;
+    r = 0;
   } else if (remount_cb) {
     ldout(cct, 1) << "using remount_cb" << dendl;
-    int s = remount_cb(callback_handle);
-    if (s) {
-      lderr(cct) << "Failed to invoke remount, needed to ensure kernel dcache consistency"
-		 << dendl;
-    }
-    if (cct->_conf->client_die_on_failed_remount) {
-      require_remount = true;
-      r = s;
-    }
-  } else {
+    r = _do_remount();
+  }
+  if (r) {
     lderr(cct) << "no method to invalidate kernel dentry cache; expect issues!" << dendl;
-    if (cct->_conf->client_die_on_failed_remount)
-      ceph_abort();
   }
   return r;
 }
