@@ -88,17 +88,17 @@ private:
   MonOpRequest(Message *req, OpTracker *tracker) :
     TrackedOp(tracker,
       req->get_recv_stamp().is_zero() ?
-      ceph_clock_now() : req->get_recv_stamp()),
+      ceph::mono_clock::now() : req->get_recv_stamp()),
     request(req),
     session(NULL),
     con(NULL),
     forwarded_to_leader(false),
     op_type(OP_TYPE_NONE)
   {
-    mark_event("header_read", request->get_recv_stamp());
-    mark_event("throttled", request->get_throttle_stamp());
-    mark_event("all_read", request->get_recv_complete_stamp());
-    mark_event("dispatched", request->get_dispatch_stamp());
+    mark_event("header_read", utime_t(request->get_recv_stamp()));
+    mark_event("throttled", utime_t(request->get_throttle_stamp()));
+    mark_event("all_read", utime_t(request->get_recv_complete_stamp()));
+    mark_event("dispatched", utime_t(request->get_dispatch_stamp()));
 
     if (req) {
       con = req->get_connection();

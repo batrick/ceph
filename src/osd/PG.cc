@@ -3545,7 +3545,7 @@ void PG::requeue_op(OpRequestRef op)
         unique_ptr<OpQueueItem::OpQueueable>(new PGOpItem(info.pgid, op)),
 	op->get_req()->get_cost(),
 	op->get_req()->get_priority(),
-	op->get_req()->get_recv_stamp(),
+	utime_t(op->get_req()->get_recv_stamp()),
 	op->get_req()->get_source().num(),
 	get_osdmap()->get_epoch()));
   }
@@ -3579,7 +3579,7 @@ void PG::requeue_map_waiters()
           unique_ptr<OpQueueItem::OpQueueable>(new PGOpItem(info.pgid, req)),
 	  req->get_req()->get_cost(),
 	  req->get_req()->get_priority(),
-	  req->get_req()->get_recv_stamp(),
+	  utime_t(req->get_req()->get_recv_stamp()),
 	  req->get_req()->get_source().num(),
 	  epoch));
       }

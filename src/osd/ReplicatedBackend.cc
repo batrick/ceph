@@ -82,10 +82,8 @@ static void log_subop_stats(
   PerfCounters *logger,
   OpRequestRef op, int subop)
 {
-  utime_t now = ceph_clock_now();
-  utime_t latency = now;
-  latency -= op->get_req()->get_recv_stamp();
-
+  auto now = ceph::mono_clock::now();
+  auto latency = to_timespan(now - op->get_req()->get_recv_stamp());
 
   logger->inc(l_osd_sop);
   logger->tinc(l_osd_sop_lat, latency);

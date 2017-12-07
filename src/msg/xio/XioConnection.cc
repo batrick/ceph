@@ -308,7 +308,7 @@ int XioConnection::handle_data_msg(struct xio_session *session,
   ceph_msg_footer footer;
   buffer::list payload, middle, data;
 
-  const utime_t recv_stamp = ceph_clock_now();
+  ceph::mono_time recv_stamp = ceph::mono_clock::now();
 
   ldout(msgr->cct,4) << __func__ << " " << "msg_seq.size()="  << msg_seq.size() <<
     dendl;

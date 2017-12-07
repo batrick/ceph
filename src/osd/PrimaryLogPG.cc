@@ -2174,7 +2174,7 @@ void PrimaryLogPG::do_op(OpRequestRef& op)
       hit_set->insert(oid);
       op->hitset_inserted = true;
       if (hit_set->is_full() ||
-          hit_set_start_stamp + pool.info.hit_set_period <= m->get_recv_stamp()) {
+          hit_set_start_stamp + pool.info.hit_set_period <= utime_t(m->get_recv_stamp())) {
         hit_set_persist();
       }
     }
@@ -3681,11 +3681,9 @@ void PrimaryLogPG::log_op_stats(OpContext *ctx)
   OpRequestRef op = ctx->op;
   const MOSDOp *m = static_cast<const MOSDOp*>(op->get_req());
 
-  utime_t now = ceph_clock_now();
-  utime_t latency = now;
-  latency -= ctx->op->get_req()->get_recv_stamp();
-  utime_t process_latency = now;
-  process_latency -= ctx->op->get_dequeued_time();
+  auto now = ceph::mono_clock::now();
+  auto latency = now - ctx->op->get_req()->get_recv_stamp();
+  auto process_latency = now - ctx->op->get_dequeued_time();
 
   uint64_t inb = ctx->bytes_written;
   uint64_t outb = ctx->bytes_read;
@@ -3702,20 +3700,20 @@ void PrimaryLogPG::log_op_stats(OpContext *ctx)
     osd->logger->inc(l_osd_op_rw_inb, inb);
     osd->logger->inc(l_osd_op_rw_outb, outb);
     osd->logger->tinc(l_osd_op_rw_lat, latency);
-    osd->logger->hinc(l_osd_op_rw_lat_inb_hist, latency.to_nsec(), inb);
-    osd->logger->hinc(l_osd_op_rw_lat_outb_hist, latency.to_nsec(), outb);
+    osd->logger->hinc(l_osd_op_rw_lat_inb_hist, std::chrono::duration_cast<std::chrono::nanoseconds>(latency), inb);
+    osd->logger->hinc(l_osd_op_rw_lat_outb_hist, std::chrono::duration_cast<std::chrono::nanoseconds>(latency), outb);
     osd->logger->tinc(l_osd_op_rw_process_lat, process_latency);
   } else if (op->may_read()) {
     osd->logger->inc(l_osd_op_r);
     osd->logger->inc(l_osd_op_r_outb, outb);
     osd->logger->tinc(l_osd_op_r_lat, latency);
-    osd->logger->hinc(l_osd_op_r_lat_outb_hist, latency.to_nsec(), outb);
+    osd->logger->hinc(l_osd_op_r_lat_outb_hist, std::chrono::duration_cast<std::chrono::nanoseconds>(latency), outb);
     osd->logger->tinc(l_osd_op_r_process_lat, process_latency);
   } else if (op->may_write() || op->may_cache()) {
     osd->logger->inc(l_osd_op_w);
     osd->logger->inc(l_osd_op_w_inb, inb);
     osd->logger->tinc(l_osd_op_w_lat, latency);
-    osd->logger->hinc(l_osd_op_w_lat_inb_hist, latency.to_nsec(), inb);
+    osd->logger->hinc(l_osd_op_w_lat_inb_hist, std::chrono::duration_cast<std::chrono::nanoseconds>(latency), inb);
     osd->logger->tinc(l_osd_op_w_process_lat, process_latency);
   } else
     ceph_abort();
@@ -9709,7 +9707,7 @@ void PrimaryLogPG::op_applied(const eversion_t &applied_version)
 	    unique_ptr<OpQueueItem::OpQueueable>(new PGOpItem(info.pgid, op)),
 	    op->get_req()->get_cost(),
 	    op->get_req()->get_priority(),
-	    op->get_req()->get_recv_stamp(),
+	    utime_t(op->get_req()->get_recv_stamp()),
 	    op->get_req()->get_source().num(),
 	    get_osdmap()->get_epoch()));
 	scrubber.active_rep_scrub = OpRequestRef();
@@ -10948,7 +10946,7 @@ void PrimaryLogPG::_applied_recovered_object_replica()
         unique_ptr<OpQueueItem::OpQueueable>(new PGOpItem(info.pgid, op)),
 	op->get_req()->get_cost(),
 	op->get_req()->get_priority(),
-	op->get_req()->get_recv_stamp(),
+	utime_t(op->get_req()->get_recv_stamp()),
 	op->get_req()->get_source().num(),
 	get_osdmap()->get_epoch()));
     scrubber.active_rep_scrub.reset();

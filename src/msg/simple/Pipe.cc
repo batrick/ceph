@@ -1758,7 +1758,7 @@ void Pipe::reader()
       in_q->fast_preprocess(m);
 
       if (delay_thread) {
-        utime_t release;
+        ceph::mono_time release;
         if (rand() % 10000 < msgr->cct->_conf->ms_inject_delay_probability * 10000.0) {
           release = m->get_recv_stamp();
           release += msgr->cct->_conf->ms_inject_delay_max * (double)(rand() % 10000) / 10000.0;
@@ -2047,7 +2047,7 @@ int Pipe::read_message(Message **pm, AuthSessionHandler* auth_handler)
   unsigned data_len, data_off;
   int aborted;
   Message *message;
-  utime_t recv_stamp = ceph_clock_now();
+  ceph::mono_time recv_stamp = ceph::mono_clock::now();
 
   if (policy.throttler_messages) {
     ldout(msgr->cct,10) << "reader wants " << 1 << " message from policy throttler "

@@ -95,7 +95,7 @@ void DispatchQueue::enqueue(Message *m, int priority, uint64_t id)
 
 void DispatchQueue::local_delivery(Message *m, int priority)
 {
-  m->set_recv_stamp(ceph_clock_now());
+  m->set_recv_stamp();
   Mutex::Locker l(local_delivery_lock);
   if (local_messages.empty())
     local_delivery_cond.Signal();

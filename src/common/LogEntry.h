@@ -17,6 +17,7 @@
 
 #include "include/utime.h"
 #include "msg/msg_types.h" // for entity_inst_t
+#include "common/ceph_time.h"
 #include "common/entity_name.h"
 
 namespace ceph {
@@ -63,7 +64,7 @@ private:
   }
 
   entity_inst_t who;
-  utime_t stamp;
+  ceph::mono_time stamp;
   uint64_t seq = 0;
 
 public:
@@ -99,7 +100,7 @@ namespace std {
 struct LogEntry {
   entity_inst_t who;
   EntityName name;
-  utime_t stamp;
+  ceph::mono_time stamp;
   uint64_t seq;
   clog_type prio;
   string msg;

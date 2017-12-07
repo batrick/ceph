@@ -431,7 +431,7 @@ void AsyncConnection::process()
 #if defined(WITH_LTTNG) && defined(WITH_EVENTTRACE)
           ltt_recv_stamp = ceph_clock_now();
 #endif
-          recv_stamp = ceph_clock_now();
+          ceph::mono_time recv_stamp = ceph::mono_clock::now();
           ldout(async_msgr->cct, 20) << __func__ << " begin MSG" << dendl;
           ceph_msg_header header;
           __u32 header_crc = 0;

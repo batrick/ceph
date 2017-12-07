@@ -24,7 +24,7 @@
 #endif
 
 OpRequest::OpRequest(Message *req, OpTracker *tracker) :
-  TrackedOp(tracker, req->get_recv_stamp()),
+  TrackedOp(tracker, utime_t(req->get_recv_stamp())),
   rmw_flags(0), request(req),
   hit_flag_points(0), latest_flag_point(0),
   hitset_inserted(false), qos_resp(dmc::PhaseType::reservation) {
@@ -41,10 +41,10 @@ OpRequest::OpRequest(Message *req, OpTracker *tracker) :
   }
   if (tracker->is_tracking()) {
     req_src_inst = req->get_source_inst();
-    mark_event("header_read", request->get_recv_stamp());
-    mark_event("throttled", request->get_throttle_stamp());
-    mark_event("all_read", request->get_recv_complete_stamp());
-    mark_event("dispatched", request->get_dispatch_stamp());
+    mark_event("header_read", utime_t(request->get_recv_stamp()));
+    mark_event("throttled", utime_t(request->get_throttle_stamp()));
+    mark_event("all_read", utime_t(request->get_recv_complete_stamp()));
+    mark_event("dispatched", utime_t(request->get_dispatch_stamp()));
   }
 }
 

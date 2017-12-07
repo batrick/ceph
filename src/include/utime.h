@@ -67,6 +67,11 @@ public:
     ceph_timespec ts = real_clock::to_ceph_timespec(rt);
     decode_timeval(&ts);
   }
+  explicit utime_t(const ceph::mono_time& mt) {
+    std::chrono::duration d = mt.time_since_epoch();
+    tv.tv_sec = duration.count();
+    tv.tv_nsec = 0;
+  }
   utime_t(const struct timeval &v) {
     set_from_timeval(&v);
   }

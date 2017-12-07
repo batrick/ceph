@@ -9042,10 +9042,10 @@ MDRequestRef MDCache::request_start(MClientRequest *req)
   params.reqid = req->get_reqid();
   params.attempt = req->get_num_fwd();
   params.client_req = req;
-  params.initiated = req->get_recv_stamp();
-  params.throttled = req->get_throttle_stamp();
-  params.all_read = req->get_recv_complete_stamp();
-  params.dispatched = req->get_dispatch_stamp();
+  params.initiated = utime_t(req->get_recv_stamp());
+  params.throttled = utime_t(req->get_throttle_stamp());
+  params.all_read = utime_t(req->get_recv_complete_stamp());
+  params.dispatched = utime_t(req->get_dispatch_stamp());
 
   MDRequestRef mdr =
       mds->op_tracker.create_request<MDRequestImpl,MDRequestImpl::Params>(params);
@@ -9063,10 +9063,10 @@ MDRequestRef MDCache::request_start_slave(metareqid_t ri, __u32 attempt, Message
   params.attempt = attempt;
   params.triggering_slave_req = m;
   params.slave_to = by;
-  params.initiated = m->get_recv_stamp();
-  params.throttled = m->get_throttle_stamp();
-  params.all_read = m->get_recv_complete_stamp();
-  params.dispatched = m->get_dispatch_stamp();
+  params.initiated = utime_t(m->get_recv_stamp());
+  params.throttled = utime_t(m->get_throttle_stamp());
+  params.all_read = utime_t(m->get_recv_complete_stamp());
+  params.dispatched = utime_t(m->get_dispatch_stamp());
   MDRequestRef mdr =
       mds->op_tracker.create_request<MDRequestImpl,MDRequestImpl::Params>(params);
   assert(active_requests.count(mdr->reqid) == 0);
