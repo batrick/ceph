@@ -63,7 +63,10 @@ void JournalTool::usage()
     << "General options:\n"
     << "  --rank=filesystem:mds-rank  Journal rank (required if multiple\n"
     << "                              file systems, default is rank 0 on\n"
-    << "                              the only filesystem otherwise.\n"
+    << "                              the only filesystem otherwise.)\n"
+    << "  --journal=<mdlog|purge_queue>  Journal type (purge_queue means\n"
+    << "                                 this journal is used to queue for purge operation,\n"
+    << "                                 default is mdlog, and only mdlog support event mode)\n" 
     << "\n"
     << "Special options\n"
     << "  --alternate-pool <name>     Alternative metadata pool to target\n"
@@ -91,10 +94,21 @@ int JournalTool::main(std::vector<const char*> &argv)
   std::vector<const char*>::iterator arg = argv.begin();
 
   std::string rank_str;
-  if(!ceph_argparse_witharg(argv, arg, &rank_str, "--rank", (char*)NULL)) {
+  if (!ceph_argparse_witharg(argv, arg, &rank_str, "--rank", (char*)NULL)) {
     // Default: act on rank 0.  Will give the user an error if they
     // try invoking this way when they have more than one filesystem.
     rank_str = "0";
+  }
+
+  if (!ceph_argparse_witharg(argv, arg, &type, "--journal", (char*)NULL)) {
+    // Default is mdlog
+    type = "mdlog";
+  }
+  
+  r = validate_type(type);
+  if (r != 0) {
+    derr << "journal type is not correct." << dendl;
+    return r;
   }
 
   r = role_selector.parse(*fsmap, rank_str);
@@ -144,6 +158,8 @@ int JournalTool::main(std::vector<const char*> &argv)
 
   // Execution
   // =========
+  // journal and header are general journal mode
+  // event mode is only specific for mdlog
   for (auto role : role_selector.get_roles()) {
     rank = role.rank;
     dout(4) << "Executing for rank " << rank << dendl;
@@ -151,7 +167,7 @@ int JournalTool::main(std::vector<const char*> &argv)
       r = main_journal(argv);
     } else if (mode == std::string("header")) {
       r = main_header(argv);
-    } else if (mode == std::string("event")) {
+    } else if (type == std::string("mdlog") && mode == std::string("event")) {
       r = main_event(argv);
     } else {
       derr << "Bad command '" << mode << "'" << dendl;
@@ -167,6 +183,13 @@ int JournalTool::main(std::vector<const char*> &argv)
   return r;
 }
 
+int JournalTool::validate_type(const std::string &type)
+{
+  if (type == "mdlog" || type == "purge_queue") {
+    return 0;
+  }
+  return -1;
+}
 
 /**
  * Handle arguments for 'journal' mode
@@ -217,7 +240,7 @@ int JournalTool::main_journal(std::vector<const char*> &argv)
 int JournalTool::main_header(std::vector<const char*> &argv)
 {
   JournalFilter filter;
-  JournalScanner js(input, rank, filter);
+  JournalScanner js(input, rank, type, filter);
   int r = js.scan(false);
   if (r < 0) {
     std::cerr << "Unable to scan journal" << std::endl;
@@ -366,7 +389,7 @@ int JournalTool::main_event(std::vector<const char*> &argv)
 
   // Execute command
   // ===============
-  JournalScanner js(input, rank, filter);
+  JournalScanner js(input, rank, type, filter);
   if (command == "get") {
     r = js.scan();
     if (r) {
@@ -513,7 +536,7 @@ int JournalTool::journal_inspect()
   int r;
 
   JournalFilter filter;
-  JournalScanner js(input, rank, filter);
+  JournalScanner js(input, rank, type, filter);
   r = js.scan();
   if (r) {
     std::cerr << "Failed to scan journal (" << cpp_strerror(r) << ")" << std::endl;
@@ -537,7 +560,7 @@ int JournalTool::journal_inspect()
 int JournalTool::journal_export(std::string const &path, bool import)
 {
   int r = 0;
-  JournalScanner js(input, rank);
+  JournalScanner js(input, rank, type);
 
   if (!import) {
     /*
@@ -560,7 +583,7 @@ int JournalTool::journal_export(std::string const &path, bool import)
    */
   {
     Dumper dumper;
-    r = dumper.init(mds_role_t(role_selector.get_ns(), rank));
+    r = dumper.init(mds_role_t(role_selector.get_ns(), rank), type);
     if (r < 0) {
       derr << "dumper::init failed: " << cpp_strerror(r) << dendl;
       return r;
@@ -584,16 +607,16 @@ int JournalTool::journal_reset(bool hard)
 {
   int r = 0;
   Resetter resetter;
-  r = resetter.init();
+  r = resetter.init(mds_role_t(role_selector.get_ns(), rank), type);
   if (r < 0) {
     derr << "resetter::init failed: " << cpp_strerror(r) << dendl;
     return r;
   }
 
   if (hard) {
-    r = resetter.reset_hard(mds_role_t(role_selector.get_ns(), rank));
+    r = resetter.reset_hard();
   } else {
-    r = resetter.reset(mds_role_t(role_selector.get_ns(), rank));
+    r = resetter.reset();
   }
   resetter.shutdown();
 
