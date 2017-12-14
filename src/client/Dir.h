@@ -11,7 +11,9 @@ class Dir {
 
   explicit Dir(Inode* in) { parent_inode = in; }
 
-  bool is_empty() {  return dentries.empty(); }
+  bool is_empty() const {
+    return dentries.empty();
+  }
 };
 
 #endif
