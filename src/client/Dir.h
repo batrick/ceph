@@ -6,7 +6,7 @@
 class Dir {
  public:
   InodeRef parent_inode;  // my inode
-  ceph::unordered_map<string, Dentry*> dentries;
+  std::unordered_map<string, Dentry *> dentries;
   vector<Dentry*> readdir_cache;
 
   Dir() = delete;

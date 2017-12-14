@@ -10,7 +10,8 @@
 
 class Dentry : public LRUObject {
 public:
-  explicit Dentry(const std::string &name) : name(name), inode_xlist_link(this) {}
+  Dentry() = delete;
+  explicit Dentry(Dir *dir, const std::string &name) : dir(dir), name(name), inode_xlist_link(this) {}
   ~Dentry() {
     assert(ref == 0);
     inode_xlist_link.remove_myself();

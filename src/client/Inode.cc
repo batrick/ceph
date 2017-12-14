@@ -713,5 +713,70 @@ void Inode::unset_deleg(Fh *fh)
       client->signal_cond_list(waitfor_deleg);
       break;
     }
+}
+
+Dentry *Inode::link(Dir *dir, const std::string &name, Dentry *dn)
+{
+// FIXME don't create dentry: // also whaat to do with dn argument?
+  const auto &em = dir->dentries.emplace(std::piecewise_construct, std::forward_as_tuple(name), std::forward_as_tuple(this, name));
+  if (em.second) {
+    ldout(cct, 15) << "link dir " << dir->parent_inode << " '" << name << "' to inode " << in
+		   << " dn " << dn << " (new dn)" << dendl;
+    lru.lru_insert_mid(dn);    // mid or top?
+  } else {
+    ldout(cct, 15) << "link dir " << dir->parent_inode << " '" << name << "' to inode " << in
+		   << " dn " << dn << " (old dn)" << dendl;
   }
+
+  // only one parent for directories!
+  if (in->is_dir() && !in->dentries.empty()) {
+    Dentry *olddn = in->get_first_parent();
+    assert(olddn->dir != dir || olddn->name != name);
+    Inode *old_diri = olddn->dir->parent_inode;
+    old_diri->dir_release_count++;
+    clear_dir_complete_and_ordered(old_diri, true);
+    unlink(olddn, true, true);  // keep dir, dentry
+  }
+
+  dn->link(in);
+  ldout(cct, 20) << "link inode " << in << " parents now " << in->dentries << dendl;
+  
+  return dn;
+}
+
+void Inode::unlink(Dentry *dn, bool keepdir, bool keepdentry)
+{
+  InodeRef in;
+  in.swap(dn->inode);
+  ldout(cct, 15) << "unlink dir " << dn->dir->parent_inode << " '" << dn->name << "' dn " << dn
+		 << " inode " << dn->inode << dendl;
+
+  // unlink from inode
+  if (in) {
+    if (in->is_dir()) {
+      if (in->dir)
+	dn->put(); // dir -> dn pin
+      if (in->ll_ref)
+	dn->put(); // ll_ref -> dn pin
+    }
+    dn->inode = 0;
+    assert(in->dn_set.count(dn));
+    in->dn_set.erase(dn);
+    ldout(cct, 20) << "unlink  inode " << in << " parents now " << in->dn_set << dendl; 
+  }
+
+  if (keepdentry) {
+    dn->lease_mds = -1;
+  } else {
+    ldout(cct, 15) << "unlink  removing '" << dn->name << "' dn " << dn << dendl;
+
+    // unlink from dir
+    dn->dir->dentries.erase(dn->name);
+    if (dn->dir->is_empty() && !keepdir)
+      close_dir(dn->dir);
+    dn->dir = 0;
+
+    // delete den
+    lru.lru_remove(dn);
+    dn->put();
 }
