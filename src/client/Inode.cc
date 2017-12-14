@@ -322,14 +322,16 @@ bool Inode::have_valid_size()
 Dir *Inode::open_dir()
 {
   if (!dir) {
-    dir = new Dir(this);
     lsubdout(client->cct, client, 15) << "open_dir " << dir << " on " << this << dendl;
-    assert(dentries.size() < 2); // dirs can't be hard-linked
-    if (!dentries.empty())
-      get_first_parent()->get();      // pin dentry
-    get();                  // pin inode
+    dir = std::make_unique<Dir>(this);
   }
-  return dir;
+  return dir.get();
+}
+
+void Inode::close_dir()
+{
+  lsubdout(client->cct, client, 15) << "close_dir " << dir << " on " << this << dendl;
+  dir.reset();
 }
 
 bool Inode::check_mode(const UserPerm& perms, unsigned want)

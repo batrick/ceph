@@ -490,7 +490,6 @@ protected:
 
   // decrease inode ref.  delete if dangling.
   void put_inode(Inode *in, int n=1);
-  void close_dir(Dir *dir);
 
   // same as unmount() but for when the client_lock is already held
   void _unmount();

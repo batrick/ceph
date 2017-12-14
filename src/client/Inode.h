@@ -182,7 +182,7 @@ struct Inode {
   }
 
   // about the dir (if this is one!)
-  Dir       *dir;     // if i'm a dir.
+  std::unique_ptr<Dir> dir;     // if i'm a dir.
   fragtree_t dirfragtree;
   set<int>  dir_contacts;
   uint64_t dir_release_count, dir_ordered_count;
@@ -312,6 +312,7 @@ struct Inode {
 
   bool have_valid_size();
   Dir *open_dir();
+  void close_dir();
 
   void add_fh(Fh *f) {fhs.insert(f);}
   void rm_fh(Fh *f) {fhs.erase(f);}

@@ -926,7 +926,7 @@ Inode * Client::add_update_inode(InodeStat *st, utime_t from,
 	unlink(p->second, true, true);  // keep dir, keep dentry
       }
       if (in->dir->dentries.empty())
-	close_dir(in->dir);
+        in->close_dir();
     }
   }
 
@@ -1208,7 +1208,7 @@ void Client::insert_readdir_results(MetaRequest *request, MetaSession *session, 
       dirp->next_offset = readdir_offset;
 
     if (dir->is_empty())
-      close_dir(dir);
+      in->close_dir();
   }
 }
 
@@ -2932,21 +2932,6 @@ void Client::put_inode(Inode *in, int n)
 
     delete in;
   }
-}
-
-void Client::close_dir(Dir *dir)
-{
-  Inode *in = dir->parent_inode;
-  ldout(cct, 15) << "close_dir dir " << dir << " on " << in << dendl;
-  assert(dir->is_empty());
-  assert(in->dir == dir);
-  assert(in->dentries.size() < 2);     // dirs can't be hard-linked
-  if (!in->dentries.empty())
-    in->get_first_parent()->put();   // unpin dentry
-  
-  delete in->dir;
-  in->dir = 0;
-  put_inode(in);               // unpin inode
 }
 
   /**
@@ -4962,7 +4947,7 @@ void Client::_try_to_trim_inode(Inode *in, bool sched_inval)
 	unlink(dn, true, false);  // keep dir, drop dentry
     }
     if (in->dir->dentries.empty()) {
-      close_dir(in->dir);
+      in->close_dir();
       --ref;
     }
   }
