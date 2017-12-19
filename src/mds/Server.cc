@@ -1720,7 +1720,9 @@ void Server::handle_osd_map()
    * using osdmap_full_flag(), because we want to know "is the flag set"
    * rather than "does the flag apply to us?" */
   mds->objecter->with_osdmap([this](const OSDMap& o) {
-      is_full = o.test_flag(CEPH_OSDMAP_FULL);
+      std::set<int64_t> full, backfillfull, nearfull;
+      o.get_full_pools(mds->cct, &full, &backfillfull, &nearfull);
+      is_full = full.find(mds->mdsmap->get_metadata_pool()) != full.end();
       dout(7) << __func__ << ": full = " << is_full << " epoch = "
 	      << o.get_epoch() << dendl;
     });
