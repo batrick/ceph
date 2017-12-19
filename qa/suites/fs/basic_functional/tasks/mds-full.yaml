@@ -1,3 +1,15 @@
+# Clear all OSD settings specified by objectstore (evil) since we specify it here
+overrides:
+  ceph:
+    conf:
+      osd:
+        bluestore fsck on mount: false
+  ceph-deploy:
+    bluestore: no
+    conf:
+      osd:
+        osd objectstore: memstore
+        bluestore fsck on mount: false
 
 overrides:
   ceph:
