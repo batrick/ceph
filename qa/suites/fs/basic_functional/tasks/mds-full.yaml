@@ -3,6 +3,17 @@ overrides:
   ceph:
     cephfs_ec_profile:
       - disabled
+    # test_full makes assumptions about the number of bytes that need to be
+    # written before the pool becomes full. In earlier versions of this QA
+    # suite, we used 3 OSDs which simplified things because every object would
+    # have a replica on every OSD. Now we have up to 6 OSDs to support EC pool
+    # testing so now we need to deal with uneven distribution of objects across
+    # OSDs so those assumptions break down. For simplicity, we now use 1 PG
+    # which will bring us back to using 3 OSDs of the 3+ available.
+    cephfs_metadata_pool:
+      pgs: 64
+    cephfs_data_pool:
+      pgs: 64
     log-whitelist:
       - OSD full dropping all updates
       - OSD near full

@@ -212,6 +212,7 @@ class FullnessTestCase(CephFSTestCase):
         file_path = os.path.join(self.mount_a.mountpoint, "full_test_file")
 
         # Enough to trip the full flag
+        mon_osd_full_ratio = float(self.fs.get_config("mon_osd_full_ratio", service_type='mon'))
         osd_mon_report_interval_max = int(self.fs.get_config("osd_mon_report_interval_max", service_type='osd'))
         mon_tick_interval = int(self.fs.get_config("mon_tick_interval", service_type="mon"))
 
@@ -230,12 +231,18 @@ class FullnessTestCase(CephFSTestCase):
             log.warn("This test may run rather slowly unless you decrease"
                      "osd_mon_report_interval_max (5 is a good setting)!")
 
-        self.mount_a.run_python(template.format(
-            fill_mb=self.fill_mb,
-            file_path=file_path,
-            full_wait=full_wait,
-            is_fuse=isinstance(self.mount_a, FuseMount)
-        ))
+        try:
+            self.mount_a.run_python(template.format(
+                fill_mb=self.fill_mb,
+                file_path=file_path,
+                full_wait=full_wait,
+                mon_osd_full_ratio=mon_osd_full_ratio,
+                is_fuse=isinstance(self.mount_a, FuseMount)
+            ))
+        except:
+            log.info("%s".format(self.fs.mon_manager.get_osd_dump_json()))
+            log.info("%s".format(self.fs._df()))
+            raise
 
     def test_full_fclose(self):
         # A remote script which opens a file handle, fills up the filesystem, and then
@@ -245,6 +252,7 @@ class FullnessTestCase(CephFSTestCase):
             import datetime
             import subprocess
             import os
+
 
             # Write some buffered data through before going full, all should be well
             print "writing some data through which we expect to succeed"
@@ -260,8 +268,10 @@ class FullnessTestCase(CephFSTestCase):
             # from write
             full = False
 
-            for n in range(0, {fill_mb}):
-                bytes += os.write(f, 'x' * 1024 * 1024)
+            data = 'x' * 1024 * 1024
+            count = int({mon_osd_full_ratio}*{fill_mb})+1
+            for n in range(0, count):
+                bytes += os.write(f, data)
                 print "wrote bytes via buffered write, may repeat"
             print "done writing bytes"
 
@@ -405,7 +415,7 @@ class TestClusterFull(FullnessTestCase):
             # `max_avail` attribute of pools that sometimes occurs in between
             # tests (reason as yet unclear, but this dodges the issue)
             TestClusterFull.pool_capacity = self.fs.get_pool_df(self._data_pool_name())['max_avail']
-            TestClusterFull.fill_mb = int(1.05 * (self.pool_capacity / (1024.0 * 1024.0)))
+            TestClusterFull.fill_mb = self.pool_capacity / (1024.0 * 1024.0)
 
     def is_full(self):
         return self.fs.is_full()

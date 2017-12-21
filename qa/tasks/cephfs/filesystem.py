@@ -370,16 +370,23 @@ class Filesystem(MDSCluster):
     This object is for driving a CephFS filesystem.  The MDS daemons driven by
     MDSCluster may be shared with other Filesystems.
     """
-    def __init__(self, ctx, fscid=None, name=None, create=False,
-                 ec_profile=None):
+    def __init__(self, ctx, fscid=None, name=None, create=False):
         super(Filesystem, self).__init__(ctx)
 
+        pgs_per_fs_pool = self.get_pgs_per_fs_pool()
+
+        overrides = ctx.config.get('overrides', {}).get('ceph', {})
+
         self.name = name
-        self.ec_profile = ec_profile
+        self.ec_profile = overrides.get('cephfs_ec_profile', None)
         self.id = None
-        self.metadata_pool_name = None
+        c = overrides.get('cephfs_metadata_pool', {})
+        self.metadata_pool_name = c.get('name', "{0}_metadata".format(self.name))
+        self.metadata_pool_pgs = c.get('pgs', pgs_per_fs_pool)
         self.metadata_overlay = False
-        self.data_pool_name = None
+        c = overrides.get('cephfs_data_pool', {})
+        self.data_pool_name = c.get('name', "{0}_data".format(self.name))
+        self.data_pool_pgs = c.get('pgs', pgs_per_fs_pool)
         self.data_pools = None
 
         client_list = list(misc.all_roles_of_type(self._ctx.cluster, 'client'))
@@ -456,44 +463,36 @@ class Filesystem(MDSCluster):
     def create(self):
         if self.name is None:
             self.name = "cephfs"
-        if self.metadata_pool_name is None:
-            self.metadata_pool_name = "{0}_metadata".format(self.name)
-        if self.data_pool_name is None:
-            data_pool_name = "{0}_data".format(self.name)
-        else:
-            data_pool_name = self.data_pool_name
 
         log.info("Creating filesystem '{0}'".format(self.name))
 
-        pgs_per_fs_pool = self.get_pgs_per_fs_pool()
-
         self.mon_manager.raw_cluster_cmd('osd', 'pool', 'create',
-                                         self.metadata_pool_name, pgs_per_fs_pool.__str__())
+                                         self.metadata_pool_name, str(self.metadata_pool_pgs))
         if self.metadata_overlay:
             self.mon_manager.raw_cluster_cmd('fs', 'new',
-                                             self.name, self.metadata_pool_name, data_pool_name,
+                                             self.name, self.metadata_pool_name, self.data_pool_name,
                                              '--allow-dangerous-metadata-overlay')
         else:
             if self.ec_profile and 'disabled' not in self.ec_profile:
                 log.info("EC profile is %s", self.ec_profile)
-                cmd = ['osd', 'erasure-code-profile', 'set', data_pool_name]
+                cmd = ['osd', 'erasure-code-profile', 'set', self.data_pool_name]
                 cmd.extend(self.ec_profile)
                 self.mon_manager.raw_cluster_cmd(*cmd)
                 self.mon_manager.raw_cluster_cmd(
                     'osd', 'pool', 'create',
-                    data_pool_name, pgs_per_fs_pool.__str__(), 'erasure',
-                    data_pool_name)
+                    self.data_pool_name, str(self.data_pool_pgs), 'erasure',
+                    self.data_pool_name)
                 self.mon_manager.raw_cluster_cmd(
                     'osd', 'pool', 'set',
-                    data_pool_name, 'allow_ec_overwrites', 'true')
+                    self.data_pool_name, 'allow_ec_overwrites', 'true')
             else:
                 self.mon_manager.raw_cluster_cmd(
                     'osd', 'pool', 'create',
-                    data_pool_name, pgs_per_fs_pool.__str__())
+                    self.data_pool_name, str(self.data_pool_pgs))
             self.mon_manager.raw_cluster_cmd('fs', 'new',
-                                             self.name, self.metadata_pool_name, data_pool_name)
+                                             self.name, self.metadata_pool_name, self.data_pool_name)
         self.check_pool_application(self.metadata_pool_name)
-        self.check_pool_application(data_pool_name)
+        self.check_pool_application(self.data_pool_name)
         # Turn off spurious standby count warnings from modifying max_mds in tests.
         try:
             self.mon_manager.raw_cluster_cmd('fs', 'set', self.name, 'standby_count_wanted', '0')
