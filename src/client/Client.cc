@@ -12044,6 +12044,7 @@ int Client::_rmdir(Inode *dir, const char *name, const UserPerm& perms)
   dir->make_nosnap_relative_path(path);
   path.push_dentry(name);
   req->set_filepath(path);
+  req->set_inode(dir);
 
   req->dentry_drop = CEPH_CAP_FILE_SHARED;
   req->dentry_unless = CEPH_CAP_FILE_EXCL;
@@ -12063,14 +12064,12 @@ int Client::_rmdir(Inode *dir, const char *name, const UserPerm& perms)
   res = _lookup(dir, name, 0, &in, perms);
   if (res < 0)
     goto fail;
-  if (op == CEPH_MDS_OP_RMDIR) {
-    req->set_inode(dir);
-    req->set_other_inode(in.get());
-  } else {
+
+  if (op == CEPH_MDS_OP_RMSNAP) {
     unlink(de, true, true);
     de->put();
-    req->set_other_inode(in.get());
   }
+  req->set_other_inode(in.get());
 
   res = make_request(req, perms);
 
