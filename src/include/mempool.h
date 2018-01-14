@@ -15,15 +15,17 @@
 #ifndef _CEPH_INCLUDE_MEMPOOL_H
 #define _CEPH_INCLUDE_MEMPOOL_H
 
-#include <cstddef>
-#include <map>
-#include <unordered_map>
-#include <set>
-#include <vector>
-#include <list>
-#include <mutex>
 #include <atomic>
+#include <cstddef>
+#include <list>
+#include <map>
+#include <memory_resource>
+#include <mutex>
+#include <set>
 #include <typeinfo>
+#include <unordered_map>
+#include <vector>
+
 #include <boost/container/flat_set.hpp>
 #include <boost/container/flat_map.hpp>
 
@@ -281,7 +283,7 @@ void dump(ceph::Formatter *f);
 // passing the allocator to container constructors.
 
 template<pool_index_t pool_ix, typename T>
-class pool_allocator {
+class pool_allocator : public std::pmr::memory_resource {
   pool_t *pool;
   type_t *type = nullptr;
 
@@ -364,6 +366,16 @@ public:
     ::free(p);
   }
 
+  do_allocate(std::size_t bytes, std::size_t alignment) {
+    return pool_allocator<T>.allocate_aligned(bytes, alignment);
+  }
+  do_deallocate(void *p, std::size_t bytes, std::size_t alignment) {
+    return pool_allocator<T>.deallocate_aligned(static_cast<T>(p), bytes);
+  }
+  do_is_equal(const std::pmr::memory_resource& other) {
+    return &this == &other;
+  }
+
   void destroy(T* p) {
     p->~T();
   }
@@ -385,7 +397,6 @@ public:
   bool operator!=(const pool_allocator&) const { return false; }
 };
 
-
 // Namespace mempool
 
 #define P(x)								\
@@ -394,11 +405,11 @@ public:
     template<typename v>						\
     using pool_allocator = mempool::pool_allocator<id,v>;		\
                                                                         \
-    using string = std::basic_string<char,std::char_traits<char>,       \
+    using string = std::pmr::basic_string<char,std::char_traits<char>,  \
                                      pool_allocator<char>>;             \
                                                                         \
     template<typename k,typename v, typename cmp = std::less<k> >	\
-    using map = std::map<k, v, cmp,					\
+    using map = std::pmr::map<k, v, cmp,				\
 			 pool_allocator<std::pair<const k,v>>>;		\
                                                                         \
     template<typename k,typename v, typename cmp = std::less<k> >       \
