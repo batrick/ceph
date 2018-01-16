@@ -499,7 +499,7 @@ void CInode::pop_projected_snaprealm(sr_t *next_snaprealm)
 
 // dirfrags
 
-__u32 InodeStoreBase::hash_dentry_name(const string &dn)
+__u32 InodeStoreBase::hash_dentry_name(std::string_view dn)
 {
   int which = inode.dir_layout.dl_dir_hash;
   if (!which)
@@ -508,7 +508,7 @@ __u32 InodeStoreBase::hash_dentry_name(const string &dn)
   return ceph_str_hash(which, dn.data(), dn.length());
 }
 
-frag_t InodeStoreBase::pick_dirfrag(const string& dn)
+frag_t InodeStoreBase::pick_dirfrag(std::string_view dn)
 {
   if (dirfragtree.empty())
     return frag_t();          // avoid the string hash if we can.
@@ -680,10 +680,8 @@ void CInode::close_dirfrag(frag_t fg)
   }
   
   // dump any remaining dentries, for debugging purposes
-  for (CDir::map_t::iterator p = dir->items.begin();
-       p != dir->items.end();
-       ++p) 
-    dout(14) << __func__ << " LEFTOVER dn " << *p->second << dendl;
+  for (const auto &p : dir->items)
+    dout(14) << __func__ << " LEFTOVER dn " << *p.second << dendl;
 
   assert(dir->get_num_ref() == 0);
   delete dir;
@@ -1135,7 +1133,7 @@ void CInode::build_backtrace(int64_t pool, inode_backtrace_t& bt)
   CDentry *pdn = get_parent_dn();
   while (pdn) {
     CInode *diri = pdn->get_dir()->get_inode();
-    bt.ancestors.push_back(inode_backpointer_t(diri->ino(), pdn->name, in->inode.version));
+    bt.ancestors.push_back(inode_backpointer_t(diri->ino(), pdn->get_name(), in->inode.version));
     in = diri;
     pdn = in->get_parent_dn();
   }
@@ -1310,7 +1308,7 @@ void CInode::verify_diri_backtrace(bufferlist &bl, int err)
     decode(backtrace, bl);
     CDentry *pdn = get_parent_dn();
     if (backtrace.ancestors.empty() ||
-	backtrace.ancestors[0].dname != pdn->name ||
+	backtrace.ancestors[0].dname != pdn->get_name() ||
 	backtrace.ancestors[0].dirino != pdn->get_dir()->ino())
       err = -EINVAL;
   }
@@ -1770,7 +1768,7 @@ void CInode::decode_lock_state(int type, bufferlist& bl)
 	snapid_t fgfirst;
 	nest_info_t rstat;
 	nest_info_t accounted_rstat;
-	compact_map<snapid_t,old_rstat_t> dirty_old_rstat;
+	decltype(CDir::dirty_old_rstat) dirty_old_rstat;
 	decode(fg, p);
 	decode(fgfirst, p);
 	decode(rstat, p);
@@ -2210,11 +2208,10 @@ void CInode::finish_scatter_gather_update(int type)
 	  dout(20) << fg << " dirty_old_rstat " << dir->dirty_old_rstat << dendl;
 	  mdcache->project_rstat_frag_to_inode(pf->rstat, pf->accounted_rstat,
 					       dir->first, CEPH_NOSNAP, this, true);
-	  for (compact_map<snapid_t,old_rstat_t>::iterator q = dir->dirty_old_rstat.begin();
-	       q != dir->dirty_old_rstat.end();
-	       ++q)
-	    mdcache->project_rstat_frag_to_inode(q->second.rstat, q->second.accounted_rstat,
-						 q->second.first, q->first, this, true);
+	  for (auto &p : dir->dirty_old_rstat) {
+	    mdcache->project_rstat_frag_to_inode(p.second.rstat, p.second.accounted_rstat,
+						 p.second.first, p.first, this, true);
+          }
 	  if (update)  // dir contents not valid if frozen or non-auth
 	    dir->check_rstats();
 	} else {
@@ -3911,7 +3908,7 @@ void CInode::validate_disk_state(CInode::validated_data *results,
     /**
      * Fetch backtrace and set tag if tag is non-empty
      */
-    void fetch_backtrace_and_tag(CInode *in, std::string tag,
+    void fetch_backtrace_and_tag(CInode *in, std::string_view tag,
                                  Context *fin, int *bt_r, bufferlist *bt)
     {
       const int64_t pool = in->get_backtrace_pool();
@@ -3953,7 +3950,7 @@ void CInode::validate_disk_state(CInode::validated_data *results,
       // present)
       if (in->scrub_infop) {
         // I'm a non-orphan, so look up my ScrubHeader via my linkage
-        const std::string &tag = in->scrub_infop->header->get_tag();
+        std::string_view tag = in->scrub_infop->header->get_tag();
         // Rather than using the usual CInode::fetch_backtrace,
         // use a special variant that optionally writes a tag in the same
         // operation.
