@@ -15,6 +15,21 @@
 #ifndef CEPH_FLAGS_H
 #define CEPH_FLAGS_H
 
+// constexpr array of strings to initialize flags? std::bitset<N>; however, how do we set template arg N with length of string array?
+template <char const *str...>
+class Flags : std::bitset<sizeof...(str)> {
+  //std::bitset<sizeof...(str)> set;
+  static std::string names[sizeof...(str)];
+
+  Flags() {
+    
+  }
+}
+
+template <char const *str...>
+Flags<args...>::names::data[sizeof...(args)] = {std::string(str)...};
+
+#if 0
 template <typename T>
 class Flag {
 public:
@@ -51,5 +66,6 @@ private:
   
   
 };
+#endif
 
 #endif

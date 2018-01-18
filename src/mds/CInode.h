@@ -20,6 +20,7 @@
 #include "common/config.h"
 #include "include/counter.h"
 #include "include/elist.h"
+#include "include/flags.h"
 #include "include/types.h"
 #include "include/lru.h"
 #include "include/compact_set.h"
@@ -230,6 +231,7 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
   static const uint64_t WAIT_FLOCK       = (1<<3);
   
   static const uint64_t WAIT_ANY_MASK	= (uint64_t)(-1);
+  Flags<"WAIT_DIR","WAIT_FROZEN","WAIT_TRUNC","WAIT_FLOCK"> waitsss;
 
   // misc
   static const unsigned EXPORT_NONCE = 1; // nonce given to replicas created by export
