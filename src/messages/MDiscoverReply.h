@@ -66,6 +66,7 @@
 class MDiscoverReply : public Message {
 
   static const int HEAD_VERSION = 2;
+  static const int COMPAT_VERSION = 2;
 
   // info about original request
   inodeno_t base_ino;
@@ -109,7 +110,7 @@ class MDiscoverReply : public Message {
   void set_base_dir_frag(frag_t df) { base_dir_frag = df; }
 
   // cons
-  MDiscoverReply() : Message(MSG_MDS_DISCOVERREPLY, HEAD_VERSION) { }
+  MDiscoverReply() : Message(MSG_MDS_DISCOVERREPLY, HEAD_VERSION, COMPAT_VERSION) { }
   MDiscoverReply(MDiscover *dis) :
     Message(MSG_MDS_DISCOVERREPLY, HEAD_VERSION),
     base_ino(dis->get_base_ino()),
