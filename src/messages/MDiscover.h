@@ -23,8 +23,8 @@
 
 
 class MDiscover : public Message {
-  static int HEAD_VERSION = 1;
-  static int COMPAT_VERSION = 1;
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
 
   inodeno_t       base_ino;          // 1 -> root
   frag_t          base_dir_frag;

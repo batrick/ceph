@@ -10415,29 +10415,58 @@ void MDCache::handle_discover_reply(MDiscoverReply *m)
 
 void MDCache::replicate_dir(CDir *dir, mds_rank_t to, bufferlist& bl)
 {
+  ENCODE_START(1, 1, bl);
   dirfrag_t df = dir->dirfrag();
   encode(df, bl);
-  dir->encode_replica(to, bl);
+  __u32 nonce = dir->add_replica(to);
+  encode(nonce, bl);
+  dir->_encode_base(bl);
+  ENCODE_FINISH(bl);
 }
 
 void MDCache::replicate_dentry(CDentry *dn, mds_rank_t to, bufferlist& bl)
 {
+  ENCODE_START(1, 1, bl);
   encode(dn->get_name(), bl);
   encode(dn->last, bl);
-  dn->encode_replica(to, bl, mds->get_state() < MDSMap::STATE_ACTIVE);
+  if (!dn->is_replicated())
+    dn->lock.replicate_relax();
+
+  __u32 nonce = dn->add_replica(to);
+  encode(nonce, bl);
+  encode(dn->first, bl);
+  encode(dn->linkage.remote_ino, bl);
+  encode(dn->linkage.remote_d_type, bl);
+  dn->lock.encode_state_for_replica(bl);
+  bool need_recover = mds->get_state() < MDSMap::STATE_ACTIVE;
+  encode(need_recover, bl);
+  ENCODE_FINISH(bl);
 }
 
 void MDCache::replicate_inode(CInode *in, mds_rank_t to, bufferlist& bl,
 			      uint64_t features)
 {
+  ENCODE_START(1, 1, bl);
+  assert(in->is_auth());
   encode(in->inode.ino, bl);  // bleh, minor assymetry here
   encode(in->last, bl);
-  in->encode_replica(to, bl, features, mds->get_state() < MDSMap::STATE_ACTIVE);
+
+  //relax locks?
+  if (!in->is_replicated()) {
+    in->replicate_relax_locks();
+  }
+  __u32 nonce = in->add_replica(to);
+  encode(nonce, bl);
+
+  in->_encode_base(bl, features);
+  in->_encode_locks_state_for_replica(bl, mds->get_state() < MDSMap::STATE_ACTIVE);
+  ENCODE_FINISH(bl);
 }
 
 CDir *MDCache::add_replica_dir(bufferlist::const_iterator& p, CInode *diri, mds_rank_t from,
 			       list<MDSInternalContextBase*>& finished)
 {
+  DECODE_START(1, p);
   dirfrag_t df;
   decode(df, p);
 
@@ -10448,7 +10477,10 @@ CDir *MDCache::add_replica_dir(bufferlist::const_iterator& p, CInode *diri, mds_
 
   if (dir) {
     // had replica. update w/ new nonce.
-    dir->decode_replica(p);
+    __u32 nonce;
+    decode(nonce, p);
+    dir->set_replica_nonce(nonce);
+    dir->_decode_base(p);
     dout(7) << "add_replica_dir had " << *dir << " nonce " << dir->replica_nonce << dendl;
   } else {
     // force frag to leaf in the diri tree
@@ -10457,11 +10489,12 @@ CDir *MDCache::add_replica_dir(bufferlist::const_iterator& p, CInode *diri, mds_
 	      << diri->dirfragtree << dendl;
       diri->dirfragtree.force_to_leaf(g_ceph_context, df.frag);
     }
-
     // add replica.
     dir = diri->add_dirfrag( new CDir(diri, df.frag, this, false) );
-    dir->decode_replica(p);
-
+    __u32 nonce;
+    decode(nonce, p);
+    dir->set_replica_nonce(nonce);
+    dir->_decode_base(p);
     // is this a dir_auth delegation boundary?
     if (from != diri->authority().first ||
 	diri->is_ambiguous_auth() ||
@@ -10469,16 +10502,17 @@ CDir *MDCache::add_replica_dir(bufferlist::const_iterator& p, CInode *diri, mds_
       adjust_subtree_auth(dir, from);
     
     dout(7) << "add_replica_dir added " << *dir << " nonce " << dir->replica_nonce << dendl;
-    
     // get waiters
     diri->take_dir_waiting(df.frag, finished);
   }
+  DECODE_FINISH(p);
 
   return dir;
 }
 
 CDentry *MDCache::add_replica_dentry(bufferlist::const_iterator& p, CDir *dir, list<MDSInternalContextBase*>& finished)
 {
+  DECODE_START(1, p);
   string name;
   snapid_t last;
   decode(name, p);
@@ -10487,30 +10521,57 @@ CDentry *MDCache::add_replica_dentry(bufferlist::const_iterator& p, CDir *dir, l
   CDentry *dn = dir->lookup(name, last);
   
   // have it?
+  bool is_new = false;
   if (dn) {
-    dn->decode_replica(p, false);
+    is_new = false;
     dout(7) << "add_replica_dentry had " << *dn << dendl;
   } else {
+    is_new = true;
     dn = dir->add_null_dentry(name, 1 /* this will get updated below */, last);
-    dn->decode_replica(p, true);
     dout(7) << "add_replica_dentry added " << *dn << dendl;
+  }
+  
+  __u32 nonce;
+  decode(nonce, p);
+  dn->set_replica_nonce(nonce); 
+  decode(dn->first, p);
+
+  inodeno_t rino;
+  unsigned char rdtype;
+  decode(rino, p);
+  decode(rdtype, p);
+  dn->lock.decode_state(p, is_new);
+
+  bool need_recover;
+  decode(need_recover, p);
+
+  if (is_new) {
+    if (rino)
+      dir->link_remote_inode(dn, rino, rdtype);
+    if (need_recover)
+      dn->lock.mark_need_recover();
   }
 
   dir->take_dentry_waiting(name, dn->first, dn->last, finished);
-
+  DECODE_FINISH(p);
   return dn;
 }
 
 CInode *MDCache::add_replica_inode(bufferlist::const_iterator& p, CDentry *dn, list<MDSInternalContextBase*>& finished)
 {
+  DECODE_START(1, p);
   inodeno_t ino;
   snapid_t last;
+  __u32 nonce;
   decode(ino, p);
   decode(last, p);
+  decode(nonce, p);
   CInode *in = get_inode(ino, last);
   if (!in) {
     in = new CInode(this, false, 1, last);
-    in->decode_replica(p, true);
+    in->set_replica_nonce(nonce);
+    in->_decode_base(p);
+    in->_decode_locks_state(p, true);
     add_inode(in);
     if (in->ino() == MDS_INO_ROOT)
       in->inode_auth.first = 0;
@@ -10522,7 +10583,9 @@ CInode *MDCache::add_replica_inode(bufferlist::const_iterator& p, CDentry *dn, l
       dn->dir->link_primary_inode(dn, in);
     }
   } else {
-    in->decode_replica(p, false);
+    in->set_replica_nonce(nonce);
+    in->_decode_base(p);
+    in->_decode_locks_state(p, false);
     dout(10) << "add_replica_inode had " << *in << dendl;
   }
 
@@ -10530,7 +10593,7 @@ CInode *MDCache::add_replica_inode(bufferlist::const_iterator& p, CDentry *dn, l
     if (!dn->get_linkage()->is_primary() || dn->get_linkage()->get_inode() != in)
       dout(10) << "add_replica_inode different linkage in dentry " << *dn << dendl;
   }
-  
+  DECODE_FINISH(p); 
   return in;
 }
 

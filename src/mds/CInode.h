@@ -818,30 +818,6 @@ public:
   void encode_store(bufferlist& bl, uint64_t features);
   void decode_store(bufferlist::const_iterator& bl);
 
-  void encode_replica(mds_rank_t rep, bufferlist& bl, uint64_t features, bool need_recover) {
-    assert(is_auth());
-    
-    // relax locks?
-    if (!is_replicated())
-      replicate_relax_locks();
-    
-    __u32 nonce = add_replica(rep);
-    using ceph::encode;
-    encode(nonce, bl);
-    
-    _encode_base(bl, features);
-    _encode_locks_state_for_replica(bl, need_recover);
-  }
-  void decode_replica(bufferlist::const_iterator& p, bool is_new) {
-    using ceph::decode;
-    __u32 nonce;
-    decode(nonce, p);
-    replica_nonce = nonce;
-    
-    _decode_base(p);
-    _decode_locks_state(p, is_new);
-  }
-
   // -- waiting --
 protected:
   mempool::mds_co::compact_map<frag_t, std::list<MDSInternalContextBase*> > waiting_on_dir;
