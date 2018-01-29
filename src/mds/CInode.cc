@@ -3673,7 +3673,7 @@ void CInode::encode_cap_message(MClientCaps *m, Capability *cap)
 
 void CInode::_encode_base(bufferlist& bl, uint64_t features)
 {
-  using ceph::encode;
+  ENCODE_START(1, 1, bl);
   encode(first, bl);
   encode(inode, bl, features);
   encode(symlink, bl);
@@ -3682,10 +3682,11 @@ void CInode::_encode_base(bufferlist& bl, uint64_t features)
   encode(old_inodes, bl, features);
   encode(damage_flags, bl);
   encode_snap(bl);
+  ENCODE_FINISH(bl);
 }
 void CInode::_decode_base(bufferlist::iterator& p)
 {
-  using ceph::decode;
+  DECODE_START(1, p);
   decode(first, p);
   decode(inode, p);
   {
@@ -3698,6 +3699,7 @@ void CInode::_decode_base(bufferlist::iterator& p)
   decode(old_inodes, p);
   decode(damage_flags, p);
   decode_snap(p);
+  DECODE_FINISH(p);
 }
 
 void CInode::_encode_locks_full(bufferlist& bl)
@@ -3735,6 +3737,7 @@ void CInode::_decode_locks_full(bufferlist::iterator& p)
 
 void CInode::_encode_locks_state_for_replica(bufferlist& bl, bool need_recover)
 {
+  ENCODE_START(1, 1, bl);
   authlock.encode_state_for_replica(bl);
   linklock.encode_state_for_replica(bl);
   dirfragtreelock.encode_state_for_replica(bl);
@@ -3744,8 +3747,8 @@ void CInode::_encode_locks_state_for_replica(bufferlist& bl, bool need_recover)
   snaplock.encode_state_for_replica(bl);
   flocklock.encode_state_for_replica(bl);
   policylock.encode_state_for_replica(bl);
-  using ceph::encode;
   encode(need_recover, bl);
+  ENCODE_FINISH(bl);
 }
 
 void CInode::_encode_locks_state_for_rejoin(bufferlist& bl, int rep)
@@ -3761,8 +3764,9 @@ void CInode::_encode_locks_state_for_rejoin(bufferlist& bl, int rep)
   policylock.encode_state_for_replica(bl);
 }
 
-void CInode::_decode_locks_state(bufferlist::iterator& p, bool is_new)
+void CInode::_decode_locks_state_for_replica(bufferlist::iterator& p, bool is_new)
 {
+  DECODE_START(1, p);
   authlock.decode_state(p, is_new);
   linklock.decode_state(p, is_new);
   dirfragtreelock.decode_state(p, is_new);
@@ -3773,7 +3777,6 @@ void CInode::_decode_locks_state(bufferlist::iterator& p, bool is_new)
   flocklock.decode_state(p, is_new);
   policylock.decode_state(p, is_new);
 
-  using ceph::decode;
   bool need_recover;
   decode(need_recover, p);
   if (need_recover && is_new) {
@@ -3789,6 +3792,7 @@ void CInode::_decode_locks_state(bufferlist::iterator& p, bool is_new)
     flocklock.mark_need_recover();
     policylock.mark_need_recover();
   }
+  DECODE_FINISH(p);
 }
 void CInode::_decode_locks_rejoin(bufferlist::iterator& p, list<MDSInternalContextBase*>& waiters,
 				  list<SimpleLock*>& eval_locks, bool survivor)
