@@ -837,7 +837,7 @@ public:
   void _decode_locks_full(bufferlist::const_iterator& p);
   void _encode_locks_state_for_replica(bufferlist& bl, bool need_recover);
   void _encode_locks_state_for_rejoin(bufferlist& bl, int rep);
-  void _decode_locks_state(bufferlist::const_iterator& p, bool is_new);
+  void _decode_locks_state_for_replica(bufferlist::const_iterator& p, bool is_new);
   void _decode_locks_rejoin(bufferlist::const_iterator& p, std::list<MDSInternalContextBase*>& waiters,
 			    std::list<SimpleLock*>& eval_locks, bool survivor);
 

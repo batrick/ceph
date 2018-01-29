@@ -10569,7 +10569,7 @@ void MDCache::decode_replica_inode(CInode *&in, bufferlist::const_iterator& p, C
     in = new CInode(this, false, 1, last);
     in->set_replica_nonce(nonce);
     in->_decode_base(p);
-    in->_decode_locks_state(p, true);
+    in->_decode_locks_state_for_replica(p, true);
     add_inode(in);
     if (in->ino() == MDS_INO_ROOT)
       in->inode_auth.first = 0;
@@ -10583,7 +10583,7 @@ void MDCache::decode_replica_inode(CInode *&in, bufferlist::const_iterator& p, C
   } else {
     in->set_replica_nonce(nonce);
     in->_decode_base(p);
-    in->_decode_locks_state(p, false);
+    in->_decode_locks_state_for_replica(p, false);
     dout(10) << __func__ << " had " << *in << dendl;
   }
 

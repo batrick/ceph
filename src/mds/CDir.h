@@ -568,16 +568,20 @@ private:
   }
 
   void _encode_base(bufferlist& bl) {
+    ENCODE_START(1, 1, bl);
     encode(first, bl);
     encode(fnode, bl);
     encode(dir_rep, bl);
     encode(dir_rep_by, bl);
+    ENCODE_FINISH(bl);
   }
   void _decode_base(bufferlist::const_iterator& p) {
+    DECODE_START(1, p);
     decode(first, p);
     decode(fnode, p);
     decode(dir_rep, p);
     decode(dir_rep_by, p);
+    DECODE_FINISH(p);
   }
 
   // -- state --
