@@ -1083,14 +1083,14 @@ protected:
   friend class C_MDC_Join;
 
 public:
-  void replicate_dir(CDir *dir, mds_rank_t to, bufferlist& bl);
-  void replicate_dentry(CDentry *dn, mds_rank_t to, bufferlist& bl);
-  void replicate_inode(CInode *in, mds_rank_t to, bufferlist& bl,
+  void encode_replica_dir(CDir *dir, mds_rank_t to, bufferlist& bl);
+  void encode_replica_dentry(CDentry *dn, mds_rank_t to, bufferlist& bl);
+  void encode_replica_inode(CInode *in, mds_rank_t to, bufferlist& bl,
 		       uint64_t features);
   
-  CDir* add_replica_dir(bufferlist::const_iterator& p, CInode *diri, mds_rank_t from, list<MDSInternalContextBase*>& finished);
-  CDentry *add_replica_dentry(bufferlist::const_iterator& p, CDir *dir, list<MDSInternalContextBase*>& finished);
-  CInode *add_replica_inode(bufferlist::const_iterator& p, CDentry *dn, list<MDSInternalContextBase*>& finished);
+  void decode_replica_dir(CDir *&dir, bufferlist::const_iterator& p, CInode *diri, mds_rank_t from, list<MDSInternalContextBase*>& finished);
+  void decode_replica_dentry(CDentry *&dn, bufferlist::const_iterator& p, CDir *dir, list<MDSInternalContextBase*>& finished);
+  void decode_replica_inode(CInode *&in, bufferlist::const_iterator& p, CDentry *dn, list<MDSInternalContextBase*>& finished);
 
   void replicate_stray(CDentry *straydn, mds_rank_t who, bufferlist& bl);
   CDentry *add_replica_stray(bufferlist &bl, mds_rank_t from);
