@@ -10595,8 +10595,9 @@ void MDCache::decode_replica_inode(CInode *&in, bufferlist::const_iterator& p, C
 }
 
  
-void MDCache::replicate_stray(CDentry *straydn, mds_rank_t who, bufferlist& bl)
+void MDCache::encode_replica_stray(CDentry *straydn, mds_rank_t who, bufferlist& bl)
 {
+  ENCODE_START(1, 1, bl);
   uint64_t features = mds->mdsmap->get_up_features();
   encode_replica_inode(get_myin(), who, bl, features);
   encode_replica_dir(straydn->get_dir()->inode->get_parent_dn()->get_dir(), who, bl);
@@ -10604,13 +10605,15 @@ void MDCache::replicate_stray(CDentry *straydn, mds_rank_t who, bufferlist& bl)
   encode_replica_inode(straydn->get_dir()->inode, who, bl, features);
   encode_replica_dir(straydn->get_dir(), who, bl);
   encode_replica_dentry(straydn, who, bl);
+  ENCODE_FINISH(bl);
 }
    
-CDentry *MDCache::add_replica_stray(bufferlist &bl, mds_rank_t from)
+void MDCache::decode_replica_stray(CDentry *&straydn, bufferlist &bl, mds_rank_t from)
 {
   list<MDSInternalContextBase*> finished;
   auto p = bl.cbegin();
 
+  DECODE_START(1, p);
   CInode *mdsin = nullptr;
   decode_replica_inode(mdsin, p, NULL, finished);
   CDir *mdsdir = nullptr;
@@ -10621,12 +10624,11 @@ CDentry *MDCache::add_replica_stray(bufferlist &bl, mds_rank_t from)
   decode_replica_inode(strayin, p, straydirdn, finished);
   CDir *straydir = nullptr;
   decode_replica_dir(straydir, p, strayin, from, finished);
-  CDentry *straydn = nullptr;
+
   decode_replica_dentry(straydn, p, straydir, finished);
   if (!finished.empty())
     mds->queue_waiters(finished);
-
-  return straydn;
+  DECODE_FINISH(p);
 }
 
 
@@ -10725,9 +10727,31 @@ void MDCache::handle_dir_update(MDirUpdate *m)
 
 // LINK
 
+void MDCache::encode_remote_dentry_link(CDentry::linkage_t *dnl, bufferlist& bl)
+{
+  ENCODE_START(1, 1, bl);
+  inodeno_t ino = dnl->get_remote_ino();
+  encode(ino, bl);
+  __u8 d_type = dnl->get_remote_d_type();
+  encode(d_type, bl);
+  ENCODE_FINISH(bl);
+}
+
+void MDCache::decode_remote_dentry_link(CDir *dir, CDentry *dn, bufferlist::iterator& p)
+{
+  DECODE_START(1, p);
+  inodeno_t ino;
+  __u8 d_type;
+  decode(ino, p);
+  decode(d_type, p);
+  dout(10) << __func__ << "  remote " << ino << " " << d_type << dendl;
+  dir->link_remote_inode(dn, ino, d_type);
+  DECODE_FINISH(p);
+}
+
 void MDCache::send_dentry_link(CDentry *dn, MDRequestRef& mdr)
 {
-  dout(7) << "send_dentry_link " << *dn << dendl;
+  dout(7) << __func__ << " " << *dn << dendl;
 
   CDir *subtree = get_subtree_root(dn->get_dir());
   for (const auto &p : dn->get_replicas()) {
@@ -10742,15 +10766,11 @@ void MDCache::send_dentry_link(CDentry *dn, MDRequestRef& mdr)
     MDentryLink *m = new MDentryLink(subtree->dirfrag(), dn->get_dir()->dirfrag(),
 				     dn->get_name(), dnl->is_primary());
     if (dnl->is_primary()) {
-      dout(10) << "  primary " << *dnl->get_inode() << dendl;
+      dout(10) << __func__ << "  primary " << *dnl->get_inode() << dendl;
       encode_replica_inode(dnl->get_inode(), p.first, m->bl,
 		      mds->mdsmap->get_up_features());
     } else if (dnl->is_remote()) {
-      inodeno_t ino = dnl->get_remote_ino();
-      __u8 d_type = dnl->get_remote_d_type();
-      dout(10) << "  remote " << ino << " " << d_type << dendl;
-      encode(ino, m->bl);
-      encode(d_type, m->bl);
+      encode_remote_dentry_link(dnl, m->bl);
     } else
       ceph_abort();   // aie, bad caller!
     mds->send_message_mds(m, p.first);
@@ -10760,17 +10780,16 @@ void MDCache::send_dentry_link(CDentry *dn, MDRequestRef& mdr)
 /* This function DOES put the passed message before returning */
 void MDCache::handle_dentry_link(MDentryLink *m)
 {
-
   CDentry *dn = NULL;
   CDir *dir = get_dirfrag(m->get_dirfrag());
   if (!dir) {
-    dout(7) << "handle_dentry_link don't have dirfrag " << m->get_dirfrag() << dendl;
+    dout(7) << __func__ << " don't have dirfrag " << m->get_dirfrag() << dendl;
   } else {
     dn = dir->lookup(m->get_dn());
     if (!dn) {
-      dout(7) << "handle_dentry_link don't have dentry " << *dir << " dn " << m->get_dn() << dendl;
+      dout(7) << __func__ << " don't have dentry " << *dir << " dn " << m->get_dn() << dendl;
     } else {
-      dout(7) << "handle_dentry_link on " << *dn << dendl;
+      dout(7) << __func__ << " on " << *dn << dendl;
       CDentry::linkage_t *dnl = dn->get_linkage();
 
       assert(!dn->is_auth());
@@ -10787,11 +10806,7 @@ void MDCache::handle_dentry_link(MDentryLink *m)
       decode_replica_inode(in, p, dn, finished);
     } else {
       // remote link, easy enough.
-      inodeno_t ino;
-      __u8 d_type;
-      decode(ino, p);
-      decode(d_type, p);
-      dir->link_remote_inode(dn, ino, d_type);
+      decode_remote_dentry_link(dir, dn, p);
     }
   } else {
     ceph_abort();
@@ -10809,7 +10824,7 @@ void MDCache::handle_dentry_link(MDentryLink *m)
 
 void MDCache::send_dentry_unlink(CDentry *dn, CDentry *straydn, MDRequestRef& mdr)
 {
-  dout(10) << "send_dentry_unlink " << *dn << dendl;
+  dout(10) << __func__ << " " << *dn << dendl;
   // share unlink news with replicas
   set<mds_rank_t> replicas;
   dn->list_replicas(replicas);
@@ -10833,7 +10848,7 @@ void MDCache::send_dentry_unlink(CDentry *dn, CDentry *straydn, MDRequestRef& md
 
     MDentryUnlink *unlink = new MDentryUnlink(dn->get_dir()->dirfrag(), dn->get_name());
     if (straydn) {
-      replicate_stray(straydn, *it, unlink->straybl);
+      encode_replica_stray(straydn, *it, unlink->straybl);
       unlink->snapbl = snapbl;
     }
     mds->send_message_mds(unlink, *it);
@@ -10844,19 +10859,19 @@ void MDCache::send_dentry_unlink(CDentry *dn, CDentry *straydn, MDRequestRef& md
 void MDCache::handle_dentry_unlink(MDentryUnlink *m)
 {
   // straydn
-  CDentry *straydn = NULL;
+  CDentry *straydn = nullptr;
   if (m->straybl.length())
-    straydn = add_replica_stray(m->straybl, mds_rank_t(m->get_source().num()));
+    decode_replica_stray(straydn, m->straybl, mds_rank_t(m->get_source().num()));
 
   CDir *dir = get_dirfrag(m->get_dirfrag());
   if (!dir) {
-    dout(7) << "handle_dentry_unlink don't have dirfrag " << m->get_dirfrag() << dendl;
+    dout(7) << __func__ << " don't have dirfrag " << m->get_dirfrag() << dendl;
   } else {
     CDentry *dn = dir->lookup(m->get_dn());
     if (!dn) {
-      dout(7) << "handle_dentry_unlink don't have dentry " << *dir << " dn " << m->get_dn() << dendl;
+      dout(7) << __func__ << " don't have dentry " << *dir << " dn " << m->get_dn() << dendl;
     } else {
-      dout(7) << "handle_dentry_unlink on " << *dn << dendl;
+      dout(7) << __func__ << " on " << *dn << dendl;
       CDentry::linkage_t *dnl = dn->get_linkage();
 
       // open inode?

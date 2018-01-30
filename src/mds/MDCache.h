@@ -1092,11 +1092,13 @@ public:
   void decode_replica_dentry(CDentry *&dn, bufferlist::const_iterator& p, CDir *dir, list<MDSInternalContextBase*>& finished);
   void decode_replica_inode(CInode *&in, bufferlist::const_iterator& p, CDentry *dn, list<MDSInternalContextBase*>& finished);
 
-  void replicate_stray(CDentry *straydn, mds_rank_t who, bufferlist& bl);
-  CDentry *add_replica_stray(bufferlist &bl, mds_rank_t from);
+  void encode_replica_stray(CDentry *straydn, mds_rank_t who, bufferlist& bl);
+  void decode_replica_stray(CDentry *&straydn, bufferlist &bl, mds_rank_t from);
 
   // -- namespace --
 public:
+  void encode_remote_dentry_link(CDentry::linkage_t *dnl, bufferlist& bl);
+  void decode_remote_dentry_link(CDir *dir, CDentry *dn, bufferlist::iterator& p);
   void send_dentry_link(CDentry *dn, MDRequestRef& mdr);
   void send_dentry_unlink(CDentry *dn, CDentry *straydn, MDRequestRef& mdr);
 protected:
