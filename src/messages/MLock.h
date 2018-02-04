@@ -20,6 +20,9 @@
 #include "mds/locks.h"
 
 class MLock : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
   int32_t     action = 0;  // action type
   int32_t     asker = 0;  // who is initiating this request
   metareqid_t reqid;  // for remote lock requests
@@ -38,19 +41,19 @@ public:
   int get_lock_type() { return lock_type; }
   MDSCacheObjectInfo &get_object_info() { return object_info; }
   
-  MLock() : Message(MSG_MDS_LOCK) {}
+  MLock() : Message(MSG_MDS_LOCK, HEAD_VERSION, COMPAT_VERSION) {}
   MLock(int ac, int as) :
     Message(MSG_MDS_LOCK),
     action(ac), asker(as),
     lock_type(0) { }
   MLock(SimpleLock *lock, int ac, int as) :
-    Message(MSG_MDS_LOCK),
+    Message(MSG_MDS_LOCK, HEAD_VERSION, COMPAT_VERSION),
     action(ac), asker(as),
     lock_type(lock->get_type()) {
     lock->get_parent()->set_object_info(object_info);
   }
   MLock(SimpleLock *lock, int ac, int as, bufferlist& bl) :
-    Message(MSG_MDS_LOCK),
+    Message(MSG_MDS_LOCK, HEAD_VERSION, COMPAT_VERSION),
     action(ac), asker(as), lock_type(lock->get_type()) {
     lock->get_parent()->set_object_info(object_info);
     lockdata.claim(bl);
