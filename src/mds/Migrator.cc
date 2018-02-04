@@ -1471,8 +1471,8 @@ void Migrator::encode_export_inode(CInode *in, bufferlist& enc_state,
 void Migrator::encode_export_inode_caps(CInode *in, bool auth_cap, bufferlist& bl,
 					map<client_t,entity_inst_t>& exported_client_map)
 {
+  ENCODE_START(1, 1, bl);
   dout(20) << "encode_export_inode_caps " << *in << dendl;
-
   // encode caps
   map<client_t,Capability::Export> cap_map;
   in->export_client_caps(cap_map);
@@ -1489,6 +1489,7 @@ void Migrator::encode_export_inode_caps(CInode *in, bool auth_cap, bufferlist& b
        it != in->client_caps.end();
        ++it) 
     exported_client_map[it->first] = mds->sessionmap.get_inst(entity_name_t::CLIENT(it->first.v));
+  ENCODE_FINISH(bl);
 }
 
 void Migrator::finish_export_inode_caps(CInode *in, mds_rank_t peer,
@@ -3048,6 +3049,7 @@ void Migrator::decode_import_inode_caps(CInode *in, bool auth_cap,
 					bufferlist::iterator &blp,
 					map<CInode*, map<client_t,Capability::Export> >& peer_exports)
 {
+  DECODE_START(1, blp);
   map<client_t,Capability::Export> cap_map;
   decode(cap_map, blp);
   if (auth_cap)
@@ -3062,6 +3064,7 @@ void Migrator::decode_import_inode_caps(CInode *in, bool auth_cap,
     peer_exports[in].swap(cap_map);
     in->get(CInode::PIN_IMPORTINGCAPS);
   }
+  DECODE_FINISH(blp);
 }
 
 void Migrator::finish_import_inode_caps(CInode *in, mds_rank_t peer, bool auth_cap,
