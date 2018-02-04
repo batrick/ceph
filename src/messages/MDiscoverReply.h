@@ -112,7 +112,7 @@ class MDiscoverReply : public Message {
   // cons
   MDiscoverReply() : Message(MSG_MDS_DISCOVERREPLY, HEAD_VERSION, COMPAT_VERSION) { }
   MDiscoverReply(MDiscover *dis) :
-    Message(MSG_MDS_DISCOVERREPLY, HEAD_VERSION),
+    Message(MSG_MDS_DISCOVERREPLY, HEAD_VERSION, COMPAT_VERSION),
     base_ino(dis->get_base_ino()),
     base_dir_frag(dis->get_base_dir_frag()),
     wanted_base_dir(dis->wants_base_dir()),
@@ -127,7 +127,7 @@ class MDiscoverReply : public Message {
     header.tid = dis->get_tid();
   }
   MDiscoverReply(dirfrag_t df) :
-    Message(MSG_MDS_DISCOVERREPLY, HEAD_VERSION),
+    Message(MSG_MDS_DISCOVERREPLY, HEAD_VERSION, COMPAT_VERSION),
     base_ino(df.ino),
     base_dir_frag(df.frag),
     wanted_base_dir(false),
