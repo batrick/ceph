@@ -20,13 +20,16 @@
 
 
 class MExportCaps : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
  public:  
   inodeno_t ino;
   bufferlist cap_bl;
   map<client_t,entity_inst_t> client_map;
 
   MExportCaps() :
-    Message(MSG_MDS_EXPORTCAPS) {}
+    Message(MSG_MDS_EXPORTCAPS, HEAD_VERSION, COMPAT_VERSION) {}
 private:
   ~MExportCaps() override {}
 
