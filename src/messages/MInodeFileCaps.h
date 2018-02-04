@@ -17,6 +17,9 @@
 #define CEPH_MINODEFILECAPS_H
 
 class MInodeFileCaps : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
   inodeno_t ino;
   __u32     caps = 0;
 
@@ -24,9 +27,9 @@ class MInodeFileCaps : public Message {
   inodeno_t get_ino() { return ino; }
   int       get_caps() { return caps; }
 
-  MInodeFileCaps() : Message(MSG_MDS_INODEFILECAPS) {}
+  MInodeFileCaps() : Message(MSG_MDS_INODEFILECAPS, HEAD_VERSION, COMPAT_VERSION) {}
   MInodeFileCaps(inodeno_t ino, int caps) :
-    Message(MSG_MDS_INODEFILECAPS) {
+    Message(MSG_MDS_INODEFILECAPS, HEAD_VERSION, COMPAT_VERSION) {
     this->ino = ino;
     this->caps = caps;
   }
