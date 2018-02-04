@@ -1503,6 +1503,30 @@ void CInode::set_object_info(MDSCacheObjectInfo &info)
   info.snapid = last;
 }
 
+void CInode::encode_lock_auth(bufferlist& bl)
+{
+  ENCODE_START(1, 1, bl);
+  encode(inode.version, bl);
+  encode(inode.ctime, bl);
+  encode(inode.mode, bl);
+  encode(inode.uid, bl);
+  encode(inode.gid, bl);  
+  ENCODE_FINISH(bl);
+}
+
+void CInode::decode_lock_auth(bufferlist::iterator& p)
+{
+  DECODE_START(1, p);
+  decode(inode.version, p);
+  utime_t tm;
+  decode(tm, p);
+  if (inode.ctime < tm) inode.ctime = tm;
+  decode(inode.mode, p);
+  decode(inode.uid, p);
+  decode(inode.gid, p);
+  DECODE_FINISH(p);
+}
+
 void CInode::encode_lock_state(int type, bufferlist& bl)
 {
   using ceph::encode;
@@ -1511,20 +1535,6 @@ void CInode::encode_lock_state(int type, bufferlist& bl)
     encode(parent->first, bl);
 
   switch (type) {
-  case CEPH_LOCK_IAUTH:
-    encode(inode.version, bl);
-    encode(inode.ctime, bl);
-    encode(inode.mode, bl);
-    encode(inode.uid, bl);
-    encode(inode.gid, bl);  
-    break;
-    
-  case CEPH_LOCK_ILINK:
-    encode(inode.version, bl);
-    encode(inode.ctime, bl);
-    encode(inode.nlink, bl);
-    break;
-    
   case CEPH_LOCK_IDFT:
     if (is_auth()) {
       encode(inode.version, bl);
@@ -1663,6 +1673,7 @@ void CInode::encode_lock_state(int type, bufferlist& bl)
   }
 }
 
+void CInode::decode_lock_auth()
 
 /* for more info on scatterlocks, see comments by Locker::scatter_writebehind */
 
