@@ -1527,6 +1527,103 @@ void CInode::decode_lock_auth(bufferlist::iterator& p)
   DECODE_FINISH(p);
 }
 
+void CInode::encode_lock_link(bufferlist& bl)
+{
+  ENCODE_START(1, 1, bl);
+  encode(inode.version, bl);
+  encode(inode.ctime, bl);
+  encode(inode.nlink, bl);
+  ENCODE_FINISH(bl);
+}
+
+void CInode::decode_lock_link(bufferlist::iterator& p)
+{
+  DECODE_START(1, p);
+  decode(inode.version, p);
+  utime_t tm;
+  decode(tm, p);
+  if (inode.ctime < tm) inode.ctime = tm;
+  decode(inode.nlink, p);
+  DECODE_FINISH(p);
+}
+
+void CInode::encode_lock_idft(bufferlist& bl)
+{
+  ENCODE_START(1, 1, bl);
+  if (is_auth()) {
+    encode(inode.version, bl);
+  } else {
+    // treat flushing as dirty when rejoining cache
+    bool dirty = dirfragtreelock.is_dirty_or_flushing();
+    encode(dirty, bl);
+  }
+  {
+    // encode the raw tree
+    encode(dirfragtree, bl);
+
+    // also specify which frags are mine
+    set<frag_t> myfrags;
+    list<CDir*> dfls;
+    get_dirfrags(dfls);
+    for (list<CDir*>::iterator p = dfls.begin(); p != dfls.end(); ++p) {
+      if ((*p)->is_auth()) {
+        frag_t fg = (*p)->get_frag();
+        myfrags.insert(fg);
+      }
+    }
+    encode(myfrags, bl);
+  }
+  ENCODE_FINISH(bl);
+}
+
+void CInode::decode_lock_idft(bufferlist::iterator& p)
+{
+  DECODE_START(1, p);
+  if (is_auth()) {
+    bool replica_dirty;
+    decode(replica_dirty, p);
+    if (replica_dirty) {
+      dout(10) << __func__ << " setting dftlock dirty flag" << dendl;
+      dirfragtreelock.mark_dirty();  // ok bc we're auth and caller will handle
+    }
+  } else {
+    decode(inode.version, p);
+  }
+  {
+    fragtree_t temp;
+    decode(temp, p);
+    set<frag_t> authfrags;
+    decode(authfrags, p);
+    if (is_auth()) {
+      // auth.  believe replica's auth frags only.
+      for (auto fg : authfrags) {
+        if (!dirfragtree.is_leaf(fg)) {
+          dout(10) << " forcing frag " << fg << " to leaf (split|merge)" << dendl;
+          dirfragtree.force_to_leaf(g_ceph_context, fg);
+          dirfragtreelock.mark_dirty();  // ok bc we're auth and caller will handle
+        }
+      }
+    } else {
+      // replica.  take the new tree, BUT make sure any open
+      //  dirfrags remain leaves (they may have split _after_ this
+      //  dft was scattered, or we may still be be waiting on the
+      //  notify from the auth)
+      dirfragtree.swap(temp);
+      for (const auto &p : dirfrags) {
+        if (!dirfragtree.is_leaf(p.first)) {
+          dout(10) << " forcing open dirfrag " << p.first << " to leaf (racing with split|merge)" << dendl;
+          dirfragtree.force_to_leaf(g_ceph_context, p.first);
+        }
+	if (p.second->is_auth())
+	  p.second->state_clear(CDir::STATE_DIRTYDFT);
+      }
+    }
+    if (g_conf->mds_debug_frag)
+      verify_dirfrags();
+  }
+  DECODE_FINISH(p);
+}
+
 void CInode::encode_lock_state(int type, bufferlist& bl)
 {
   using ceph::encode;
@@ -1535,31 +1632,6 @@ void CInode::encode_lock_state(int type, bufferlist& bl)
     encode(parent->first, bl);
 
   switch (type) {
-  case CEPH_LOCK_IDFT:
-    if (is_auth()) {
-      encode(inode.version, bl);
-    } else {
-      // treat flushing as dirty when rejoining cache
-      bool dirty = dirfragtreelock.is_dirty_or_flushing();
-      encode(dirty, bl);
-    }
-    {
-      // encode the raw tree
-      encode(dirfragtree, bl);
-
-      // also specify which frags are mine
-      set<frag_t> myfrags;
-      list<CDir*> dfls;
-      get_dirfrags(dfls);
-      for (list<CDir*>::iterator p = dfls.begin(); p != dfls.end(); ++p) 
-	if ((*p)->is_auth()) {
-	  frag_t fg = (*p)->get_frag();
-	  myfrags.insert(fg);
-	}
-      encode(myfrags, bl);
-    }
-    break;
-    
   case CEPH_LOCK_IFILE:
     if (is_auth()) {
       encode(inode.version, bl);
@@ -1673,8 +1745,6 @@ void CInode::encode_lock_state(int type, bufferlist& bl)
   }
 }
 
-void CInode::decode_lock_auth()
-
 /* for more info on scatterlocks, see comments by Locker::scatter_writebehind */
 
 void CInode::decode_lock_state(int type, bufferlist& bl)
@@ -1698,66 +1768,6 @@ void CInode::decode_lock_state(int type, bufferlist& bl)
   }
 
   switch (type) {
-  case CEPH_LOCK_IAUTH:
-    decode(inode.version, p);
-    decode(tm, p);
-    if (inode.ctime < tm) inode.ctime = tm;
-    decode(inode.mode, p);
-    decode(inode.uid, p);
-    decode(inode.gid, p);
-    break;
-
-  case CEPH_LOCK_ILINK:
-    decode(inode.version, p);
-    decode(tm, p);
-    if (inode.ctime < tm) inode.ctime = tm;
-    decode(inode.nlink, p);
-    break;
-
-  case CEPH_LOCK_IDFT:
-    if (is_auth()) {
-      bool replica_dirty;
-      decode(replica_dirty, p);
-      if (replica_dirty) {
-	dout(10) << __func__ << " setting dftlock dirty flag" << dendl;
-	dirfragtreelock.mark_dirty();  // ok bc we're auth and caller will handle
-      }
-    } else {
-      decode(inode.version, p);
-    }
-    {
-      fragtree_t temp;
-      decode(temp, p);
-      set<frag_t> authfrags;
-      decode(authfrags, p);
-      if (is_auth()) {
-	// auth.  believe replica's auth frags only.
-	for (set<frag_t>::iterator p = authfrags.begin(); p != authfrags.end(); ++p)
-	  if (!dirfragtree.is_leaf(*p)) {
-	    dout(10) << " forcing frag " << *p << " to leaf (split|merge)" << dendl;
-	    dirfragtree.force_to_leaf(g_ceph_context, *p);
-	    dirfragtreelock.mark_dirty();  // ok bc we're auth and caller will handle
-	  }
-      } else {
-	// replica.  take the new tree, BUT make sure any open
-	//  dirfrags remain leaves (they may have split _after_ this
-	//  dft was scattered, or we may still be be waiting on the
-	//  notify from the auth)
-	dirfragtree.swap(temp);
-	for (const auto &p : dirfrags) {
-	  if (!dirfragtree.is_leaf(p.first)) {
-	    dout(10) << " forcing open dirfrag " << p.first << " to leaf (racing with split|merge)" << dendl;
-	    dirfragtree.force_to_leaf(g_ceph_context, p.first);
-	  }
-	  if (p.second->is_auth())
-	    p.second->state_clear(CDir::STATE_DIRTYDFT);
-	}
-      }
-      if (g_conf->mds_debug_frag)
-	verify_dirfrags();
-    }
-    break;
-
   case CEPH_LOCK_IFILE:
     if (!is_auth()) {
       decode(inode.version, p);

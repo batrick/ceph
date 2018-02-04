@@ -906,6 +906,10 @@ public:
   void decode_lock_state(int type, bufferlist& bl) override;
   void encode_lock_auth(bufferlist& bl);
   void decode_lock_auth(bufferlist::iterator& p);
+  void encode_lock_link(bufferlist& bl);
+  void decode_lock_link(bufferlist::iterator& p);
+  void encode_lock_idft(bufferlist& bl);
+  void decode_lock_idft(bufferlist::iterator& p);
 
   void _finish_frag_update(CDir *dir, MutationRef& mut);
 
