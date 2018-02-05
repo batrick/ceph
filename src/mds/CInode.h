@@ -916,6 +916,8 @@ public:
   void decode_lock_inest(bufferlist::iterator& p);
   void encode_lock_ixattr(bufferlist& bl);
   void decode_lock_ixattr(bufferlist::iterator& p);
+  void encode_lock_isnap(bufferlist& bl);
+  void decode_lock_isnap(bufferlist::iterator& p);
 
   void _finish_frag_update(CDir *dir, MutationRef& mut);
 
