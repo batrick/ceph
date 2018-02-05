@@ -1754,7 +1754,7 @@ void CInode::encode_lock_ixattr(bufferlist& bl)
   encode(inode.version, bl);
   encode(inode.ctime, bl);
   encode(xattrs, bl);
-  ENCODE_FINISH(1, bl);
+  ENCODE_FINISH(bl);
 }
 
 void CInode::decode_lock_ixattr(bufferlist::iterator& p)
@@ -1765,6 +1765,31 @@ void CInode::decode_lock_ixattr(bufferlist::iterator& p)
   decode(tm, p);
   if (inode.ctime < tm) inode.ctime = tm;
   decode(xattrs, p);
+  DECODE_FINISH(p);
+}
+
+void CInode::encode_lock_isnap(bufferlist& bl)
+{
+  ENCODE_START(1, 1, bl);
+  encode(inode.version, bl);
+  encode(inode.ctime, bl);
+  encode_snap(bl);
+  ENCODE_FINISH(bl);
+}
+
+void CInode::decode_lock_isnap(bufferlist::iterator& p)
+{
+  DECODE_START(1, p);
+  decode(inode.version, p);
+  utime_t tm;
+  decode(tm, p);
+  if (inode.ctime < tm) inode.ctime = tm;
+  snapid_t seq = 0;
+  if (snaprealm)
+    seq = snaprealm->srnode.seq;
+  decode_snap(p);
+  if (snaprealm && snaprealm->srnode.seq != seq)
+    mdcache->do_realm_invalidate_and_update_notify(this, seq ? CEPH_SNAP_OP_UPDATE:CEPH_SNAP_OP_SPLIT);
   DECODE_FINISH(p);
 }
 
@@ -1783,9 +1808,6 @@ void CInode::encode_lock_state(int type, bufferlist& bl)
     break;
 
   case CEPH_LOCK_ISNAP:
-    encode(inode.version, bl);
-    encode(inode.ctime, bl);
-    encode_snap(bl);
     break;
 
 case CEPH_LOCK_IFLOCK:
@@ -1838,17 +1860,6 @@ void CInode::decode_lock_state(int type, bufferlist& bl)
     break;
 
   case CEPH_LOCK_ISNAP:
-    {
-      decode(inode.version, p);
-      decode(tm, p);
-      if (inode.ctime < tm) inode.ctime = tm;
-      snapid_t seq = 0;
-      if (snaprealm)
-	seq = snaprealm->srnode.seq;
-      decode_snap(p);
-      if (snaprealm && snaprealm->srnode.seq != seq)
-	mdcache->do_realm_invalidate_and_update_notify(this, seq ? CEPH_SNAP_OP_UPDATE:CEPH_SNAP_OP_SPLIT);
-    }
     break;
 
   case CEPH_LOCK_IFLOCK:
@@ -2751,20 +2762,22 @@ void CInode::decode_snap_blob(bufferlist& snapbl)
 
 void CInode::encode_snap(bufferlist& bl)
 {
-  using ceph::encode;
+  ENCODE_START(1, 1, bl);
   bufferlist snapbl;
   encode_snap_blob(snapbl);
   encode(snapbl, bl);
   encode(oldest_snap, bl);
+  ENCODE_FINISH(bl);
 }
 
 void CInode::decode_snap(bufferlist::iterator& p)
 {
-  using ceph::decode;
+  DECODE_START(1, p);
   bufferlist snapbl;
   decode(snapbl, p);
   decode(oldest_snap, p);
   decode_snap_blob(snapbl);
+  DECODE_FINISH(p);
 }
 
 // =============================================
