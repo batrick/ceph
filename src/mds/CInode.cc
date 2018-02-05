@@ -1884,6 +1884,22 @@ void CInode::decode_lock_isnap(bufferlist::iterator& p)
   DECODE_FINISH(p);
 }
 
+void CInode::encode_lock_iflock(bufferlist& bl)
+{
+  ENCODE_START(1, 1, bl);
+  encode(inode.version, bl);
+  _encode_file_locks(bl);
+  ENCODE_FINISH(bl);
+}
+
+void CInode::decode_lock_iflock(bufferlist::iterator& p)
+{
+  DECODE_START(1, p);
+  decode(inode.version, p);
+  _decode_file_locks(p);
+  DECODE_FINISH(p);
+}
+
 void CInode::encode_lock_state(int type, bufferlist& bl)
 {
   using ceph::encode;
@@ -1901,9 +1917,7 @@ void CInode::encode_lock_state(int type, bufferlist& bl)
   case CEPH_LOCK_ISNAP:
     break;
 
-case CEPH_LOCK_IFLOCK:
-    encode(inode.version, bl);
-    _encode_file_locks(bl);
+  case CEPH_LOCK_IFLOCK:
     break;
 
   case CEPH_LOCK_IPOLICY:
@@ -1954,8 +1968,6 @@ void CInode::decode_lock_state(int type, bufferlist& bl)
     break;
 
   case CEPH_LOCK_IFLOCK:
-    decode(inode.version, p);
-    _decode_file_locks(p);
     break;
 
   case CEPH_LOCK_IPOLICY:
