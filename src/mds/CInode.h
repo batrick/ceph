@@ -602,7 +602,7 @@ protected:
     clear_flock_lock_state();
   }
   void _encode_file_locks(bufferlist& bl) const {
-    using ceph::encode;
+    ENCODE_START(1, 1, bl);
     bool has_fcntl_locks = fcntl_locks && !fcntl_locks->empty();
     encode(has_fcntl_locks, bl);
     if (has_fcntl_locks)
@@ -611,9 +611,10 @@ protected:
     encode(has_flock_locks, bl);
     if (has_flock_locks)
       encode(*flock_locks, bl);
+    ENCODE_FINISH(bl);
   }
   void _decode_file_locks(bufferlist::iterator& p) {
-    using ceph::decode;
+    DECODE_START(1, p);
     bool has_fcntl_locks;
     decode(has_fcntl_locks, p);
     if (has_fcntl_locks)
@@ -626,6 +627,7 @@ protected:
       decode(*get_flock_lock_state(), p);
     else
       clear_flock_lock_state();
+    DECODE_FINISH(p);
   }
 
   // LogSegment lists i (may) belong to
@@ -895,6 +897,8 @@ public:
   void decode_lock_ixattr(bufferlist::iterator& p);
   void encode_lock_isnap(bufferlist& bl);
   void decode_lock_isnap(bufferlist::iterator& p);
+  void encode_lock_iflock(bufferlist& bl);
+  void decode_lock_iflock(bufferlist::iterator& p);
 
   void _finish_frag_update(CDir *dir, MutationRef& mut);
 
