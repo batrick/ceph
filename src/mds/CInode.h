@@ -910,6 +910,8 @@ public:
   void decode_lock_link(bufferlist::iterator& p);
   void encode_lock_idft(bufferlist& bl);
   void decode_lock_idft(bufferlist::iterator& p);
+  void encode_lock_ifile(bufferlist& bl);
+  void decode_lock_ifile(bufferlist::iterator& p);
 
   void _finish_frag_update(CDir *dir, MutationRef& mut);
 
