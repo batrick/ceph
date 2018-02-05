@@ -43,7 +43,7 @@ public:
   
   MLock() : Message(MSG_MDS_LOCK, HEAD_VERSION, COMPAT_VERSION) {}
   MLock(int ac, int as) :
-    Message(MSG_MDS_LOCK),
+    Message(MSG_MDS_LOCK, HEAD_VERSION, COMPAT_VERSION),
     action(ac), asker(as),
     lock_type(0) { }
   MLock(SimpleLock *lock, int ac, int as) :

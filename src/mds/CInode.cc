@@ -1933,30 +1933,52 @@ void CInode::decode_lock_ipolicy(bufferlist::iterator& p)
 
 void CInode::encode_lock_state(int type, bufferlist& bl)
 {
-  using ceph::encode;
+  ENCODE_START(1, 1, bl);
   encode(first, bl);
   if (!is_base())
     encode(parent->first, bl);
 
   switch (type) {
+  case CEPH_LOCK_IAUTH:
+    encode_lock_iauth(bl);
+    break;
+
+  case CEPH_LOCK_ILINK:
+    encode_lock_ilink(bl);
+    break;
+
+  case CEPH_LOCK_IDFT:
+    encode_lock_idft(bl);
+    break;
+
+  case CEPH_LOCK_IFILE:
+    encode_lock_ifile(bl);
+    break;
+
   case CEPH_LOCK_INEST:
+    encode_lock_inest(bl);
     break;
     
   case CEPH_LOCK_IXATTR:
+    encode_lock_ixattr(bl);
     break;
 
   case CEPH_LOCK_ISNAP:
+    encode_lock_isnap(bl);
     break;
 
   case CEPH_LOCK_IFLOCK:
+    encode_lock_iflock(bl);
     break;
 
   case CEPH_LOCK_IPOLICY:
+    encode_lock_ipolicy(bl);
     break;
   
   default:
     ceph_abort();
   }
+  ENCODE_FINISH(bl);
 }
 
 /* for more info on scatterlocks, see comments by Locker::scatter_writebehind */
@@ -1964,6 +1986,8 @@ void CInode::encode_lock_state(int type, bufferlist& bl)
 void CInode::decode_lock_state(int type, bufferlist& bl)
 {
   auto p = bl.cbegin();
+
+  DECODE_START(1, p);
   utime_t tm;
 
   snapid_t newfirst;
@@ -1982,24 +2006,46 @@ void CInode::decode_lock_state(int type, bufferlist& bl)
   }
 
   switch (type) {
+  case CEPH_LOCK_IAUTH:
+    decode_lock_iauth(p);
+    break;
+
+  case CEPH_LOCK_ILINK:
+    decode_lock_ilink(p);
+    break;
+
+  case CEPH_LOCK_IDFT:
+    decode_lock_idft(p);
+    break;
+
+  case CEPH_LOCK_IFILE:
+    decode_lock_ifile(p);
+    break;
+
   case CEPH_LOCK_INEST:
+    decode_lock_inest(p);
     break;
 
   case CEPH_LOCK_IXATTR:
+    decode_lock_ixattr(p);
     break;
 
   case CEPH_LOCK_ISNAP:
+    decode_lock_isnap(p);
     break;
 
   case CEPH_LOCK_IFLOCK:
+    decode_lock_iflock(p);
     break;
 
   case CEPH_LOCK_IPOLICY:
+    decode_lock_ipolicy(p);
     break;
 
   default:
     ceph_abort();
   }
+  DECODE_FINISH(p);
 }
 
 
