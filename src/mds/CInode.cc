@@ -1901,6 +1901,36 @@ void CInode::decode_lock_iflock(bufferlist::iterator& p)
   DECODE_FINISH(p);
 }
 
+void CInode::encode_lock_ipolicy(bufferlist& bl)
+{
+  ENCODE_START(1, 1, bl);
+  if (inode.is_dir()) {
+    encode(inode.version, bl);
+    encode(inode.ctime, bl);
+    encode(inode.layout, bl, mdcache->mds->mdsmap->get_up_features());
+    encode(inode.quota, bl);
+    encode(inode.export_pin, bl);
+  }
+  ENCODE_FINISH(bl);
+}
+
+void CInode::decode_lock_ipolicy(bufferlist::iterator& p)
+{
+  DECODE_START(1, p);
+  if (inode.is_dir()) {
+    decode(inode.version, p);
+    utime_t tm;
+    decode(tm, p);
+    if (inode.ctime < tm) inode.ctime = tm;
+    decode(inode.layout, p);
+    decode(inode.quota, p);
+    mds_rank_t old_pin = inode.export_pin;
+    decode(inode.export_pin, p);
+    maybe_export_pin(old_pin != inode.export_pin);
+  }
+  DECODE_FINISH(p);
+}
+
 void CInode::encode_lock_state(int type, bufferlist& bl)
 {
   using ceph::encode;
@@ -1922,13 +1952,6 @@ void CInode::encode_lock_state(int type, bufferlist& bl)
     break;
 
   case CEPH_LOCK_IPOLICY:
-    if (inode.is_dir()) {
-      encode(inode.version, bl);
-      encode(inode.ctime, bl);
-      encode(inode.layout, bl, mdcache->mds->mdsmap->get_up_features());
-      encode(inode.quota, bl);
-      encode(inode.export_pin, bl);
-    }
     break;
   
   default:
@@ -1972,16 +1995,6 @@ void CInode::decode_lock_state(int type, bufferlist& bl)
     break;
 
   case CEPH_LOCK_IPOLICY:
-    if (inode.is_dir()) {
-      decode(inode.version, p);
-      decode(tm, p);
-      if (inode.ctime < tm) inode.ctime = tm;
-      decode(inode.layout, p);
-      decode(inode.quota, p);
-      mds_rank_t old_pin = inode.export_pin;
-      decode(inode.export_pin, p);
-      maybe_export_pin(old_pin != inode.export_pin);
-    }
     break;
 
   default:
