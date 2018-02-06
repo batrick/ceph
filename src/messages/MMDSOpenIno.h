@@ -18,12 +18,15 @@
 #include "msg/Message.h"
 
 struct MMDSOpenIno : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
   inodeno_t ino;
   vector<inode_backpointer_t> ancestors;
 
-  MMDSOpenIno() : Message(MSG_MDS_OPENINO) {}
+  MMDSOpenIno() : Message(MSG_MDS_OPENINO, HEAD_VERSION, COMPAT_VERSION) {}
   MMDSOpenIno(ceph_tid_t t, inodeno_t i, vector<inode_backpointer_t>* pa) :
-    Message(MSG_MDS_OPENINO), ino(i) {
+    Message(MSG_MDS_OPENINO, HEAD_VERSION, COMPAT_VERSION), ino(i) {
     header.tid = t;
     if (pa)
       ancestors = *pa;
