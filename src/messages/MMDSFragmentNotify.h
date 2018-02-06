@@ -18,6 +18,9 @@
 #include "msg/Message.h"
 
 class MMDSFragmentNotify : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
   inodeno_t ino;
   frag_t basefrag;
   int8_t bits = 0;
@@ -29,9 +32,9 @@ class MMDSFragmentNotify : public Message {
 
   bufferlist basebl;
 
-  MMDSFragmentNotify() : Message(MSG_MDS_FRAGMENTNOTIFY) {}
+  MMDSFragmentNotify() : Message(MSG_MDS_FRAGMENTNOTIFY, HEAD_VERSION, COMPAT_VERSION) {}
   MMDSFragmentNotify(dirfrag_t df, int b) :
-	Message(MSG_MDS_FRAGMENTNOTIFY),
+	Message(MSG_MDS_FRAGMENTNOTIFY, HEAD_VERSION, COMPAT_VERSION),
     ino(df.ino), basefrag(df.frag), bits(b) { }
 private:
   ~MMDSFragmentNotify() override {}
