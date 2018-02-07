@@ -18,6 +18,9 @@
 #include "msg/Message.h"
 
 class MExportDirFinish : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
   dirfrag_t dirfrag;
   bool last;
 
@@ -25,9 +28,10 @@ class MExportDirFinish : public Message {
   dirfrag_t get_dirfrag() { return dirfrag; }
   bool is_last() { return last; }
   
-  MExportDirFinish() : last(false) {}
+  MExportDirFinish() : 
+    Message(MSG_MDS_EXPORTDIRFINISH, HEAD_VERSION, COMPAT_VERSION), last(false) {}
   MExportDirFinish(dirfrag_t df, bool l, uint64_t tid) :
-    Message(MSG_MDS_EXPORTDIRFINISH), dirfrag(df), last(l) {
+    Message(MSG_MDS_EXPORTDIRFINISH, HEAD_VERSION, COMPAT_VERSION), dirfrag(df), last(l) {
     set_tid(tid);
   }
 private:

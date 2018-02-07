@@ -19,6 +19,9 @@
 #include "include/types.h"
 
 class MExportDirDiscoverAck : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
   dirfrag_t dirfrag;
   bool success;
 
@@ -27,9 +30,9 @@ class MExportDirDiscoverAck : public Message {
   dirfrag_t get_dirfrag() { return dirfrag; }
   bool is_success() { return success; }
 
-  MExportDirDiscoverAck() : Message(MSG_MDS_EXPORTDIRDISCOVERACK) {}
+  MExportDirDiscoverAck() : Message(MSG_MDS_EXPORTDIRDISCOVERACK, HEAD_VERSION, COMPAT_VERSION) {}
   MExportDirDiscoverAck(dirfrag_t df, uint64_t tid, bool s=true) :
-    Message(MSG_MDS_EXPORTDIRDISCOVERACK),
+    Message(MSG_MDS_EXPORTDIRDISCOVERACK, HEAD_VERSION, COMPAT_VERSION),
     dirfrag(df), success(s) {
     set_tid(tid);
   }

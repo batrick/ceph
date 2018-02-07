@@ -19,14 +19,17 @@
 #include "include/types.h"
 
 class MExportDirCancel : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
   dirfrag_t dirfrag;
 
  public:
   dirfrag_t get_dirfrag() { return dirfrag; }
 
-  MExportDirCancel() : Message(MSG_MDS_EXPORTDIRCANCEL) {}
+  MExportDirCancel() : Message(MSG_MDS_EXPORTDIRCANCEL, HEAD_VERSION, COMPAT_VERSION) {}
   MExportDirCancel(dirfrag_t df, uint64_t tid) :
-    Message(MSG_MDS_EXPORTDIRCANCEL), dirfrag(df) {
+    Message(MSG_MDS_EXPORTDIRCANCEL, HEAD_VERSION, COMPAT_VERSION), dirfrag(df) {
     set_tid(tid);
   }
 private:
