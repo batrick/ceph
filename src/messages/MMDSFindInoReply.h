@@ -19,8 +19,8 @@
 #include "include/filepath.h"
 
 struct MMDSFindInoReply : public Message {
-  static int HEAD_VERSION = 1;
-  static int COMPAT_VERSION = 1;
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
 
   ceph_tid_t tid = 0;
   filepath path;
