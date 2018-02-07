@@ -2788,8 +2788,8 @@ void MDCache::send_slave_resolves()
 	  map<client_t, Capability::Export> cap_map;
 	  in->export_client_caps(cap_map);
 	  bufferlist bl;
-	  encode(in->ino(), bl);
-	  encode(cap_map, bl);
+          MMDSResolve::slave_inode_cap inode_caps(in->ino(), cap_map);
+          encode(inode_caps, bl);
 	  resolves[master]->add_slave_request(p->first, bl);
 	} else {
 	  resolves[master]->add_slave_request(p->first, mdr->committing);
@@ -3227,13 +3227,11 @@ void MDCache::handle_resolve(MMDSResolve *m)
 	if (p->second.inode_caps.length() > 0) {
 	  // slave wants to export caps (rename)
 	  assert(mds->is_resolve());
-
-	  inodeno_t ino;
-	  map<client_t,Capability::Export> cap_exports;
+          MMDSResolve::slave_inode_cap inode_caps;
 	  auto q = p->second.inode_caps.cbegin();
-	  decode(ino, q);
-	  decode(cap_exports, q);
-
+          decode(inode_caps, q);
+	  inodeno_t ino = inode_caps.ino;
+	  map<client_t,Capability::Export> cap_exports = inode_caps.cap_exports;
 	  assert(get_inode(ino));
 
 	  for (map<client_t,Capability::Export>::iterator q = cap_exports.begin();
