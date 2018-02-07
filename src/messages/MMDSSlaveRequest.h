@@ -20,6 +20,9 @@
 #include "mds/mdstypes.h"
 
 class MMDSSlaveRequest : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
  public:
   static const int OP_XLOCK =       1;
   static const int OP_XLOCKACK =   -1;
@@ -153,9 +156,9 @@ public:
 
 
   // ----
-  MMDSSlaveRequest() : Message(MSG_MDS_SLAVE_REQUEST) { }
+  MMDSSlaveRequest() : Message(MSG_MDS_SLAVE_REQUEST, HEAD_VERSION, COMPAT_VERSION) { }
   MMDSSlaveRequest(metareqid_t ri, __u32 att, int o) : 
-    Message(MSG_MDS_SLAVE_REQUEST),
+    Message(MSG_MDS_SLAVE_REQUEST, HEAD_VERSION, COMPAT_VERSION),
     reqid(ri), attempt(att), op(o), flags(0), lock_type(0),
     inode_export_v(0), srcdn_auth(MDS_RANK_NONE) { }
 private:
