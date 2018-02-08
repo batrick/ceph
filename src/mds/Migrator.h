@@ -165,6 +165,9 @@ protected:
   void export_logged_finish(CDir *dir);
   void handle_export_notify_ack(MExportDirNotifyAck *m);
   void export_finish(CDir *dir);
+  void encode_export_prep_trace(bufferlist& bl, CDir *bound, CDir *dir, export_state_t &es, 
+                               set<inodeno_t> &inodes_added, set<dirfrag_t> &dirfrags_added);
+  void decode_export_prep_trace(bufferlist &bl, mds_rank_t oldauth, list<MDSInternalContextBase*> &finished);
 
   void handle_gather_caps(MGatherCaps *m);
 

@@ -1045,6 +1045,62 @@ void Migrator::export_sessions_flushed(CDir *dir, uint64_t tid)
     export_go(dir);     // start export.
 }
 
+void Migrator::encode_export_prep_trace(bufferlist &final_bl, CDir *bound, 
+                                        CDir *dir, export_state_t &es, 
+                                        set<inodeno_t> &inodes_added, 
+                                        set<dirfrag_t> &dirfrags_added)
+{
+  ENCODE_START(1, 1, final_bl);
+
+  dout(7) << __func__ << " started to encode dir " << *bound << dendl;
+  CDir *cur = bound;
+  bufferlist tracebl;
+  char start = '-';
+  if (es.residual_dirs.count(cur)) {
+    start = 'f';
+    cache->encode_replica_dir(cur, es.peer, tracebl);
+    dout(7) << " added " << *cur << dendl;
+  }
+  
+  while (1) {
+    // don't repeat inodes
+    if (inodes_added.count(cur->inode->ino()))
+      break;
+    inodes_added.insert(cur->inode->ino());
+
+    // prepend dentry + inode
+    assert(cur->inode->is_auth());
+    bufferlist bl;
+    cache->encode_replica_dentry(cur->inode->parent, es.peer, bl);
+    dout(7) << "  added " << *cur->inode->parent << dendl;
+    cache->encode_replica_inode(cur->inode, es.peer, bl, mds->mdsmap->get_up_features());
+    dout(7) << "  added " << *cur->inode << dendl;
+    bl.claim_append(tracebl);
+    tracebl.claim(bl);
+
+    cur = cur->get_parent_dir();
+    // don't repeat dirfrags
+    if (dirfrags_added.count(cur->dirfrag()) || cur == dir) {
+      start = 'd';  // start with dentry
+      break;
+    }
+    dirfrags_added.insert(cur->dirfrag());
+
+    // prepend dir
+    cache->encode_replica_dir(cur, es.peer, bl);
+    dout(7) << "  added " << *cur << dendl;
+    bl.claim_append(tracebl);
+    tracebl.claim(bl);
+    start = 'f';  // start with dirfrag
+  }
+  dirfrag_t df = cur->dirfrag();
+  encode(df, final_bl);
+  encode(start, final_bl);
+  final_bl.claim_append(tracebl);
+  
+  ENCODE_FINISH(final_bl);
+}
+
 void Migrator::export_frozen(CDir *dir, uint64_t tid)
 {
   dout(7) << "export_frozen on " << *dir << dendl;
@@ -1128,68 +1184,15 @@ void Migrator::export_frozen(CDir *dir, uint64_t tid)
   set<dirfrag_t> dirfrags_added;
 
   // check bounds
-  for (set<CDir*>::iterator p = bounds.begin();
-       p != bounds.end();
-       ++p) {
-    CDir *bound = *p;
-
+  for (auto &p : bounds){
+    CDir *bound = p;
     // pin it.
     assert(bound->state_test(CDir::STATE_EXPORTBOUND));
-    
     dout(7) << "  export bound " << *bound << dendl;
     prep->add_bound( bound->dirfrag() );
-
-    // trace to bound
-    bufferlist tracebl;
-    CDir *cur = bound;
-
-    char start = '-';
-    if (it->second.residual_dirs.count(bound)) {
-      start = 'f';
-      cache->encode_replica_dir(bound, it->second.peer, tracebl);
-      dout(7) << "  added " << *bound << dendl;
-    }
-
-    while (1) {
-      // don't repeat inodes
-      if (inodes_added.count(cur->inode->ino()))
-	break;
-      inodes_added.insert(cur->inode->ino());
-
-      // prepend dentry + inode
-      assert(cur->inode->is_auth());
-      bufferlist bl;
-      cache->encode_replica_dentry(cur->inode->parent, it->second.peer, bl);
-      dout(7) << "  added " << *cur->inode->parent << dendl;
-      cache->encode_replica_inode(cur->inode, it->second.peer, bl,
-			     mds->mdsmap->get_up_features());
-      dout(7) << "  added " << *cur->inode << dendl;
-      bl.claim_append(tracebl);
-      tracebl.claim(bl);
-
-      cur = cur->get_parent_dir();
-
-      // don't repeat dirfrags
-      if (dirfrags_added.count(cur->dirfrag()) ||
-	  cur == dir) {
-	start = 'd';  // start with dentry
-	break;
-      }
-      dirfrags_added.insert(cur->dirfrag());
-
-      // prepend dir
-      cache->encode_replica_dir(cur, it->second.peer, bl);
-      dout(7) << "  added " << *cur << dendl;
-      bl.claim_append(tracebl);
-      tracebl.claim(bl);
-
-      start = 'f';  // start with dirfrag
-    }
+    
     bufferlist final_bl;
-    dirfrag_t df = cur->dirfrag();
-    encode(df, final_bl);
-    encode(start, final_bl);
-    final_bl.claim_append(tracebl);
+    encode_export_prep_trace(final_bl, bound, dir, it->second, inodes_added, dirfrags_added);
     prep->add_trace(final_bl);
   }
 
@@ -2238,6 +2241,49 @@ void Migrator::handle_export_cancel(MExportDirCancel *m)
   m->put();
 }
 
+void Migrator::decode_export_prep_trace(bufferlist &bl, mds_rank_t oldauth, list<MDSInternalContextBase*> &finished)
+{
+  auto p = bl.cbegin();
+
+  DECODE_START(1, p);
+  dirfrag_t df;
+  decode(df, p);
+  char start;
+  decode(start, p);
+
+  dout(10) << __func__ << " trace from " << df << " start " << start << " len " << bl.length() << dendl;
+  CDir *cur = nullptr;
+  if (start == 'd') {
+    cur = cache->get_dirfrag(df);
+    assert(cur);
+    dout(10) << "  had " << *cur << dendl;
+  } else if (start == 'f') {
+    CInode *in = cache->get_inode(df.ino);
+    assert(in); 
+    dout(10) << "  had " << *in << dendl; 
+    cache->decode_replica_dir(cur, p, in, oldauth, finished);
+    dout(10) << "  added " << *cur << dendl;
+  } else if (start == '-') {
+    // nothing
+  } else
+    assert(0 == "unrecognized start char");
+
+  while (!p.end()) {
+    CDentry *dn = nullptr;
+    cache->decode_replica_dentry(dn, p, cur, finished);
+    dout(10) << "  added " << *dn << dendl;
+    CInode *in = nullptr;
+    cache->decode_replica_inode(in, p, dn, finished);
+    dout(10) << "  added " << *in << dendl;
+    if (p.end())
+      break;
+    cache->decode_replica_dir(cur, p, in, oldauth, finished);
+    dout(10) << "  added " << *cur << dendl;
+  }
+  
+  DECODE_FINISH(p);
+}
+
 /* This function DOES put the passed message before returning*/
 void Migrator::handle_export_prep(MExportDirPrep *m)
 {
@@ -2309,44 +2355,8 @@ void Migrator::handle_export_prep(MExportDirPrep *m)
 
     // assimilate traces to exports
     // each trace is: df ('-' | ('f' dir | 'd') dentry inode (dir dentry inode)*)
-    for (list<bufferlist>::iterator p = m->traces.begin();
-	 p != m->traces.end();
-	 ++p) {
-      auto q = p->cbegin();
-      dirfrag_t df;
-      decode(df, q);
-      char start;
-      decode(start, q);
-      dout(10) << " trace from " << df << " start " << start << " len " << p->length() << dendl;
-
-      CDir *cur = nullptr;
-      if (start == 'd') {
-	cur = cache->get_dirfrag(df);
-	assert(cur);
-	dout(10) << "  had " << *cur << dendl;
-      } else if (start == 'f') {
-	CInode *in = cache->get_inode(df.ino);
-	assert(in);
-	dout(10) << "  had " << *in << dendl;
-	cache->decode_replica_dir(cur, q, in, oldauth, finished);
- 	dout(10) << "  added " << *cur << dendl;
-      } else if (start == '-') {
-	// nothing
-      } else
-	assert(0 == "unrecognized start char");
-
-      while (!q.end()) {
-	CDentry *dn = nullptr;
-        cache->decode_replica_dentry(dn, q, cur, finished);
-	dout(10) << "  added " << *dn << dendl;
-	CInode *in = nullptr;
-        cache->decode_replica_inode(in, q, dn, finished);
-	dout(10) << "  added " << *in << dendl;
-	if (q.end())
-	  break;
-	cache->decode_replica_dir(cur, q, in, oldauth, finished);
-	dout(10) << "  added " << *cur << dendl;
-      }
+    for (auto &p : m->traces) {
+      decode_export_prep_trace(p, oldauth, finished);
     }
 
     // make bound sticky
