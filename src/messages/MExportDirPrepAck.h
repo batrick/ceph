@@ -19,15 +19,19 @@
 #include "include/types.h"
 
 class MExportDirPrepAck : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
   dirfrag_t dirfrag;
   bool success = false;
 
  public:
   dirfrag_t get_dirfrag() { return dirfrag; }
   
-  MExportDirPrepAck() {}
+  MExportDirPrepAck() :
+    Message(MSG_MDS_EXPORTDIRPREPACK, HEAD_VERSION, COMPAT_VERSION){}
   MExportDirPrepAck(dirfrag_t df, bool s, uint64_t tid) :
-    Message(MSG_MDS_EXPORTDIRPREPACK), dirfrag(df), success(s) {
+    Message(MSG_MDS_EXPORTDIRPREPACK, HEAD_VERSION, COMPAT_VERSION), dirfrag(df), success(s) {
     set_tid(tid);
   }
 private:

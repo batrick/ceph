@@ -20,6 +20,9 @@
 #include "include/types.h"
 
 class MExportDirPrep : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
   dirfrag_t dirfrag;
  public:
   bufferlist basedir;
@@ -37,11 +40,12 @@ public:
   bool did_assim() { return b_did_assim; }
   void mark_assim() { b_did_assim = true; }
 
-  MExportDirPrep() {
+  MExportDirPrep() :
+    Message(MSG_MDS_EXPORTDIRPREP, HEAD_VERSION, COMPAT_VERSION) {
     b_did_assim = false;
   }
   MExportDirPrep(dirfrag_t df, uint64_t tid) :
-    Message(MSG_MDS_EXPORTDIRPREP),
+    Message(MSG_MDS_EXPORTDIRPREP, HEAD_VERSION, COMPAT_VERSION),
     dirfrag(df), b_did_assim(false) {
     set_tid(tid);
   }
