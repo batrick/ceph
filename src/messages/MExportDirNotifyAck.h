@@ -18,6 +18,9 @@
 #include "msg/Message.h"
 
 class MExportDirNotifyAck : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
   dirfrag_t dirfrag;
   pair<__s32,__s32> new_auth;
 
@@ -25,9 +28,10 @@ class MExportDirNotifyAck : public Message {
   dirfrag_t get_dirfrag() { return dirfrag; }
   pair<__s32,__s32> get_new_auth() { return new_auth; }
   
-  MExportDirNotifyAck() {}
+  MExportDirNotifyAck() :
+    Message(MSG_MDS_EXPORTDIRNOTIFYACK, HEAD_VERSION, COMPAT_VERSION) {}
   MExportDirNotifyAck(dirfrag_t df, uint64_t tid, pair<__s32,__s32> na) :
-    Message(MSG_MDS_EXPORTDIRNOTIFYACK), dirfrag(df), new_auth(na) {
+    Message(MSG_MDS_EXPORTDIRNOTIFYACK, HEAD_VERSION, COMPAT_VERSION), dirfrag(df), new_auth(na) {
     set_tid(tid);
   }
 private:
