@@ -9153,7 +9153,7 @@ int64_t Client::_write(Fh *f, int64_t offset, uint64_t size, const char *buf,
   utime_t lat;
   uint64_t totalwritten;
   int have;
-  int64_t r = get_caps(in, CEPH_CAP_FILE_WR|CEPH_CAP_AUTH_SHARED,
+  int r = get_caps(in, CEPH_CAP_FILE_WR|CEPH_CAP_AUTH_SHARED,
 		    CEPH_CAP_FILE_BUFFER, &have, endoff);
   if (r < 0)
     return r;
