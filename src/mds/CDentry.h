@@ -247,6 +247,7 @@ public:
   // note: this assumes the dentry already exists.  
   // i.e., the name is already extracted... so we just need the other state.
   void encode_export(bufferlist& bl) {
+    ENCODE_START(1, 1, bl);
     encode(first, bl);
     encode(state, bl);
     encode(version, bl);
@@ -254,6 +255,7 @@ public:
     encode(lock, bl);
     encode(get_replicas(), bl);
     get(PIN_TEMPEXPORTING);
+    ENCODE_FINISH(bl);
   }
   void finish_export() {
     // twiddle
@@ -268,6 +270,7 @@ public:
     put(PIN_TEMPEXPORTING);
   }
   void decode_import(bufferlist::const_iterator& blp, LogSegment *ls) {
+    DECODE_START(1, blp);
     decode(first, blp);
     __u32 nstate;
     decode(nstate, blp);
@@ -284,6 +287,7 @@ public:
     if (is_replicated())
       get(PIN_REPLICATED);
     replica_nonce = 0;
+    DECODE_FINISH(blp);
   }
 
   // -- locking --

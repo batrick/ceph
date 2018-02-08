@@ -318,9 +318,10 @@ public:
 			        map<client_t,Capability::Import>& peer_imported);
 
 
-  uint64_t encode_export_dir(bufferlist& exportbl,
+  void encode_export_dir(bufferlist& exportbl,
 			CDir *dir,
 			map<client_t,entity_inst_t>& exported_client_map,
+                        uint64_t &num_exported,
 			utime_t now);
   void finish_export_dir(CDir *dir, utime_t now, mds_rank_t target,
 			 map<inodeno_t,map<client_t,Capability::Import> >& peer_imported,
@@ -340,13 +341,13 @@ public:
 				const map<client_t,pair<Session*,uint64_t> >& smap,
 				const map<client_t,Capability::Export> &export_map,
 				map<client_t,Capability::Import> &import_map);
-  int decode_import_dir(bufferlist::const_iterator& blp,
+  void decode_import_dir(bufferlist::const_iterator& blp,
 			mds_rank_t oldauth,
 			CDir *import_root,
 			EImportStart *le, 
 			LogSegment *ls,
 			map<CInode*, map<client_t,Capability::Export> >& cap_imports,
-			list<ScatterLock*>& updated_scatterlocks, utime_t now);
+			list<ScatterLock*>& updated_scatterlocks, int &num_imported, utime_t now);
 
   void import_reverse(CDir *dir);
 
