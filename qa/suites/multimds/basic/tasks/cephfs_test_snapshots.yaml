@@ -1,0 +1,11 @@
+overrides:
+  check-counter:
+    dry_run: true
+  ceph:
+    log-whitelist:
+      - evicting unresponsive client
+
+tasks:
+- cephfs_test_runner:
+    modules:
+      - tasks.cephfs.test_snapshots
