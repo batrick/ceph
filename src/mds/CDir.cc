@@ -2476,6 +2476,7 @@ void CDir::encode_export(bufferlist& bl)
 void CDir::finish_export(utime_t now)
 {
   state &= MASK_STATE_EXPORT_KEPT;
+  pop_nested.sub(now, cache->decayrate, pop_auth_subtree);
   pop_auth_subtree_nested.sub(now, cache->decayrate, pop_auth_subtree);
   pop_me.zero(now);
   pop_auth_subtree.zero(now);
@@ -2506,6 +2507,7 @@ void CDir::decode_import(bufferlist::iterator& blp, utime_t now, LogSegment *ls)
 
   decode(pop_me, now, blp);
   decode(pop_auth_subtree, now, blp);
+  pop_nested.add(now, cache->decayrate, pop_auth_subtree);
   pop_auth_subtree_nested.add(now, cache->decayrate, pop_auth_subtree);
 
   decode(dir_rep_by, blp);
@@ -2536,7 +2538,21 @@ void CDir::decode_import(bufferlist::iterator& blp, utime_t now, LogSegment *ls)
   }
 }
 
+void CDir::abort_import(utime_t now)
+{
+  assert(is_auth());
+  state_clear(CDir::STATE_AUTH);
+  remove_bloom();
+  clear_replica_map();
+  set_replica_nonce(CDir::EXPORT_NONCE);
+  if (is_dirty())
+    mark_clean();
 
+  pop_nested.sub(now, cache->decayrate, pop_auth_subtree);
+  pop_auth_subtree_nested.sub(now, cache->decayrate, pop_auth_subtree);
+  pop_me.zero(now);
+  pop_auth_subtree.zero(now);
+}
 
 
 /********************************

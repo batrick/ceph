@@ -167,8 +167,6 @@ void MDBalancer::tick()
   // We can use duration_cast below, although the result is an int,
   // because the values from g_conf are also integers.
   // balance?
-  if (mono_clock::is_zero(last_heartbeat))
-    last_heartbeat = now;
   if (mds->get_nodeid() == 0 &&
       g_conf->mds_bal_interval > 0 &&
       (num_bal_times ||
@@ -234,7 +232,26 @@ mds_load_t MDBalancer::get_load(utime_t now)
     dout(20) << "get_load no root, no load" << dendl;
   }
 
-  load.req_rate = mds->get_req_rate();
+  uint64_t num_requests = mds->get_num_requests();
+  bool new_req_rate = false;
+  if (last_get_load != utime_t() &&
+      now > last_get_load &&
+      num_requests >= last_num_requests) {
+    utime_t el = now;
+    el -= last_get_load;
+    if (el.sec() >= 1) {
+      load.req_rate = (num_requests - last_num_requests) / (double)el;
+      new_req_rate = true;
+    }
+  }
+  if (!new_req_rate) {
+    auto p = mds_load.find(mds->get_nodeid());
+    if (p != mds_load.end())
+      load.req_rate = p->second.req_rate;
+  }
+  last_get_load = now;
+  last_num_requests = num_requests;
+
   load.queue_len = messenger->get_dispatch_queue_len();
 
   ifstream cpu(PROCPREFIX "/proc/loadavg");
@@ -307,14 +324,15 @@ void MDBalancer::send_heartbeat()
 
   if (mds->get_nodeid() == 0) {
     beat_epoch++;
-   
     mds_load.clear();
   }
 
   // my load
   mds_load_t load = get_load(now);
-  map<mds_rank_t, mds_load_t>::value_type val(mds->get_nodeid(), load);
-  mds_load.insert(val);
+  mds->logger->set(l_mds_load_cent, 100 * load.mds_load());
+  mds->logger->set(l_mds_dispatch_queue_len, load.queue_len);
+
+  mds_load[mds->get_nodeid()] = load;
 
   // import_map -- how much do i import from whom
   map<mds_rank_t, float> import_map;
@@ -345,7 +363,7 @@ void MDBalancer::send_heartbeat()
   for (set<mds_rank_t>::iterator p = up.begin(); p != up.end(); ++p) {
     if (*p == mds->get_nodeid())
       continue;
-    MHeartbeat *hb = new MHeartbeat(load, beat_epoch, last_epoch_under);
+    MHeartbeat *hb = new MHeartbeat(load, beat_epoch);
     hb->get_import_map() = import_map;
     messenger->send_message(hb,
                             mds->mdsmap->get_inst(*p));
@@ -355,8 +373,6 @@ void MDBalancer::send_heartbeat()
 /* This function DOES put the passed message before returning */
 void MDBalancer::handle_heartbeat(MHeartbeat *m)
 {
-  typedef map<mds_rank_t, mds_load_t> mds_load_map_t;
-
   mds_rank_t who = mds_rank_t(m->get_source().num());
   dout(25) << "=== got heartbeat " << m->get_beat() << " from " << m->get_source().num() << " " << m->get_load() << dendl;
 
@@ -385,24 +401,22 @@ void MDBalancer::handle_heartbeat(MHeartbeat *m)
   if (who == 0) {
     dout(20) << " from mds0, new epoch " << m->get_beat() << dendl;
     if (beat_epoch != m->get_beat()) {
+      beat_epoch = m->get_beat();
       mds_load.clear();
     }
-    beat_epoch = m->get_beat();
+
     send_heartbeat();
 
     mds->mdcache->show_subtrees();
-  }
-
-  {
-    // set mds_load[who]
-    mds_load_map_t::value_type val(who, m->get_load());
-    pair < mds_load_map_t::iterator, bool > rval (mds_load.insert(val));
-    if (!rval.second) {
-      rval.first->second = val.second;
+  } else if (mds->get_nodeid() == 0) {
+    if (beat_epoch != m->get_beat()) {
+      dout(10) << " old heartbeat epoch, ignoring" << dendl;
+      goto out;
     }
   }
-  mds_import_map[ who ] = m->get_import_map();
-  mds_last_epoch_under_info[who] = m->get_last_epoch_under();
+
+  mds_load[who] = m->get_load();
+  mds_import_map[who] = m->get_import_map();
 
   {
     unsigned cluster_size = mds->get_mds_map()->get_num_in_mds();
@@ -426,26 +440,6 @@ void MDBalancer::handle_heartbeat(MHeartbeat *m)
  out:
   m->put();
 }
-
-
-void MDBalancer::export_empties()
-{
-  dout(5) << "export_empties checking for empty imports" << dendl;
-
-  std::set<CDir *> subtrees;
-  mds->mdcache->get_fullauth_subtrees(subtrees);
-  for (auto &dir : subtrees) {
-    if (dir->is_freezing() || dir->is_frozen())
-      continue;
-
-    if (!dir->inode->is_base() &&
-	!dir->inode->is_stray() &&
-	dir->get_num_head_items() == 0)
-      mds->mdcache->migrator->export_empty_import(dir);
-  }
-}
-
-
 
 double MDBalancer::try_match(balance_state_t& state, mds_rank_t ex, double& maxex,
                              mds_rank_t im, double& maxim)
@@ -626,9 +620,7 @@ void MDBalancer::prep_rebalance(int beat)
     double total_load = 0.0;
     multimap<double,mds_rank_t> load_map;
     for (mds_rank_t i=mds_rank_t(0); i < mds_rank_t(cluster_size); i++) {
-      map<mds_rank_t, mds_load_t>::value_type val(i, mds_load_t(ceph_clock_now()));
-      std::pair < map<mds_rank_t, mds_load_t>::iterator, bool > r(mds_load.insert(val));
-      mds_load_t &load(r.first->second);
+      mds_load_t& load = mds_load.at(i);
 
       double l = load.mds_load() * load_fac;
       mds_meta_load[i] = l;
@@ -653,13 +645,18 @@ void MDBalancer::prep_rebalance(int beat)
 	    << dendl;
 
     // under or over?
-    if (my_load < target_load * (1.0 + g_conf->mds_bal_min_rebalance)) {
-      dout(5) << "  i am underloaded or barely overloaded, doing nothing." << dendl;
-      last_epoch_under = beat_epoch;
-      mds->mdcache->show_subtrees();
-      return;
+    for (auto p : load_map) {
+      if (p.first < target_load * (1.0 + g_conf->mds_bal_min_rebalance)) {
+	dout(5) << " mds." << p.second << " is underloaded or barely overloaded." << dendl;
+	mds_last_epoch_under_map[p.second] = beat_epoch;
+      }
     }
 
+    int last_epoch_under = mds_last_epoch_under_map[whoami];
+    if (last_epoch_under == beat_epoch) {
+      dout(5) << "  i am underloaded or barely overloaded, doing nothing." << dendl;
+      return;
+    }
     // am i over long enough?
     if (last_epoch_under && beat_epoch - last_epoch_under < 2) {
       dout(5) << "  i am overloaded, but only for " << (beat_epoch - last_epoch_under) << " epochs" << dendl;
@@ -682,13 +679,13 @@ void MDBalancer::prep_rebalance(int beat)
 	dout(15) << "   mds." << it->second << " is importer" << dendl;
 	importers.insert(pair<double,mds_rank_t>(it->first,it->second));
 	importer_set.insert(it->second);
-      } else if (it->first > target_load * (1.0 + g_conf->mds_bal_min_rebalance)) {
-        int mds_last_epoch_under = (it->second == whoami) ? 0 : mds_last_epoch_under_info[it->second];
-        if (!mds_last_epoch_under || beat_epoch - mds_last_epoch_under >= 2) {
+      } else {
+	int mds_last_epoch_under = mds_last_epoch_under_map[it->second];
+	if (!(mds_last_epoch_under && beat_epoch - mds_last_epoch_under < 2)) {
 	  dout(15) << "   mds." << it->second << " is exporter" << dendl;
 	  exporters.insert(pair<double,mds_rank_t>(it->first,it->second));
 	  exporter_set.insert(it->second);
-        }
+	}
       }
     }
 
@@ -775,12 +772,8 @@ int MDBalancer::mantle_prep_rebalance()
 
   /* fill in the metrics for each mds by grabbing load struct */
   vector < map<string, double> > metrics (cluster_size);
-  for (mds_rank_t i=mds_rank_t(0);
-       i < mds_rank_t(cluster_size);
-       i++) {
-    map<mds_rank_t, mds_load_t>::value_type val(i, mds_load_t(ceph_clock_now()));
-    std::pair < map<mds_rank_t, mds_load_t>::iterator, bool > r(mds_load.insert(val));
-    mds_load_t &load(r.first->second);
+  for (mds_rank_t i=mds_rank_t(0); i < mds_rank_t(cluster_size); i++) {
+    mds_load_t& load = mds_load.at(i);
 
     metrics[i] = {{"auth.meta_load", load.auth.meta_load()},
                   {"all.meta_load", load.all.meta_load()},
@@ -815,142 +808,159 @@ void MDBalancer::try_rebalance(balance_state_t& state)
   }
 
   // make a sorted list of my imports
-  map<double,CDir*>    import_pop_map;
-  multimap<mds_rank_t,CDir*>  import_from_map;
+  multimap<double, CDir*> import_pop_map;
+  multimap<mds_rank_t, pair<CDir*, double> > import_from_map;
   set<CDir*> fullauthsubs;
 
   mds->mdcache->get_fullauth_subtrees(fullauthsubs);
-  for (set<CDir*>::iterator it = fullauthsubs.begin();
-       it != fullauthsubs.end();
-       ++it) {
-    CDir *im = *it;
-    if (im->get_inode()->is_stray()) continue;
+  for (auto dir : fullauthsubs) {
+    CInode *diri = dir->get_inode();
+    if (diri->is_mdsdir())
+      continue;
+    if (diri->get_export_pin(false) != MDS_RANK_NONE)
+      continue;
+    if (dir->is_freezing() || dir->is_frozen())
+      continue;  // export pbly already in progress
 
-    double pop = im->pop_auth_subtree.meta_load(rebalance_time, mds->mdcache->decayrate);
+    mds_rank_t from = diri->authority().first;
+    double pop = dir->pop_auth_subtree.meta_load(rebalance_time, mds->mdcache->decayrate);
     if (g_conf->mds_bal_idle_threshold > 0 &&
 	pop < g_conf->mds_bal_idle_threshold &&
-	im->inode != mds->mdcache->get_root() &&
-	im->inode->authority().first != mds->get_nodeid()) {
-      dout(5) << " exporting idle (" << pop << ") import " << *im
-	      << " back to mds." << im->inode->authority().first
-	      << dendl;
-      mds->mdcache->migrator->export_dir_nicely(im, im->inode->authority().first);
+	diri != mds->mdcache->get_root() &&
+	from != mds->get_nodeid()) {
+      dout(5) << " exporting idle (" << pop << ") import " << *dir
+	      << " back to mds." << from << dendl;
+      mds->mdcache->migrator->export_dir_nicely(dir, from);
       continue;
     }
 
-    import_pop_map[ pop ] = im;
-    mds_rank_t from = im->inode->authority().first;
-    dout(15) << "  map: i imported " << *im << " from " << from << dendl;
-    import_from_map.insert(pair<mds_rank_t,CDir*>(from, im));
+    dout(15) << "  map: i imported " << *dir << " from " << from << dendl;
+    import_pop_map.insert(make_pair(pop, dir));
+    import_from_map.insert(make_pair(from, make_pair(dir, pop)));
   }
 
-
-
   // do my exports!
-  set<CDir*> already_exporting;
+  map<mds_rank_t, double> export_pop_map;
 
   for (auto &it : state.targets) {
     mds_rank_t target = it.first;
     double amount = it.second;
 
-    if (amount < MIN_OFFLOAD) continue;
-    if (amount / target_load < .2) continue;
+    if (amount / target_load < .2)
+      continue;
+    if (amount < MIN_OFFLOAD)
+      continue;
 
     dout(5) << "want to send " << amount << " to mds." << target
       //<< " .. " << (*it).second << " * " << load_fac
 	    << " -> " << amount
 	    << dendl;//" .. fudge is " << fudge << dendl;
-    double have = 0.0;
 
+    double& have = export_pop_map[target];
 
     mds->mdcache->show_subtrees();
 
     // search imports from target
     if (import_from_map.count(target)) {
       dout(5) << " aha, looking through imports from target mds." << target << dendl;
-      pair<multimap<mds_rank_t,CDir*>::iterator, multimap<mds_rank_t,CDir*>::iterator> p =
-	import_from_map.equal_range(target);
-      while (p.first != p.second) {
-	CDir *dir = (*p.first).second;
+      for (auto p = import_from_map.equal_range(target);
+	   p.first != p.second; ) {
+	CDir *dir = p.first->second.first;
+	double pop = p.first->second.second;
 	dout(5) << "considering " << *dir << " from " << (*p.first).first << dendl;
-	multimap<mds_rank_t,CDir*>::iterator plast = p.first++;
+	auto plast = p.first++;
 
-	if (dir->inode->is_base() ||
-	    dir->inode->is_stray())
+	if (dir->inode->is_base())
 	  continue;
-	if (dir->is_freezing() || dir->is_frozen()) continue;  // export pbly already in progress
-	double pop = dir->pop_auth_subtree.meta_load(rebalance_time, mds->mdcache->decayrate);
 	assert(dir->inode->authority().first == target);  // cuz that's how i put it in the map, dummy
 
 	if (pop <= amount-have) {
-	  dout(5) << "reexporting " << *dir
-		  << " pop " << pop
+	  dout(5) << "reexporting " << *dir << " pop " << pop
 		  << " back to mds." << target << dendl;
 	  mds->mdcache->migrator->export_dir_nicely(dir, target);
 	  have += pop;
 	  import_from_map.erase(plast);
-	  import_pop_map.erase(pop);
+	  for (auto q = import_pop_map.equal_range(pop);
+	       q.first != q.second; ) {
+	    if (q.first->second == dir) {
+	      import_pop_map.erase(q.first);
+	      break;
+	    }
+	    q.first++;
+	  }
 	} else {
 	  dout(5) << "can't reexport " << *dir << ", too big " << pop << dendl;
 	}
-	if (amount-have < MIN_OFFLOAD) break;
+	if (amount-have < MIN_OFFLOAD)
+	  break;
       }
     }
-    if (amount-have < MIN_OFFLOAD) {
+  }
+
+  // any other imports
+  for (auto &it : state.targets) {
+    mds_rank_t target = it.first;
+    double amount = it.second;
+
+    if (!export_pop_map.count(target))
       continue;
-    }
+    double& have = export_pop_map[target];
+    if (amount-have < MIN_OFFLOAD)
+      continue;
 
-    // any other imports
-    if (false)
-      for (map<double,CDir*>::iterator import = import_pop_map.begin();
-	   import != import_pop_map.end();
-	   import++) {
-	CDir *imp = (*import).second;
-	if (imp->inode->is_base() ||
-	    imp->inode->is_stray())
-	  continue;
-
-	double pop = (*import).first;
-	if (pop < amount-have || pop < MIN_REEXPORT) {
-	  dout(5) << "reexporting " << *imp
-		  << " pop " << pop
-		  << " back to mds." << imp->inode->authority()
-		  << dendl;
-	  have += pop;
-	  mds->mdcache->migrator->export_dir_nicely(imp, imp->inode->authority().first);
-	}
-	if (amount-have < MIN_OFFLOAD) break;
+    for (auto p = import_pop_map.begin();
+	 p != import_pop_map.end(); ) {
+      CDir *dir = p->second;
+      if (dir->inode->is_base()) {
+	++p;
+	continue;
       }
-    if (amount-have < MIN_OFFLOAD) {
-      //fudge = amount-have;
-      continue;
+
+      double pop = p->first;
+      if (pop <= amount-have && pop > MIN_REEXPORT) {
+	dout(0) << "reexporting " << *dir << " pop " << pop
+		<< " to mds." << target << dendl;
+	have += pop;
+	mds->mdcache->migrator->export_dir_nicely(dir, target);
+	import_pop_map.erase(p++);
+      } else {
+	++p;
+      }
+      if (amount-have < MIN_OFFLOAD)
+	break;
     }
+  }
+
+  set<CDir*> already_exporting;
+
+  for (auto &it : state.targets) {
+    mds_rank_t target = it.first;
+    double amount = it.second;
+
+    if (!export_pop_map.count(target))
+      continue;
+    double& have = export_pop_map[target];
+    if (amount-have < MIN_OFFLOAD)
+      continue;
 
     // okay, search for fragments of my workload
-    set<CDir*> candidates;
-    mds->mdcache->get_fullauth_subtrees(candidates);
-
     list<CDir*> exports;
 
-    for (set<CDir*>::iterator pot = candidates.begin();
-	 pot != candidates.end();
-	 ++pot) {
-      if ((*pot)->get_inode()->is_stray()) continue;
-      find_exports(*pot, amount, exports, have, already_exporting);
-      if (have > amount-MIN_OFFLOAD)
+    for (auto p = import_pop_map.rbegin();
+	 p != import_pop_map.rend();
+	 ++p) {
+      CDir *dir = p->second;
+      find_exports(dir, amount, exports, have, already_exporting);
+      if (amount-have < MIN_OFFLOAD)
 	break;
     }
     //fudge = amount - have;
 
-    for (list<CDir*>::iterator it = exports.begin(); it != exports.end(); ++it) {
-      dout(5) << "   - exporting "
-	       << (*it)->pop_auth_subtree
-	       << " "
-	       << (*it)->pop_auth_subtree.meta_load(rebalance_time, mds->mdcache->decayrate)
-	       << " to mds." << target
-	       << " " << **it
-	       << dendl;
-      mds->mdcache->migrator->export_dir_nicely(*it, target);
+    for (auto dir : exports) {
+      dout(5) << "   - exporting " << dir->pop_auth_subtree
+	      << " " << dir->pop_auth_subtree.meta_load(rebalance_time, mds->mdcache->decayrate)
+	      << " to mds." << target << " " << *dir << dendl;
+      mds->mdcache->migrator->export_dir_nicely(dir, target);
     }
   }
 
@@ -964,9 +974,12 @@ void MDBalancer::find_exports(CDir *dir,
                               double& have,
                               set<CDir*>& already_exporting)
 {
+  assert(dir->is_auth());
+
   double need = amount - have;
   if (need < amount * g_conf->mds_bal_min_start)
     return;   // good enough!
+
   double needmax = need * g_conf->mds_bal_need_max;
   double needmin = need * g_conf->mds_bal_need_min;
   double midchunk = need * g_conf->mds_bal_midchunk;
@@ -985,15 +998,19 @@ void MDBalancer::find_exports(CDir *dir,
     if (!in->is_dir()) continue;
 
     list<CDir*> dfls;
-    in->get_dirfrags(dfls);
+    in->get_nested_dirfrags(dfls);
     for (list<CDir*>::iterator p = dfls.begin();
 	 p != dfls.end();
 	 ++p) {
       CDir *subdir = *p;
-      if (!subdir->is_auth()) continue;
-      if (already_exporting.count(subdir)) continue;
+      if (already_exporting.count(subdir))
+	continue;
 
-      if (subdir->is_frozen()) continue;  // can't export this right now!
+      // we know all ancestor dirfrags up to subtree root are not freezing or frozen.
+      // It's more efficient to use CDir::is_{freezing,frozen}_tree_root()
+      if (subdir->is_frozen_dir() || subdir->is_frozen_tree_root() ||
+	  subdir->is_freezing_dir() || subdir->is_freezing_tree_root())
+	continue;  // can't export this right now!
 
       // how popular?
       double pop = subdir->pop_auth_subtree.meta_load(rebalance_time, mds->mdcache->decayrate);
@@ -1071,10 +1088,9 @@ void MDBalancer::find_exports(CDir *dir,
     if (have > needmin)
       return;
   }
-
 }
 
-void MDBalancer::hit_inode(utime_t now, CInode *in, int type, int who)
+void MDBalancer::hit_inode(const utime_t& now, CInode *in, int type, int who)
 {
   // hit inode
   in->pop.get(type).hit(now, mds->mdcache->decayrate);
@@ -1115,7 +1131,7 @@ void MDBalancer::maybe_fragment(CDir *dir, bool hot)
   }
 }
 
-void MDBalancer::hit_dir(utime_t now, CDir *dir, int type, int who, double amount)
+void MDBalancer::hit_dir(const utime_t& now, CDir *dir, int type, int who, double amount)
 {
   // hit me
   double v = dir->pop_me.get(type).hit(now, mds->mdcache->decayrate, amount);
@@ -1246,10 +1262,40 @@ void MDBalancer::add_import(CDir *dir, utime_t now)
   }
 }
 
+void MDBalancer::adjust_pop_for_rename(CDir *pdir, CDir *dir, utime_t now, bool inc)
+{
+  DecayRate& rate = mds->mdcache->decayrate;
+
+  bool adjust_subtree_nest = dir->is_auth();
+  bool adjust_subtree = adjust_subtree_nest && !dir->is_subtree_root();
+  while (true) {
+    if (inc) {
+      pdir->pop_nested.add(now, rate, dir->pop_nested);
+      if (adjust_subtree)
+	pdir->pop_auth_subtree.add(now, rate, dir->pop_auth_subtree);
+
+      if (adjust_subtree_nest)
+	pdir->pop_auth_subtree_nested.add(now, rate, dir->pop_auth_subtree_nested);
+    } else {
+      pdir->pop_nested.sub(now, rate, dir->pop_nested);
+      if (adjust_subtree)
+	pdir->pop_auth_subtree.sub(now, rate, dir->pop_auth_subtree);
+
+      if (adjust_subtree_nest)
+	pdir->pop_auth_subtree_nested.sub(now, rate, dir->pop_auth_subtree_nested);
+    }
+
+    if (pdir->is_subtree_root())
+      adjust_subtree = false;
+    pdir = pdir->inode->get_parent_dir();
+    if (!pdir) break;
+  }
+}
+
 void MDBalancer::handle_mds_failure(mds_rank_t who)
 {
   if (0 == who) {
-    last_epoch_under = 0;
+    mds_last_epoch_under_map.clear();
   }
 }
 
