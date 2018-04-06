@@ -1,4 +1,4 @@
-// -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
+// -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*2
 // vim: ts=8 sw=2 smarttab
 
 #ifndef RGW_LDAP_H
@@ -38,7 +38,7 @@ namespace rgw {
     using lock_guard = std::lock_guard<std::mutex>;
 
     LDAPHelper(std::string _uri, std::string _binddn, std::string _bindpw,
-	       std::string _searchdn, std::string _searchfilter, std::string _dnattr)
+	       const std::string &_searchdn, const std::string &_searchfilter, const std::string &_dnattr)
       : uri(std::move(_uri)), binddn(std::move(_binddn)),
 	bindpw(std::move(_bindpw)), searchdn(_searchdn), searchfilter(_searchfilter), dnattr(_dnattr),
 	ldap(nullptr) {
@@ -91,7 +91,7 @@ namespace rgw {
       return ret; // OpenLDAP client error space
     }
 
-    int auth(const std::string uid, const std::string pwd);
+    int auth(const std::string &uid, const std::string &pwd);
 
     ~LDAPHelper() {
       if (ldap)
@@ -105,8 +105,8 @@ namespace rgw {
   class LDAPHelper
   {
   public:
-    LDAPHelper(std::string _uri, std::string _binddn, std::string _bindpw,
-	       std::string _searchdn, std::string _searchfilter, std::string _dnattr)
+    LDAPHelper(const std::string &_uri, const std::string &_binddn, const std::string &_bindpw,
+	       const std::string &_searchdn, const std::string &_searchfilter, const std::string &_dnattr)
       {}
 
     int init() {
@@ -117,7 +117,7 @@ namespace rgw {
       return -ENOTSUP;
     }
 
-    int auth(const std::string uid, const std::string pwd) {
+    int auth(const std::string &uid, const std::string &pwd) {
       return -EACCES;
     }
 
