@@ -19,11 +19,14 @@
 #include "include/filepath.h"
 
 struct MMDSFindIno : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
   ceph_tid_t tid {0};
   inodeno_t ino;
 
-  MMDSFindIno() : Message(MSG_MDS_FINDINO) {}
-  MMDSFindIno(ceph_tid_t t, inodeno_t i) : Message(MSG_MDS_FINDINO), tid(t), ino(i) {}
+  MMDSFindIno() : Message(MSG_MDS_FINDINO, HEAD_VERSION, COMPAT_VERSION) {}
+  MMDSFindIno(ceph_tid_t t, inodeno_t i) : Message(MSG_MDS_FINDINO, HEAD_VERSION, COMPAT_VERSION), tid(t), ino(i) {}
 
   const char *get_type_name() const override { return "findino"; }
   void print(ostream &out) const override {

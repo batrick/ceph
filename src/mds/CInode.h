@@ -623,7 +623,7 @@ protected:
     clear_flock_lock_state();
   }
   void _encode_file_locks(bufferlist& bl) const {
-    using ceph::encode;
+    ENCODE_START(1, 1, bl);
     bool has_fcntl_locks = fcntl_locks && !fcntl_locks->empty();
     encode(has_fcntl_locks, bl);
     if (has_fcntl_locks)
@@ -632,9 +632,10 @@ protected:
     encode(has_flock_locks, bl);
     if (has_flock_locks)
       encode(*flock_locks, bl);
+    ENCODE_FINISH(bl);
   }
   void _decode_file_locks(bufferlist::iterator& p) {
-    using ceph::decode;
+    DECODE_START(1, p);
     bool has_fcntl_locks;
     decode(has_fcntl_locks, p);
     if (has_fcntl_locks)
@@ -647,6 +648,7 @@ protected:
       decode(*get_flock_lock_state(), p);
     else
       clear_flock_lock_state();
+    DECODE_FINISH(p);
   }
 
   // LogSegment lists i (may) belong to
@@ -817,30 +819,6 @@ public:
   void encode_store(bufferlist& bl, uint64_t features);
   void decode_store(bufferlist::iterator& bl);
 
-  void encode_replica(mds_rank_t rep, bufferlist& bl, uint64_t features, bool need_recover) {
-    assert(is_auth());
-    
-    // relax locks?
-    if (!is_replicated())
-      replicate_relax_locks();
-    
-    __u32 nonce = add_replica(rep);
-    using ceph::encode;
-    encode(nonce, bl);
-    
-    _encode_base(bl, features);
-    _encode_locks_state_for_replica(bl, need_recover);
-  }
-  void decode_replica(bufferlist::iterator& p, bool is_new) {
-    using ceph::decode;
-    __u32 nonce;
-    decode(nonce, p);
-    replica_nonce = nonce;
-    
-    _decode_base(p);
-    _decode_locks_state(p, is_new);
-  }
-
   // -- waiting --
 protected:
   mempool::mds_co::compact_map<frag_t, std::list<MDSInternalContextBase*> > waiting_on_dir;
@@ -860,7 +838,7 @@ public:
   void _decode_locks_full(bufferlist::iterator& p);
   void _encode_locks_state_for_replica(bufferlist& bl, bool need_recover);
   void _encode_locks_state_for_rejoin(bufferlist& bl, int rep);
-  void _decode_locks_state(bufferlist::iterator& p, bool is_new);
+  void _decode_locks_state_for_replica(bufferlist::iterator& p, bool is_new);
   void _decode_locks_rejoin(bufferlist::iterator& p, std::list<MDSInternalContextBase*>& waiters,
 			    std::list<SimpleLock*>& eval_locks, bool survivor);
 
@@ -924,8 +902,27 @@ public:
   }
 
   void set_object_info(MDSCacheObjectInfo &info) override;
+
   void encode_lock_state(int type, bufferlist& bl) override;
   void decode_lock_state(int type, bufferlist& bl) override;
+  void encode_lock_iauth(bufferlist& bl);
+  void decode_lock_iauth(bufferlist::iterator& p);
+  void encode_lock_ilink(bufferlist& bl);
+  void decode_lock_ilink(bufferlist::iterator& p);
+  void encode_lock_idft(bufferlist& bl);
+  void decode_lock_idft(bufferlist::iterator& p);
+  void encode_lock_ifile(bufferlist& bl);
+  void decode_lock_ifile(bufferlist::iterator& p);
+  void encode_lock_inest(bufferlist& bl);
+  void decode_lock_inest(bufferlist::iterator& p);
+  void encode_lock_ixattr(bufferlist& bl);
+  void decode_lock_ixattr(bufferlist::iterator& p);
+  void encode_lock_isnap(bufferlist& bl);
+  void decode_lock_isnap(bufferlist::iterator& p);
+  void encode_lock_iflock(bufferlist& bl);
+  void decode_lock_iflock(bufferlist::iterator& p);
+  void encode_lock_ipolicy(bufferlist& bl);
+  void decode_lock_ipolicy(bufferlist::iterator& p);
 
   void _finish_frag_update(CDir *dir, MutationRef& mut);
 
