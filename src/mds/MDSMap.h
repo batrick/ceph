@@ -421,17 +421,13 @@ public:
   uint64_t get_up_features() {
     if (!cached_up_features) {
       bool first = true;
-      for (std::map<mds_rank_t, mds_gid_t>::const_iterator p = up.begin();
-	   p != up.end();
-	   ++p) {
-	std::map<mds_gid_t, mds_info_t>::const_iterator q =
-	  mds_info.find(p->second);
-	assert(q != mds_info.end());
+      for (const auto &p : up) {
+        const auto &info = mds_info.at(p.second);
 	if (first) {
-	  cached_up_features = q->second.mds_features;
+	  cached_up_features = info.mds_features;
 	  first = false;
 	} else {
-	  cached_up_features &= q->second.mds_features;
+	  cached_up_features &= info.mds_features;
 	}
       }
     }
