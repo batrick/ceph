@@ -1720,6 +1720,10 @@ int MDSMonitor::print_nodes(Formatter *f)
  */
 bool MDSMonitor::maybe_resize_cluster(std::shared_ptr<Filesystem> fs)
 {
+  if (fs->mds_map.test_flag(CEPH_MDSMAP_NOT_JOINABLE)) {
+    return false;
+  }
+
   int in = fs->mds_map.get_num_in_mds();
   int max = fs->mds_map.get_max_mds();
 
@@ -1813,7 +1817,7 @@ void MDSMonitor::maybe_replace_gid(mds_gid_t gid, const MDSMap::mds_info_t& info
       info.state != MDSMap::STATE_STANDBY &&
       info.state != MDSMap::STATE_STANDBY_REPLAY &&
       may_replace &&
-      !pending_fsmap.get_filesystem(fscid)->mds_map.test_flag(CEPH_MDSMAP_DOWN) &&
+      !pending_fsmap.get_filesystem(fscid)->mds_map.test_flag(CEPH_MDSMAP_NOT_JOINABLE) &&
       (sgid = pending_fsmap.find_replacement_for({fscid, info.rank}, info.name,
                 g_conf->mon_force_standby_active)) != MDS_GID_NONE)
   {
@@ -1862,7 +1866,9 @@ void MDSMonitor::maybe_replace_gid(mds_gid_t gid, const MDSMap::mds_info_t& info
 
 bool MDSMonitor::maybe_promote_standby(std::shared_ptr<Filesystem> fs)
 {
-  assert(!fs->mds_map.test_flag(CEPH_MDSMAP_DOWN));
+  if (fs->mds_map.test_flag(CEPH_MDSMAP_NOT_JOINABLE)) {
+    return false;
+  }
 
   bool do_propose = false;
 
@@ -1986,7 +1992,7 @@ void MDSMonitor::tick()
   do_propose |= pending_fsmap.check_health();
 
   // resize mds cluster (adjust @in)?
-  for (auto i : pending_fsmap.filesystems) {
+  for (const auto &i : pending_fsmap.filesystems) {
     do_propose |= maybe_resize_cluster(i.second);
   }
 
@@ -2052,11 +2058,8 @@ void MDSMonitor::tick()
     request_proposal(mon->osdmon());
   }
 
-  for (auto i : pending_fsmap.filesystems) {
-    auto fs = i.second;
-    if (!fs->mds_map.test_flag(CEPH_MDSMAP_DOWN)) {
-      do_propose |= maybe_promote_standby(fs);
-    }
+  for (const auto &i : pending_fsmap.filesystems) {
+    do_propose |= maybe_promote_standby(i.second);
   }
 
   if (do_propose) {
