@@ -1756,6 +1756,12 @@ bool MDSMonitor::maybe_resize_cluster(std::shared_ptr<Filesystem> &fs)
     return false;
   }
 
+  if (fs->mds_map.get_num_mds(CEPH_MDS_STATE_CREATING)) {
+    dout(5) << "An MDS for " << fs->mds_map.fs_name
+	         << " is creating; waiting to resize" << dendl;
+    return false;
+  }
+
   if (in < max && !fs->mds_map.test_flag(CEPH_MDSMAP_NOT_JOINABLE)) {
     mds_rank_t mds = mds_rank_t(0);
     string name;
