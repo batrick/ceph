@@ -24,7 +24,7 @@ using std::stringstream;
 #define dout_subsys ceph_subsys_
 
 // features
-CompatSet get_mdsmap_compat_set_all() {
+CompatSet MDSMap::get_compat_set_all() {
   CompatSet::FeatureSet feature_compat;
   CompatSet::FeatureSet feature_ro_compat;
   CompatSet::FeatureSet feature_incompat;
@@ -39,10 +39,10 @@ CompatSet get_mdsmap_compat_set_all() {
   feature_incompat.insert(MDS_FEATURE_INCOMPAT_FILE_LAYOUT_V2);
   feature_incompat.insert(MDS_FEATURE_INCOMPAT_SNAPREALM_V2);
 
-  return CompatSet(feature_compat, feature_ro_compat, feature_incompat);
+  return std::move(CompatSet(feature_compat, feature_ro_compat, feature_incompat));
 }
 
-CompatSet get_mdsmap_compat_set_default() {
+CompatSet MDSMap::get_compat_set_default() {
   CompatSet::FeatureSet feature_compat;
   CompatSet::FeatureSet feature_ro_compat;
   CompatSet::FeatureSet feature_incompat;
@@ -56,17 +56,17 @@ CompatSet get_mdsmap_compat_set_default() {
   feature_incompat.insert(MDS_FEATURE_INCOMPAT_FILE_LAYOUT_V2);
   feature_incompat.insert(MDS_FEATURE_INCOMPAT_SNAPREALM_V2);
 
-  return CompatSet(feature_compat, feature_ro_compat, feature_incompat);
+  return std::move(CompatSet(feature_compat, feature_ro_compat, feature_incompat));
 }
 
 // base (pre v0.20)
-CompatSet get_mdsmap_compat_set_base() {
+CompatSet MDSMap::get_compat_set_base() {
   CompatSet::FeatureSet feature_compat_base;
   CompatSet::FeatureSet feature_incompat_base;
   feature_incompat_base.insert(MDS_FEATURE_INCOMPAT_BASE);
   CompatSet::FeatureSet feature_ro_compat_base;
 
-  return CompatSet(feature_compat_base, feature_ro_compat_base, feature_incompat_base);
+  return std::move(CompatSet(feature_compat_base, feature_ro_compat_base, feature_incompat_base));
 }
 
 void MDSMap::mds_info_t::dump(Formatter *f) const
@@ -201,7 +201,7 @@ void MDSMap::generate_test_instances(list<MDSMap*>& ls)
   m->data_pools.push_back(0);
   m->metadata_pool = 1;
   m->cas_pool = 2;
-  m->compat = get_mdsmap_compat_set_all();
+  m->compat = get_compat_set_all();
 
   // these aren't the defaults, just in case anybody gets confused
   m->session_timeout = 61;
@@ -731,7 +731,7 @@ void MDSMap::decode(bufferlist::iterator& p)
   if (ev >= 3)
     decode(compat, p);
   else
-    compat = get_mdsmap_compat_set_base();
+    compat = get_compat_set_base();
   if (ev < 5) {
     __u32 n;
     decode(n, p);
