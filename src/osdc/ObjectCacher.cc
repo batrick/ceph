@@ -609,7 +609,8 @@ void ObjectCacher::Object::discard(loff_t off, loff_t len,
       bh->bl.clear();
       bh->set_nocache(true);
       oc->mark_zero(bh);
-      return;
+      // we should mark all Rx bh to zero
+      continue;
     } else {
       assert(bh->waitfor_read.empty());
     }
