@@ -26,6 +26,7 @@ protected:
   MonClient *mon_client = nullptr;
   snapid_t last_snap;
   snapid_t last_created, last_destroyed;
+  snapid_t snaprealm_v2_since;
   map<snapid_t, SnapInfo> snaps;
   map<int, set<snapid_t> > need_to_purge;
   
@@ -35,8 +36,11 @@ protected:
 
   version_t last_checked_osdmap;
 
+  bool root_scrubbed = false; // all snaprealms under root are converted?
+  bool mdsdir_scrubbed = false; // all snaprealms under ~mds0 are converted?
+
   void encode_server_state(bufferlist& bl) const override {
-    ENCODE_START(4, 3, bl);
+    ENCODE_START(5, 3, bl);
     encode(last_snap, bl);
     encode(snaps, bl);
     encode(need_to_purge, bl);
@@ -45,10 +49,11 @@ protected:
     encode(pending_noop, bl);
     encode(last_created, bl);
     encode(last_destroyed, bl);
+    encode(snaprealm_v2_since, bl);
     ENCODE_FINISH(bl);
   }
   void decode_server_state(bufferlist::iterator& bl) override {
-    DECODE_START_LEGACY_COMPAT_LEN(4, 3, 3, bl);
+    DECODE_START_LEGACY_COMPAT_LEN(5, 3, 3, bl);
     decode(last_snap, bl);
     decode(snaps, bl);
     decode(need_to_purge, bl);
@@ -69,6 +74,11 @@ protected:
       last_created = last_snap;
       last_destroyed = last_snap;
     }
+    if (struct_v >= 5)
+      decode(snaprealm_v2_since, bl);
+    else
+      snaprealm_v2_since = last_snap + 1;
+
     DECODE_FINISH(bl);
   }
 
@@ -89,6 +99,19 @@ public:
   void reset_state() override;
 
   void check_osd_map(bool force);
+
+  void mark_base_recursively_scrubbed(inodeno_t ino) {
+    if (ino ==  MDS_INO_ROOT)
+      root_scrubbed = true;
+    else if (ino == MDS_INO_MDSDIR(rank))
+      mdsdir_scrubbed = true;
+    else
+      assert(0);
+  }
+  bool can_allow_multimds_snaps() const {
+    return (root_scrubbed && mdsdir_scrubbed) ||
+	   snaps.empty() || snaps.begin()->first >= snaprealm_v2_since;
+  }
 
   void encode(bufferlist& bl) const {
     encode_server_state(bl);
