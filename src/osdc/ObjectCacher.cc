@@ -2526,11 +2526,6 @@ void ObjectCacher::_discard_finish(ObjectSet *oset, bool was_dirty,
 {
   assert(lock.is_locked());
 
-  // did we truncate off dirty data?
-  if (flush_set_callback && was_dirty && oset->dirty_or_tx == 0) {
-    flush_set_callback(flush_set_callback_arg, oset);
-  }
-
   // notify that in-flight writeback has completed
   if (on_finish != nullptr) {
     on_finish->complete(0);
