@@ -4330,34 +4330,34 @@ next:
   vc->begin();
 }
 
-void CInode::validated_data::dump(Formatter *f) const
+void CInode::validated_data::dump(Formatter &f) const
 {
-  f->open_object_section("results");
+  f.open_object_section("results");
   {
-    f->dump_bool("performed_validation", performed_validation);
-    f->dump_bool("passed_validation", passed_validation);
-    f->open_object_section("backtrace");
+    f.dump_bool("performed_validation", performed_validation);
+    f.dump_bool("passed_validation", passed_validation);
+    f.open_object_section("backtrace");
     {
-      f->dump_bool("checked", backtrace.checked);
-      f->dump_bool("passed", backtrace.passed);
-      f->dump_int("read_ret_val", backtrace.ondisk_read_retval);
-      f->dump_stream("ondisk_value") << backtrace.ondisk_value;
-      f->dump_stream("memoryvalue") << backtrace.memory_value;
-      f->dump_string("error_str", backtrace.error_str.str());
+      f.dump_bool("checked", backtrace.checked);
+      f.dump_bool("passed", backtrace.passed);
+      f.dump_int("read_ret_val", backtrace.ondisk_read_retval);
+      f.dump_stream("ondisk_value") << backtrace.ondisk_value;
+      f.dump_stream("memoryvalue") << backtrace.memory_value;
+      f.dump_string("error_str", backtrace.error_str.str());
     }
-    f->close_section(); // backtrace
-    f->open_object_section("raw_stats");
+    f.close_section(); // backtrace
+    f.open_object_section("raw_stats");
     {
-      f->dump_bool("checked", raw_stats.checked);
-      f->dump_bool("passed", raw_stats.passed);
-      f->dump_int("read_ret_val", raw_stats.ondisk_read_retval);
-      f->dump_stream("ondisk_value.dirstat") << raw_stats.ondisk_value.dirstat;
-      f->dump_stream("ondisk_value.rstat") << raw_stats.ondisk_value.rstat;
-      f->dump_stream("memory_value.dirrstat") << raw_stats.memory_value.dirstat;
-      f->dump_stream("memory_value.rstat") << raw_stats.memory_value.rstat;
-      f->dump_string("error_str", raw_stats.error_str.str());
+      f.dump_bool("checked", raw_stats.checked);
+      f.dump_bool("passed", raw_stats.passed);
+      f.dump_int("read_ret_val", raw_stats.ondisk_read_retval);
+      f.dump_stream("ondisk_value.dirstat") << raw_stats.ondisk_value.dirstat;
+      f.dump_stream("ondisk_value.rstat") << raw_stats.ondisk_value.rstat;
+      f.dump_stream("memory_value.dirrstat") << raw_stats.memory_value.dirstat;
+      f.dump_stream("memory_value.rstat") << raw_stats.memory_value.rstat;
+      f.dump_string("error_str", raw_stats.error_str.str());
     }
-    f->close_section(); // raw_stats
+    f.close_section(); // raw_stats
     // dump failure return code
     int rc = 0;
     if (backtrace.checked && backtrace.ondisk_read_retval)
@@ -4366,9 +4366,9 @@ void CInode::validated_data::dump(Formatter *f) const
       rc = inode.ondisk_read_retval;
     if (raw_stats.checked && raw_stats.ondisk_read_retval)
       rc = raw_stats.ondisk_read_retval;
-    f->dump_int("return_code", rc);
+    f.dump_int("return_code", rc);
   }
-  f->close_section(); // results
+  f.close_section(); // results
 }
 
 bool CInode::validated_data::all_damage_repaired() const

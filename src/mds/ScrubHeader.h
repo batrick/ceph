@@ -27,12 +27,10 @@ class CInode;
 class ScrubHeader {
 public:
   ScrubHeader(std::string_view tag_, bool force_, bool recursive_,
-              bool repair_, Formatter *f_)
+              bool repair_, Formatter &f)
       : tag(tag_), force(force_), recursive(recursive_), repair(repair_),
-        formatter(f_), origin(nullptr)
-  {
-    assert(formatter != nullptr);
-  }
+        formatter(f), origin(nullptr)
+  {}
 
   // Set after construction because it won't be known until we've
   // started resolving path and locking
@@ -43,7 +41,7 @@ public:
   bool get_force() const { return force; }
   const CInode *get_origin() const { return origin; }
   std::string_view get_tag() const { return tag; }
-  Formatter &get_formatter() const { return *formatter; }
+  Formatter &get_formatter() const { return formatter; }
 
   bool get_repaired() const { return repaired; }
   void set_repaired() { repaired = true; }
@@ -53,7 +51,7 @@ protected:
   const bool force;
   const bool recursive;
   const bool repair;
-  Formatter * const formatter;
+  Formatter &formatter;
   CInode *origin;
 
   bool repaired = false;  // May be set during scrub if repairs happened

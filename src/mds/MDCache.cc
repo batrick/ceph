@@ -12267,12 +12267,17 @@ void C_MDS_RetryRequest::finish(int r)
 
 class C_MDS_EnqueueScrub : public Context
 {
-  Formatter *formatter;
+  Formatter &formatter;
   Context *on_finish;
 public:
   ScrubHeaderRef header;
-  C_MDS_EnqueueScrub(Formatter *f, Context *fin) :
-    formatter(f), on_finish(fin), header(nullptr) {}
+  C_MDS_EnqueueScrub(Formatter &f, Context *fin) :
+    formatter(f), on_finish(fin), header(nullptr) {
+    formatter.open_object_section("scrub");
+  }
+  ~C_MDS_EnqueueScrub() {
+    formatter.close_section();
+  }
 
   Context *take_finisher() {
     Context *fin = on_finish;
@@ -12281,11 +12286,7 @@ public:
   }
 
   void finish(int r) override {
-    if (r < 0) { // we failed the lookup or something; dump ourselves
-      formatter->open_object_section("results");
-      formatter->dump_int("return_code", r);
-      formatter->close_section(); // results
-    }
+    formatter.dump_int("return_code", r);
     if (on_finish)
       on_finish->complete(r);
   }
@@ -12295,7 +12296,7 @@ void MDCache::enqueue_scrub(
     std::string_view path,
     std::string_view tag,
     bool force, bool recursive, bool repair,
-    Formatter *f, Context *fin)
+    Formatter &f, Context *fin)
 {
   dout(10) << __func__ << " " << path << dendl;
   MDRequestRef mdr = request_start_internal(CEPH_MDS_OP_ENQUEUE_SCRUB);

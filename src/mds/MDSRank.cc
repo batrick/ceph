@@ -2179,6 +2179,8 @@ void MDSRank::command_scrub_path(Formatter *f, std::string_view path, vector<str
   C_SaferCond scond;
   {
     Mutex::Locker l(mds_lock);
+    dout(0) << "scrubbing path '" << path << "' repair=" << repair
+            << " recursive=" << recursive << " repair=" << repair << dendl;
     mdcache->enqueue_scrub(path, "", force, recursive, repair, f, &scond);
   }
   scond.wait();

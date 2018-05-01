@@ -421,7 +421,7 @@ void ScrubStack::_validate_inode_done(CInode *in, int r,
 
   if (!header->get_recursive() && in == header->get_origin()) {
     if (r >= 0) { // we got into the scrubbing dump it
-      result.dump(&(header->get_formatter()));
+      result.dump(header->get_formatter());
     } else { // we failed the lookup or something; dump ourselves
       header->get_formatter().open_object_section("results");
       header->get_formatter().dump_int("return_code", r);
