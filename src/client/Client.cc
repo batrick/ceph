@@ -5062,6 +5062,12 @@ void Client::handle_cap_grant(MetaSession *session, Inode *in, Cap *cap, MClient
     decode(in->xattrs, p);
     in->xattr_version = m->head.xattr_version;
   }
+
+  if (new_caps & CEPH_CAP_FILE_SHARED) {
+    in->dirstat.nfiles = m->get_nfiles();
+    in->dirstat.nsubdirs = m->get_nsubdirs();
+  }
+
   update_inode_file_bits(in, m->get_truncate_seq(), m->get_truncate_size(), m->get_size(),
 			 m->get_change_attr(), m->get_time_warp_seq(), m->get_ctime(),
 			 m->get_mtime(), m->get_atime(),
