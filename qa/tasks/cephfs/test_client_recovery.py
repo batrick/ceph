@@ -511,3 +511,10 @@ class TestClientRecovery(CephFSTestCase):
         self.mount_b.client_remote.run(args=["sudo", "kill", "-CONT", mount_b_pid])
         # Is the new file visible from mount_b? (caps become invalid after session stale)
         self.mount_b.run_shell(["ls", "testdir/file2"])
+
+    def test_unmount_for_evicted_client(self):
+        """Test if client hangs on unmount after evicting the client."""
+        mount_a_client_id = self.mount_a.get_global_id()
+        self.fs.mds_asok(['session', 'evict', "%s" % mount_a_client_id])
+
+        self.mount_a.umount_wait(require_clean=True, timeout=30)
