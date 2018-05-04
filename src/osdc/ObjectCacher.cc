@@ -609,7 +609,8 @@ void ObjectCacher::Object::discard(loff_t off, loff_t len,
       bh->bl.clear();
       bh->set_nocache(true);
       oc->mark_zero(bh);
-      return;
+      // we should mark all Rx bh to zero
+      continue;
     } else {
       assert(bh->waitfor_read.empty());
     }
@@ -2524,11 +2525,6 @@ void ObjectCacher::_discard_finish(ObjectSet *oset, bool was_dirty,
                                    Context* on_finish)
 {
   assert(lock.is_locked());
-
-  // did we truncate off dirty data?
-  if (flush_set_callback && was_dirty && oset->dirty_or_tx == 0) {
-    flush_set_callback(flush_set_callback_arg, oset);
-  }
 
   // notify that in-flight writeback has completed
   if (on_finish != nullptr) {
