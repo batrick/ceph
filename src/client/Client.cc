@@ -14199,6 +14199,15 @@ void Client::set_uuid(const std::string& uuid)
   _close_sessions();
 }
 
+// called before mount. 0 means infinite
+void Client::set_session_timeout(unsigned timeout)
+{
+  Mutex::Locker l(client_lock);
+  assert(initialized);
+
+  metadata["timeout"] = stringify(timeout);
+}
+
 // called before mount
 int Client::start_reclaim(const std::string& uuid, unsigned flags)
 {
