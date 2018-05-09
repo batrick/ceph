@@ -28,6 +28,7 @@
 #include "InoTable.h"
 #include "SnapClient.h"
 #include "Mutation.h"
+#include "cephfs_features.h"
 
 #include "msg/Messenger.h"
 
@@ -363,10 +364,22 @@ void Server::handle_client_session(MClientSession *m)
     }
 
     {
-      client_metadata_t client_metadata(std::move(m->client_meta));
+      client_metadata_t client_metadata(std::move(m->metadata),
+					std::move(m->supported_features));
       dout(20) << __func__ << " CEPH_SESSION_REQUEST_OPEN metadata entries:" << dendl;
+      dout(20) << "  features: '" << client_metadata.features << dendl;
       for (auto& p : client_metadata) {
 	dout(20) << "  " << p.first << ": " << p.second << dendl;
+      }
+
+      feature_bitset_t missing_features(CEPHFS_FEATURES_MDS_REQUIRED);
+      missing_features -= client_metadata.features;
+      if (!missing_features.empty()) {
+	mds->send_message_client(new MClientSession(CEPH_SESSION_REJECT), session);
+	mds->clog->warn() << "client session lacks required features '"
+			  << missing_features << "' denied (" << session->info.inst << ")";
+	session->clear();
+	break;
       }
 
       client_metadata_t::iterator it;
@@ -379,14 +392,11 @@ void Server::handle_client_session(MClientSession *m)
 	// into caps check
 	if (claimed_root.empty() || claimed_root[0] != '/' ||
 	    !session->auth_caps.path_capable(claimed_root.substr(1))) {
-	  derr << __func__ << " forbidden path claimed as mount root: "
-	       << claimed_root << " by " << m->get_source() << dendl;
 	  // Tell the client we're rejecting their open
 	  mds->send_message_client(new MClientSession(CEPH_SESSION_REJECT), session);
 	  mds->clog->warn() << "client session with invalid root '" << claimed_root
 			    << "' denied (" << session->info.inst << ")";
 	  session->clear();
-	  // Drop out; don't record this session in SessionMap or journal it.
 	  break;
 	}
       }
@@ -521,7 +531,11 @@ void Server::_session_logged(Session *session, uint64_t state_seq, bool open, ve
     mds->sessionmap.set_state(session, Session::STATE_OPEN);
     mds->sessionmap.touch_session(session);
     assert(session->connection != NULL);
-    session->connection->send_message(new MClientSession(CEPH_SESSION_OPEN));
+    MClientSession *m = new MClientSession(CEPH_SESSION_OPEN);
+
+    if (session->info.has_feature(CEPHFS_FEATURE_MIMIC))
+	m->supported_features = feature_bitset_t(CEPHFS_FEATURES_MDS_SUPPORTED);
+    session->connection->send_message(m);
     if (mdcache->is_readonly())
       session->connection->send_message(new MClientSession(CEPH_SESSION_FORCE_RO));
   } else if (session->is_closing() ||
