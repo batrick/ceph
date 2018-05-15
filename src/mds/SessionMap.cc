@@ -116,7 +116,7 @@ void SessionMapStore::decode_header(
 }
 
 void SessionMapStore::encode_header(
-    bufferlist *header_bl)
+    bufferlist *header_bl) const
 {
   ENCODE_START(1, 1, *header_bl);
   encode(version, *header_bl);
