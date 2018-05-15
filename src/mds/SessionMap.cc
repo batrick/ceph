@@ -56,17 +56,15 @@ void SessionMap::register_perfcounters()
   g_ceph_context->get_perfcounters_collection()->add(logger);
 }
 
-void SessionMap::dump()
+void SessionMap::dump() const
 {
   dout(10) << "dump" << dendl;
-  for (ceph::unordered_map<entity_name_t,Session*>::iterator p = session_map.begin();
-       p != session_map.end();
-       ++p) 
-    dout(10) << p->first << " " << p->second
-	     << " state " << p->second->get_state_name()
-	     << " completed " << p->second->info.completed_requests
-	     << " prealloc_inos " << p->second->info.prealloc_inos
-	     << " used_inos " << p->second->info.used_inos
+  for (const auto &p : session_map) {
+    dout(10) << p.first << " " << p.second.get()
+	     << " state " << p.second->get_state_name()
+	     << " completed " << p.second->info.completed_requests
+	     << " prealloc_inos " << p.second->info.prealloc_inos
+	     << " used_inos " << p.second->info.used_inos
 	     << dendl;
 }
 

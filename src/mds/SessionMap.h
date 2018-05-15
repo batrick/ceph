@@ -506,7 +506,7 @@ public:
     return by_state_entry->second->front();
   }
 
-  void dump();
+  void dump() const;
 
   void get_client_session_set(std::set<Session::ptr>& s) const {
     for (const auto &p : session_map) {
