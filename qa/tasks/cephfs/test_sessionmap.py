@@ -148,7 +148,7 @@ class TestSessionMap(CephFSTestCase):
         # KV write both count.
         self.wait_until_true(
             lambda: get_omap_wrs() - initial_omap_wrs == 2,
-            timeout=10  # Long enough for an export to get acked
+            timeout=30  # Long enough for an export to get acked
         )
 
         # Now end our sessions and check the backing sessionmap is updated correctly
