@@ -495,11 +495,11 @@ public:
     }
   }
 
-  void add_session(Session *s);
-  void remove_session(Session *s);
-  void touch_session(Session *session);
+  void add_session(const Session::ptr &s);
+  void remove_session(const Session::ptr &s);
+  void touch_session(const Session::ptr &s);
 
-  Session *get_oldest_session(int state) {
+  const Session::ptr &get_oldest_session(int state) {
     auto by_state_entry = by_state.find(state);
     if (by_state_entry == by_state.end() || by_state_entry->second->empty())
       return nullptr;
@@ -517,7 +517,7 @@ public:
 
   void replay_open_sessions(std::map<client_t,entity_inst_t>& client_map) {
     for (auto &p : client_map) {
-      Session *s = get_or_add_session(p.second);
+      auto &s = get_or_add_session(p.second);
       set_state(s, Session::STATE_OPEN);
       replay_dirty_session(s);
     }
@@ -534,11 +534,11 @@ public:
     return get_session(entity_name_t::CLIENT(client.v))->get_push_seq();
   }
   bool have_completed_request(metareqid_t rid) {
-    Session *session = get_session(rid.name);
+    const auto &session = get_session(rid.name);
     return session && session->have_completed_request(rid.tid, NULL);
   }
   void trim_completed_requests(entity_name_t c, ceph_tid_t tid) {
-    Session *session = get_session(c);
+    const auto &session = get_session(c);
     assert(session);
     session->trim_completed_requests(tid);
   }
@@ -573,7 +573,7 @@ public:
    * to the backing store.  Must have called
    * mark_projected previously for this session.
    */
-  void mark_dirty(Session *session);
+  void mark_dirty(const Session::ptr &session);
 
   /**
    * Advance the projected version, and mark this
@@ -585,14 +585,14 @@ public:
    * for sessions in the same global order as calls
    * to mark_projected.
    */
-  version_t mark_projected(Session *session);
+  version_t mark_projected(const Session::ptr &session);
 
   /**
    * During replay, advance versions to account
    * for a session modification, and mark the
    * session dirty.
    */
-  void replay_dirty_session(Session *session);
+  void replay_dirty_session(const Session::ptr &session);
 
   /**
    * During replay, if a session no longer present
