@@ -73,6 +73,8 @@ public:
     STATE_KILLING = 5
   };
 
+  using ptr = boost::instrusive_ptr<Session>;
+
   static const char *get_state_name(int s) {
     switch (s) {
     case STATE_CLOSED: return "closed";
@@ -277,7 +279,7 @@ public:
     info.clear_meta();
 
     cap_push_seq = 0;
-    last_cap_renew = utime_t();
+    last_cap_renew = mono_clock::now();
   }
   size_t get_request_count();
 
@@ -303,7 +305,7 @@ public:
 
   xlist<Capability*> caps;     // inodes with caps; front=most recently used
   xlist<ClientLease*> leases;  // metadata leases to clients
-  utime_t last_cap_renew;
+  mono_time last_cap_renew = mono_clock::zero();
 
 private:
   // Human (friendly) name is soft state generated from client metadata
@@ -387,15 +389,16 @@ public:
     rank = r;
   }
 
-  Session* get_or_add_session(const entity_inst_t& i) {
-    Session *s;
+  Session::ptr get_or_add_session(const entity_inst_t& i) {
+    Session::ptr s;
     auto session_map_entry = session_map.find(i.name);
     if (session_map_entry != session_map.end()) {
       s = session_map_entry->second;
     } else {
-      s = session_map[i.name] = new Session;
+      s = Session::ptr(new Session, false);
+      session_map_entry = session_map.emplace(i.name, s);
       s->info.inst = i;
-      s->last_cap_renew = ceph_clock_now();
+      s->last_cap_renew = mono_clock::now();
       if (logger) {
         logger->set(l_mdssm_session_count, session_map.size());
         logger->inc(l_mdssm_session_add);
@@ -413,7 +416,7 @@ public:
 
 protected:
   version_t version = 0;
-  ceph::unordered_map<entity_name_t, Session*> session_map;
+  ceph::unordered_map<entity_name_t, Session::ptr> session_map;
   PerfCounters *logger = nullptr;
 };
 
@@ -458,7 +461,7 @@ public:
   // sessions
   void decode_legacy(bufferlist::iterator& blp) override;
   bool empty() const { return session_map.empty(); }
-  const ceph::unordered_map<entity_name_t, Session*> &get_sessions() const {
+  const decltype(SessionMap::session_map) &get_sessions() const {
     return session_map;
   }
 
@@ -480,10 +483,10 @@ public:
   bool have_session(entity_name_t w) const {
     return session_map.count(w);
   }
-  Session* get_session(entity_name_t w) {
+  Session::ptr get_session(entity_name_t w) {
     auto session_map_entry = session_map.find(w);
     return (session_map_entry != session_map.end() ?
-	    session_map_entry-> second : nullptr);
+	    session_map_entry->second : nullptr);
   }
   const Session* get_session(entity_name_t w) const {
     ceph::unordered_map<entity_name_t, Session*>::const_iterator p = session_map.find(w);
@@ -507,19 +510,16 @@ public:
 
   void dump();
 
-  void get_client_session_set(set<Session*>& s) const {
-    for (ceph::unordered_map<entity_name_t,Session*>::const_iterator p = session_map.begin();
-	 p != session_map.end();
-	 ++p)
-      if (p->second->info.inst.name.is_client())
-	s.insert(p->second);
+  void get_client_session_set(std::set<Session::ptr>& s) const {
+    for (const auto &p : session_map) {
+      if (p.second->info.inst.name.is_client())
+	s.insert(p.second);
+    }
   }
 
-  void replay_open_sessions(map<client_t,entity_inst_t>& client_map) {
-    for (map<client_t,entity_inst_t>::iterator p = client_map.begin(); 
-	 p != client_map.end(); 
-	 ++p) {
-      Session *s = get_or_add_session(p->second);
+  void replay_open_sessions(std::map<client_t,entity_inst_t>& client_map) {
+    for (auto &p : client_map) {
+      Session *s = get_or_add_session(p.second);
       set_state(s, Session::STATE_OPEN);
       replay_dirty_session(s);
     }
@@ -527,8 +527,7 @@ public:
 
   // helpers
   entity_inst_t& get_inst(entity_name_t w) {
-    assert(session_map.count(w));
-    return session_map[w]->info.inst;
+    return session_map.at(w)->info.inst;
   }
   version_t inc_push_seq(client_t client) {
     return get_session(entity_name_t::CLIENT(client.v))->inc_push_seq();
