@@ -748,15 +748,14 @@ void Server::find_idle_sessions()
   }
 
   // Collect a list of sessions exceeding the autoclose threshold
-  std::vector<Session *> to_evict;
-  const auto sessions_p = mds->sessionmap.by_state.find(Session::STATE_STALE);
-  if (sessions_p == mds->sessionmap.by_state.end() || sessions_p->second->empty()) {
+  std::vector<Session::ptr> to_evict;
+  const auto sessions_it = mds->sessionmap.by_state.find(Session::STATE_STALE);
+  if (sessions_it == mds->sessionmap.by_state.end() || sessions_it->second->empty()) {
     return;
   }
-  const auto &stale_sessions = sessions_p->second;
-  assert(stale_sessions != nullptr);
+  const auto &stale_sessions = sessions_it->second;
 
-  for (const auto &session: *stale_sessions) {
+  for (const auto &session: stale_sessions) {
     if (session->is_importing()) {
       dout(10) << "stopping at importing session " << session->info.inst << dendl;
       break;

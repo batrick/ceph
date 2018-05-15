@@ -74,6 +74,7 @@ public:
   };
 
   using ptr = boost::instrusive_ptr<Session>;
+  using const_ptr = boost::const_pointer_cast<const Session, ptr>;
 
   static const char *get_state_name(int s) {
     switch (s) {
@@ -426,9 +427,6 @@ public:
   {}
 
   ~SessionMap() override {
-    for (auto p : by_state)
-      delete p.second;
-
     if (logger) {
       g_ceph_context->get_perfcounters_collection()->remove(logger);
     }
@@ -466,8 +464,8 @@ public:
   }
 
   bool is_any_state(int state) const {
-    map<int,xlist<Session*>* >::const_iterator p = by_state.find(state);
-    if (p == by_state.end() || p->second->empty())
+    const it = by_state.find(state);
+    if (it == by_state.end() || it->second->empty())
       return false;
     return true;
   }
@@ -488,12 +486,12 @@ public:
     return (session_map_entry != session_map.end() ?
 	    session_map_entry->second : nullptr);
   }
-  const Session* get_session(entity_name_t w) const {
-    ceph::unordered_map<entity_name_t, Session*>::const_iterator p = session_map.find(w);
-    if (p == session_map.end()) {
+  Session::const_ptr get_session(entity_name_t w) const {
+    const auto it = session_map.find(w);
+    if (it == session_map.end()) {
       return NULL;
     } else {
-      return p->second;
+      return Session::const_ptr(it->second);
     }
   }
 
@@ -504,7 +502,7 @@ public:
   Session *get_oldest_session(int state) {
     auto by_state_entry = by_state.find(state);
     if (by_state_entry == by_state.end() || by_state_entry->second->empty())
-      return 0;
+      return nullptr;
     return by_state_entry->second->front();
   }
 
@@ -612,11 +610,11 @@ public:
   void save_if_dirty(const std::set<entity_name_t> &tgt_sessions,
                      MDSGatherBuilder *gather_bld);
 
+  uint64_t set_state(const Session::ptr &session, int state);
 
 
   MDSRank *mds;
-  map<int,xlist<Session*> *> by_state;
-  uint64_t set_state(Session *session, int state);
+  std::map<int,xlist<Session::ptr>> by_state;
   map<version_t, list<MDSInternalContextBase*> > commit_waiters;
 
   // -- loading, saving --
@@ -624,7 +622,7 @@ public:
   list<MDSInternalContextBase*> waiting_for_load;
 
 protected:
-  void _mark_dirty(Session *session);
+  void _mark_dirty(const Session::ptr &session);
 
 
   version_t projected = 0;
