@@ -1,0 +1,6 @@
+tasks:
+- exec:
+    mon.a:
+    - ceph status
+    - ceph fs dump --format=json-pretty
+    - ceph fs set cephfs max_mds 2

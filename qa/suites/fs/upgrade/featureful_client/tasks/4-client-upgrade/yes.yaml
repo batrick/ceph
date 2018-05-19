@@ -1,0 +1,8 @@
+tasks:
+- install.upgrade:
+    client.0:
+- print: "**** done install.upgrade on client.0"
+- ceph-fuse:
+  disabled: true
+- ceph-fuse:
+- print: "**** done remount client"
