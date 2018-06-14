@@ -907,23 +907,23 @@ public:
   void encode_lock_state(int type, bufferlist& bl) override;
   void decode_lock_state(int type, bufferlist& bl) override;
   void encode_lock_iauth(bufferlist& bl);
-  void decode_lock_iauth(bufferlist::iterator& p);
+  void decode_lock_iauth(bufferlist::const_iterator& p);
   void encode_lock_ilink(bufferlist& bl);
-  void decode_lock_ilink(bufferlist::iterator& p);
+  void decode_lock_ilink(bufferlist::const_iterator& p);
   void encode_lock_idft(bufferlist& bl);
-  void decode_lock_idft(bufferlist::iterator& p);
+  void decode_lock_idft(bufferlist::const_iterator& p);
   void encode_lock_ifile(bufferlist& bl);
-  void decode_lock_ifile(bufferlist::iterator& p);
+  void decode_lock_ifile(bufferlist::const_iterator& p);
   void encode_lock_inest(bufferlist& bl);
-  void decode_lock_inest(bufferlist::iterator& p);
+  void decode_lock_inest(bufferlist::const_iterator& p);
   void encode_lock_ixattr(bufferlist& bl);
-  void decode_lock_ixattr(bufferlist::iterator& p);
+  void decode_lock_ixattr(bufferlist::const_iterator& p);
   void encode_lock_isnap(bufferlist& bl);
-  void decode_lock_isnap(bufferlist::iterator& p);
+  void decode_lock_isnap(bufferlist::const_iterator& p);
   void encode_lock_iflock(bufferlist& bl);
-  void decode_lock_iflock(bufferlist::iterator& p);
+  void decode_lock_iflock(bufferlist::const_iterator& p);
   void encode_lock_ipolicy(bufferlist& bl);
-  void decode_lock_ipolicy(bufferlist::iterator& p);
+  void decode_lock_ipolicy(bufferlist::const_iterator& p);
 
   void _finish_frag_update(CDir *dir, MutationRef& mut);
 

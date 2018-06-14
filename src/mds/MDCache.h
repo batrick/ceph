@@ -1098,7 +1098,7 @@ public:
   // -- namespace --
 public:
   void encode_remote_dentry_link(CDentry::linkage_t *dnl, bufferlist& bl);
-  void decode_remote_dentry_link(CDir *dir, CDentry *dn, bufferlist::iterator& p);
+  void decode_remote_dentry_link(CDir *dir, CDentry *dn, bufferlist::const_iterator& p);
   void send_dentry_link(CDentry *dn, MDRequestRef& mdr);
   void send_dentry_unlink(CDentry *dn, CDentry *straydn, MDRequestRef& mdr);
 protected:

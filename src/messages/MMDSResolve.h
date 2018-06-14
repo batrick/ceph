@@ -42,7 +42,7 @@ public:
       encode(cap_exports, bl);
       ENCODE_FINISH(bl);
     }
-    void decode(bufferlist::iterator &blp)
+    void decode(bufferlist::const_iterator &blp)
     {
       DECODE_START(1, blp);
       decode(ino, blp);

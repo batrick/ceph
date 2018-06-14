@@ -1514,7 +1514,7 @@ void CInode::encode_lock_iauth(bufferlist& bl)
   ENCODE_FINISH(bl);
 }
 
-void CInode::decode_lock_iauth(bufferlist::iterator& p)
+void CInode::decode_lock_iauth(bufferlist::const_iterator& p)
 {
   DECODE_START(1, p);
   decode(inode.version, p);
@@ -1536,7 +1536,7 @@ void CInode::encode_lock_ilink(bufferlist& bl)
   ENCODE_FINISH(bl);
 }
 
-void CInode::decode_lock_ilink(bufferlist::iterator& p)
+void CInode::decode_lock_ilink(bufferlist::const_iterator& p)
 {
   DECODE_START(1, p);
   decode(inode.version, p);
@@ -1576,7 +1576,7 @@ void CInode::encode_lock_idft(bufferlist& bl)
   ENCODE_FINISH(bl);
 }
 
-void CInode::decode_lock_idft(bufferlist::iterator& p)
+void CInode::decode_lock_idft(bufferlist::const_iterator& p)
 {
   DECODE_START(1, p);
   if (is_auth()) {
@@ -1670,7 +1670,7 @@ void CInode::encode_lock_ifile(bufferlist& bl)
   ENCODE_FINISH(bl);
 }
 
-void CInode::decode_lock_ifile(bufferlist::iterator& p)
+void CInode::decode_lock_ifile(bufferlist::const_iterator& p)
 {
   DECODE_START(1, p);
   if (!is_auth()) {
@@ -1782,7 +1782,7 @@ void CInode::encode_lock_inest(bufferlist& bl)
   ENCODE_FINISH(bl);
 }
 
-void CInode::decode_lock_inest(bufferlist::iterator& p)
+void CInode::decode_lock_inest(bufferlist::const_iterator& p)
 {
   DECODE_START(1, p);
   if (is_auth()) {
@@ -1854,7 +1854,7 @@ void CInode::encode_lock_ixattr(bufferlist& bl)
   ENCODE_FINISH(bl);
 }
 
-void CInode::decode_lock_ixattr(bufferlist::iterator& p)
+void CInode::decode_lock_ixattr(bufferlist::const_iterator& p)
 {
   DECODE_START(1, p);
   decode(inode.version, p);
@@ -1874,7 +1874,7 @@ void CInode::encode_lock_isnap(bufferlist& bl)
   ENCODE_FINISH(bl);
 }
 
-void CInode::decode_lock_isnap(bufferlist::iterator& p)
+void CInode::decode_lock_isnap(bufferlist::const_iterator& p)
 {
   DECODE_START(1, p);
   decode(inode.version, p);
@@ -1893,7 +1893,7 @@ void CInode::encode_lock_iflock(bufferlist& bl)
   ENCODE_FINISH(bl);
 }
 
-void CInode::decode_lock_iflock(bufferlist::iterator& p)
+void CInode::decode_lock_iflock(bufferlist::const_iterator& p)
 {
   DECODE_START(1, p);
   decode(inode.version, p);
@@ -1914,7 +1914,7 @@ void CInode::encode_lock_ipolicy(bufferlist& bl)
   ENCODE_FINISH(bl);
 }
 
-void CInode::decode_lock_ipolicy(bufferlist::iterator& p)
+void CInode::decode_lock_ipolicy(bufferlist::const_iterator& p)
 {
   DECODE_START(1, p);
   if (inode.is_dir()) {

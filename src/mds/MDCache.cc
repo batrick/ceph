@@ -10735,7 +10735,7 @@ void MDCache::encode_remote_dentry_link(CDentry::linkage_t *dnl, bufferlist& bl)
   ENCODE_FINISH(bl);
 }
 
-void MDCache::decode_remote_dentry_link(CDir *dir, CDentry *dn, bufferlist::iterator& p)
+void MDCache::decode_remote_dentry_link(CDir *dir, CDentry *dn, bufferlist::const_iterator& p)
 {
   DECODE_START(1, p);
   inodeno_t ino;
