@@ -568,30 +568,21 @@ private:
   }
 
   void _encode_base(bufferlist& bl) {
+    ENCODE_START(1, 1, bl);
     encode(first, bl);
     encode(fnode, bl);
     encode(dir_rep, bl);
     encode(dir_rep_by, bl);
+    ENCODE_FINISH(bl);
   }
   void _decode_base(bufferlist::const_iterator& p) {
+    DECODE_START(1, p);
     decode(first, p);
     decode(fnode, p);
     decode(dir_rep, p);
     decode(dir_rep_by, p);
+    DECODE_FINISH(p);
   }
-  void encode_replica(mds_rank_t who, bufferlist& bl) {
-    __u32 nonce = add_replica(who);
-    encode(nonce, bl);
-    _encode_base(bl);
-  }
-  void decode_replica(bufferlist::const_iterator& p) {
-    __u32 nonce;
-    decode(nonce, p);
-    replica_nonce = nonce;
-    _decode_base(p);
-  }
-
-
 
   // -- state --
   bool is_complete() { return state & STATE_COMPLETE; }
