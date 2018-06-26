@@ -1044,6 +1044,62 @@ void Migrator::export_sessions_flushed(CDir *dir, uint64_t tid)
     export_go(dir);     // start export.
 }
 
+void Migrator::encode_export_prep_trace(bufferlist &final_bl, CDir *bound, 
+                                        CDir *dir, export_state_t &es, 
+                                        set<inodeno_t> &inodes_added, 
+                                        set<dirfrag_t> &dirfrags_added)
+{
+  ENCODE_START(1, 1, final_bl);
+
+  dout(7) << __func__ << " started to encode dir " << *bound << dendl;
+  CDir *cur = bound;
+  bufferlist tracebl;
+  char start = '-';
+  if (es.residual_dirs.count(cur)) {
+    start = 'f';
+    cache->encode_replica_dir(cur, es.peer, tracebl);
+    dout(7) << " added " << *cur << dendl;
+  }
+  
+  while (1) {
+    // don't repeat inodes
+    if (inodes_added.count(cur->inode->ino()))
+      break;
+    inodes_added.insert(cur->inode->ino());
+
+    // prepend dentry + inode
+    assert(cur->inode->is_auth());
+    bufferlist bl;
+    cache->encode_replica_dentry(cur->inode->parent, es.peer, bl);
+    dout(7) << "  added " << *cur->inode->parent << dendl;
+    cache->encode_replica_inode(cur->inode, es.peer, bl, mds->mdsmap->get_up_features());
+    dout(7) << "  added " << *cur->inode << dendl;
+    bl.claim_append(tracebl);
+    tracebl.claim(bl);
+
+    cur = cur->get_parent_dir();
+    // don't repeat dirfrags
+    if (dirfrags_added.count(cur->dirfrag()) || cur == dir) {
+      start = 'd';  // start with dentry
+      break;
+    }
+    dirfrags_added.insert(cur->dirfrag());
+
+    // prepend dir
+    cache->encode_replica_dir(cur, es.peer, bl);
+    dout(7) << "  added " << *cur << dendl;
+    bl.claim_append(tracebl);
+    tracebl.claim(bl);
+    start = 'f';  // start with dirfrag
+  }
+  dirfrag_t df = cur->dirfrag();
+  encode(df, final_bl);
+  encode(start, final_bl);
+  final_bl.claim_append(tracebl);
+  
+  ENCODE_FINISH(final_bl);
+}
+
 void Migrator::export_frozen(CDir *dir, uint64_t tid)
 {
   dout(7) << "export_frozen on " << *dir << dendl;
@@ -1112,7 +1168,7 @@ void Migrator::export_frozen(CDir *dir, uint64_t tid)
   }
 
   // include base dirfrag
-  cache->replicate_dir(dir, it->second.peer, prep->basedir);
+  cache->encode_replica_dir(dir, it->second.peer, prep->basedir);
   
   /*
    * include spanning tree for all nested exports.
@@ -1127,68 +1183,15 @@ void Migrator::export_frozen(CDir *dir, uint64_t tid)
   set<dirfrag_t> dirfrags_added;
 
   // check bounds
-  for (set<CDir*>::iterator p = bounds.begin();
-       p != bounds.end();
-       ++p) {
-    CDir *bound = *p;
-
+  for (auto &p : bounds){
+    CDir *bound = p;
     // pin it.
     assert(bound->state_test(CDir::STATE_EXPORTBOUND));
-    
     dout(7) << "  export bound " << *bound << dendl;
     prep->add_bound( bound->dirfrag() );
-
-    // trace to bound
-    bufferlist tracebl;
-    CDir *cur = bound;
-
-    char start = '-';
-    if (it->second.residual_dirs.count(bound)) {
-      start = 'f';
-      cache->replicate_dir(bound, it->second.peer, tracebl);
-      dout(7) << "  added " << *bound << dendl;
-    }
-
-    while (1) {
-      // don't repeat inodes
-      if (inodes_added.count(cur->inode->ino()))
-	break;
-      inodes_added.insert(cur->inode->ino());
-
-      // prepend dentry + inode
-      assert(cur->inode->is_auth());
-      bufferlist bl;
-      cache->replicate_dentry(cur->inode->parent, it->second.peer, bl);
-      dout(7) << "  added " << *cur->inode->parent << dendl;
-      cache->replicate_inode(cur->inode, it->second.peer, bl,
-			     mds->mdsmap->get_up_features());
-      dout(7) << "  added " << *cur->inode << dendl;
-      bl.claim_append(tracebl);
-      tracebl.claim(bl);
-
-      cur = cur->get_parent_dir();
-
-      // don't repeat dirfrags
-      if (dirfrags_added.count(cur->dirfrag()) ||
-	  cur == dir) {
-	start = 'd';  // start with dentry
-	break;
-      }
-      dirfrags_added.insert(cur->dirfrag());
-
-      // prepend dir
-      cache->replicate_dir(cur, it->second.peer, bl);
-      dout(7) << "  added " << *cur << dendl;
-      bl.claim_append(tracebl);
-      tracebl.claim(bl);
-
-      start = 'f';  // start with dirfrag
-    }
+    
     bufferlist final_bl;
-    dirfrag_t df = cur->dirfrag();
-    encode(df, final_bl);
-    encode(start, final_bl);
-    final_bl.claim_append(tracebl);
+    encode_export_prep_trace(final_bl, bound, dir, it->second, inodes_added, dirfrags_added);
     prep->add_trace(final_bl);
   }
 
@@ -1414,9 +1417,9 @@ void Migrator::export_go_synced(CDir *dir, uint64_t tid)
   // fill export message with cache data
   MExportDir *req = new MExportDir(dir->dirfrag(), it->second.tid);
   map<client_t,entity_inst_t> exported_client_map;
-  uint64_t num_exported_inodes = encode_export_dir(req->export_data,
-					      dir,   // recur start point
-					      exported_client_map);
+  uint64_t num_exported_inodes = 0;
+  encode_export_dir(req->export_data, dir, // recur start point
+                    exported_client_map, num_exported_inodes);
   encode(exported_client_map, req->client_map,
            mds->mdsmap->get_up_features());
 
@@ -1453,7 +1456,8 @@ void Migrator::export_go_synced(CDir *dir, uint64_t tid)
 void Migrator::encode_export_inode(CInode *in, bufferlist& enc_state, 
 				   map<client_t,entity_inst_t>& exported_client_map)
 {
-  dout(7) << "encode_export_inode " << *in << dendl;
+  ENCODE_START(1, 1, enc_state);
+  dout(7) << __func__ << " " << *in << dendl;
   assert(!in->is_replica(mds->get_nodeid()));
 
   // relax locks?
@@ -1468,13 +1472,14 @@ void Migrator::encode_export_inode(CInode *in, bufferlist& enc_state,
 
   // caps 
   encode_export_inode_caps(in, true, enc_state, exported_client_map);
+  ENCODE_FINISH(enc_state);
 }
 
 void Migrator::encode_export_inode_caps(CInode *in, bool auth_cap, bufferlist& bl,
 					map<client_t,entity_inst_t>& exported_client_map)
 {
+  ENCODE_START(1, 1, bl);
   dout(20) << "encode_export_inode_caps " << *in << dendl;
-
   // encode caps
   map<client_t,Capability::Export> cap_map;
   in->export_client_caps(cap_map);
@@ -1490,6 +1495,7 @@ void Migrator::encode_export_inode_caps(CInode *in, bool auth_cap, bufferlist& b
   for (const auto &p : in->get_client_caps()) {
     exported_client_map[p.first] = mds->sessionmap.get_inst(entity_name_t::CLIENT(p.first.v));
   }
+  ENCODE_FINISH(bl);
 }
 
 void Migrator::finish_export_inode_caps(CInode *in, mds_rank_t peer,
@@ -1565,13 +1571,15 @@ void Migrator::finish_export_inode(CInode *in, mds_rank_t peer,
   finish_export_inode_caps(in, peer, peer_imported);
 }
 
-uint64_t Migrator::encode_export_dir(bufferlist& exportbl,
+void Migrator::encode_export_dir(bufferlist& exportbl,
 				CDir *dir,
-				map<client_t,entity_inst_t>& exported_client_map)
+				map<client_t,entity_inst_t>& exported_client_map,
+                                uint64_t &num_exported)
 {
-  uint64_t num_exported = 0;
-
-  dout(7) << "encode_export_dir " << *dir << " " << dir->get_num_head_items() << " head items" << dendl;
+  list<CDir*> subdirs;
+  
+  ENCODE_START(1, 1, exportbl);
+  dout(7) << __func__ << " " << *dir << " " << dir->get_num_head_items() << " head items" << dendl;
   
   assert(dir->get_projected_version() == dir->get_version());
 
@@ -1589,7 +1597,6 @@ uint64_t Migrator::encode_export_dir(bufferlist& exportbl,
   encode(nden, exportbl);
   
   // dentries
-  list<CDir*> subdirs;
   for (auto &p : *dir) {
     CDentry *dn = p.second;
     CInode *in = dn->get_linkage()->get_inode();
@@ -1600,7 +1607,7 @@ uint64_t Migrator::encode_export_dir(bufferlist& exportbl,
     num_exported++;
     
     // -- dentry
-    dout(7) << "encode_export_dir exporting " << *dn << dendl;
+    dout(7) << __func__ << " exporting " << *dn << dendl;
     
     // dn name
     encode(dn->get_name(), exportbl);
@@ -1647,11 +1654,11 @@ uint64_t Migrator::encode_export_dir(bufferlist& exportbl,
     }
   }
 
+  ENCODE_FINISH(exportbl);
   // subdirs
-  for (auto &dir : subdirs)
-    num_exported += encode_export_dir(exportbl, dir, exported_client_map);
-
-  return num_exported;
+  for (auto &dir : subdirs) {
+    encode_export_dir(exportbl, dir, exported_client_map, num_exported);
+  }
 }
 
 void Migrator::finish_export_dir(CDir *dir, mds_rank_t peer,
@@ -2224,6 +2231,49 @@ void Migrator::handle_export_cancel(MExportDirCancel *m)
   m->put();
 }
 
+void Migrator::decode_export_prep_trace(bufferlist &bl, mds_rank_t oldauth, list<MDSInternalContextBase*> &finished)
+{
+  auto p = bl.cbegin();
+
+  DECODE_START(1, p);
+  dirfrag_t df;
+  decode(df, p);
+  char start;
+  decode(start, p);
+
+  dout(10) << __func__ << " trace from " << df << " start " << start << " len " << bl.length() << dendl;
+  CDir *cur = nullptr;
+  if (start == 'd') {
+    cur = cache->get_dirfrag(df);
+    assert(cur);
+    dout(10) << "  had " << *cur << dendl;
+  } else if (start == 'f') {
+    CInode *in = cache->get_inode(df.ino);
+    assert(in); 
+    dout(10) << "  had " << *in << dendl; 
+    cache->decode_replica_dir(cur, p, in, oldauth, finished);
+    dout(10) << "  added " << *cur << dendl;
+  } else if (start == '-') {
+    // nothing
+  } else
+    assert(0 == "unrecognized start char");
+
+  while (!p.end()) {
+    CDentry *dn = nullptr;
+    cache->decode_replica_dentry(dn, p, cur, finished);
+    dout(10) << "  added " << *dn << dendl;
+    CInode *in = nullptr;
+    cache->decode_replica_inode(in, p, dn, finished);
+    dout(10) << "  added " << *in << dendl;
+    if (p.end())
+      break;
+    cache->decode_replica_dir(cur, p, in, oldauth, finished);
+    dout(10) << "  added " << *cur << dendl;
+  }
+  
+  DECODE_FINISH(p);
+}
+
 /* This function DOES put the passed message before returning*/
 void Migrator::handle_export_prep(MExportDirPrep *m)
 {
@@ -2243,7 +2293,7 @@ void Migrator::handle_export_prep(MExportDirPrep *m)
     diri = cache->get_inode(m->get_dirfrag().ino);
     assert(diri);
     auto p = m->basedir.cbegin();
-    dir = cache->add_replica_dir(p, diri, oldauth, finished);
+    cache->decode_replica_dir(dir, p, diri, oldauth, finished);
     dout(7) << "handle_export_prep on " << *dir << " (first pass)" << dendl;
   } else {
     if (it == import_state.end() ||
@@ -2295,42 +2345,8 @@ void Migrator::handle_export_prep(MExportDirPrep *m)
 
     // assimilate traces to exports
     // each trace is: df ('-' | ('f' dir | 'd') dentry inode (dir dentry inode)*)
-    for (list<bufferlist>::iterator p = m->traces.begin();
-	 p != m->traces.end();
-	 ++p) {
-      auto q = p->cbegin();
-      dirfrag_t df;
-      decode(df, q);
-      char start;
-      decode(start, q);
-      dout(10) << " trace from " << df << " start " << start << " len " << p->length() << dendl;
-
-      CDir *cur = 0;
-      if (start == 'd') {
-	cur = cache->get_dirfrag(df);
-	assert(cur);
-	dout(10) << "  had " << *cur << dendl;
-      } else if (start == 'f') {
-	CInode *in = cache->get_inode(df.ino);
-	assert(in);
-	dout(10) << "  had " << *in << dendl;
-	cur = cache->add_replica_dir(q, in, oldauth, finished);
- 	dout(10) << "  added " << *cur << dendl;
-      } else if (start == '-') {
-	// nothing
-      } else
-	assert(0 == "unrecognized start char");
-
-      while (!q.end()) {
-	CDentry *dn = cache->add_replica_dentry(q, cur, finished);
-	dout(10) << "  added " << *dn << dendl;
-	CInode *in = cache->add_replica_inode(q, dn, finished);
-	dout(10) << "  added " << *in << dendl;
-	if (q.end())
-	  break;
-	cur = cache->add_replica_dir(q, in, oldauth, finished);
-	dout(10) << "  added " << *cur << dendl;
-      }
+    for (auto &p : m->traces) {
+      decode_export_prep_trace(p, oldauth, finished);
     }
 
     // make bound sticky
@@ -2493,14 +2509,14 @@ void Migrator::handle_export_dir(MExportDir *m)
   auto blp = m->export_data.cbegin();
   int num_imported_inodes = 0;
   while (!blp.end()) {
-    num_imported_inodes += 
-      decode_import_dir(blp,
-			oldauth, 
-			dir,                 // import root
-			le,
-			mds->mdlog->get_current_segment(),
-			it->second.peer_exports,
-			it->second.updated_scatterlocks);
+    decode_import_dir(blp,
+		      oldauth, 
+		      dir,                 // import root
+		      le,
+		      mds->mdlog->get_current_segment(),
+		      it->second.peer_exports,
+		      it->second.updated_scatterlocks,
+                      num_imported_inodes);
   }
   dout(10) << " " << m->bounds.size() << " imported bounds" << dendl;
   
@@ -2970,8 +2986,9 @@ void Migrator::decode_import_inode(CDentry *dn, bufferlist::const_iterator& blp,
 				   mds_rank_t oldauth, LogSegment *ls,
 				   map<CInode*, map<client_t,Capability::Export> >& peer_exports,
 				   list<ScatterLock*>& updated_scatterlocks)
-{  
-  dout(15) << "decode_import_inode on " << *dn << dendl;
+{ 
+  DECODE_START(1, blp); 
+  dout(15) << __func__ << " on " << *dn << dendl;
 
   inodeno_t ino;
   snapid_t last;
@@ -3032,12 +3049,15 @@ void Migrator::decode_import_inode(CDentry *dn, bufferlist::const_iterator& blp,
   if (in->snaplock.is_stable() &&
       in->snaplock.get_state() != LOCK_SYNC)
       mds->locker->try_eval(&in->snaplock, NULL);
+
+  DECODE_FINISH(blp);
 }
 
 void Migrator::decode_import_inode_caps(CInode *in, bool auth_cap,
 					bufferlist::const_iterator &blp,
 					map<CInode*, map<client_t,Capability::Export> >& peer_exports)
 {
+  DECODE_START(1, blp);
   map<client_t,Capability::Export> cap_map;
   decode(cap_map, blp);
   if (auth_cap) {
@@ -3051,6 +3071,7 @@ void Migrator::decode_import_inode_caps(CInode *in, bool auth_cap,
     peer_exports[in].swap(cap_map);
     in->get(CInode::PIN_IMPORTINGCAPS);
   }
+  DECODE_FINISH(blp);
 }
 
 void Migrator::finish_import_inode_caps(CInode *in, mds_rank_t peer, bool auth_cap,
@@ -3102,14 +3123,15 @@ void Migrator::finish_import_inode_caps(CInode *in, mds_rank_t peer, bool auth_c
   }
 }
 
-int Migrator::decode_import_dir(bufferlist::const_iterator& blp,
+void Migrator::decode_import_dir(bufferlist::const_iterator& blp,
 				mds_rank_t oldauth,
 				CDir *import_root,
 				EImportStart *le,
 				LogSegment *ls,
 				map<CInode*,map<client_t,Capability::Export> >& peer_exports,
-				list<ScatterLock*>& updated_scatterlocks)
+				list<ScatterLock*>& updated_scatterlocks, int &num_imported)
 {
+  DECODE_START(1, blp);
   // set up dir
   dirfrag_t df;
   decode(df, blp);
@@ -3119,7 +3141,7 @@ int Migrator::decode_import_dir(bufferlist::const_iterator& blp,
   CDir *dir = diri->get_or_open_dirfrag(mds->mdcache, df.frag);
   assert(dir);
   
-  dout(7) << "decode_import_dir " << *dir << dendl;
+  dout(7) << __func__ << " " << *dir << dendl;
 
   // assimilate state
   dir->decode_import(blp, ls);
@@ -3176,7 +3198,7 @@ int Migrator::decode_import_dir(bufferlist::const_iterator& blp,
     if (dn->lock.get_state() != LOCK_SYNC)
       mds->locker->try_eval(&dn->lock, NULL);
 
-    dout(15) << "decode_import_dir got " << *dn << dendl;
+    dout(15) << __func__ << " got " << *dn << dendl;
     
     // points to...
     char icode;
@@ -3219,8 +3241,8 @@ int Migrator::decode_import_dir(bufferlist::const_iterator& blp,
 
   dir->inode->maybe_export_pin();
 
-  dout(7) << "decode_import_dir done " << *dir << dendl;
-  return num_imported;
+  dout(7) << __func__ << " done " << *dir << dendl;
+  DECODE_FINISH(blp);
 }
 
 

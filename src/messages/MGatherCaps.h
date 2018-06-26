@@ -5,11 +5,14 @@
 
 
 class MGatherCaps : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
  public:
   inodeno_t ino;
 
   MGatherCaps() :
-    Message(MSG_MDS_GATHERCAPS) {}
+    Message(MSG_MDS_GATHERCAPS, HEAD_VERSION, COMPAT_VERSION) {}
 private:
   ~MGatherCaps() override {}
 
