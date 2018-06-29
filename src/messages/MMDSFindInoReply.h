@@ -19,11 +19,14 @@
 #include "include/filepath.h"
 
 struct MMDSFindInoReply : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+
   ceph_tid_t tid = 0;
   filepath path;
 
-  MMDSFindInoReply() : Message(MSG_MDS_FINDINOREPLY) {}
-  MMDSFindInoReply(ceph_tid_t t) : Message(MSG_MDS_FINDINOREPLY), tid(t) {}
+  MMDSFindInoReply() : Message(MSG_MDS_FINDINOREPLY, HEAD_VERSION, COMPAT_VERSION) {}
+  MMDSFindInoReply(ceph_tid_t t) : Message(MSG_MDS_FINDINOREPLY, HEAD_VERSION, COMPAT_VERSION), tid(t) {}
 
   const char *get_type_name() const override { return "findinoreply"; }
   void print(ostream &out) const override {

@@ -19,6 +19,9 @@
 #include <string_view>
 
 class MDentryUnlink : public Message {
+  static const int HEAD_VERSION = 1;
+  static const int COMPAT_VERSION = 1;
+  
   dirfrag_t dirfrag;
   string dn;
 
@@ -30,9 +33,9 @@ class MDentryUnlink : public Message {
   bufferlist snapbl;
 
   MDentryUnlink() :
-    Message(MSG_MDS_DENTRYUNLINK) { }
+    Message(MSG_MDS_DENTRYUNLINK, HEAD_VERSION, COMPAT_VERSION) { }
   MDentryUnlink(dirfrag_t df, std::string_view n) :
-    Message(MSG_MDS_DENTRYUNLINK),
+    Message(MSG_MDS_DENTRYUNLINK, HEAD_VERSION, COMPAT_VERSION),
     dirfrag(df),
     dn(n) {}
 private:
