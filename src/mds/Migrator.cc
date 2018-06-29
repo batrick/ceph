@@ -1631,7 +1631,7 @@ void Migrator::encode_export_inode(CInode *in, bufferlist& enc_state,
   dout(7) << __func__ << " " << *in << dendl;
   ceph_assert(!in->is_replica(mds->get_nodeid()));
 
-  encode(in->inode.ino, enc_state);
+  encode(in->ino(), enc_state);
   encode(in->last, enc_state);
   in->encode_export(enc_state);
 
@@ -3197,7 +3197,7 @@ void Migrator::decode_import_inode(CDentry *dn, bufferlist::const_iterator& blp,
 
   in = cache->get_inode(ino, last);
   if (!in) {
-    in = new CInode(mds->mdcache, true, 1, last);
+    in = new CInode(mds->mdcache, 2, last);
     added = true;
   }
 
@@ -3226,7 +3226,7 @@ void Migrator::decode_import_inode(CDentry *dn, bufferlist::const_iterator& blp,
     dout(10) << "  had " << *in << dendl;
   }
 
-  if (in->inode.is_dirty_rstat())
+  if (in->get_inode()->is_dirty_rstat())
     in->mark_dirty_rstat();
   
   // clear if dirtyscattered, since we're going to journal this
