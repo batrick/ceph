@@ -34,10 +34,14 @@ with codecs.open(".githubmap", encoding='utf-8') as f:
 with codecs.open(".contributormap.csv", encoding='utf-8') as f:
     dialect = csv.Sniffer().sniff(f.read(1024))
     f.seek(0)
-    CONTRIBUTORMAP = csv.reader(f, dialect, delimiter=str(u',').encode('utf-8'), quotechar=str(u'"'.encode('utf-8')))
+    r = csv.reader(f, dialect, delimiter=str(u',').encode('utf-8'), quotechar=str(u'"'.encode('utf-8')))
     # need to read first row, then use that row to output dicts w/ key/values
-    for r in CONTRIBUTORMAP:
-        print(r)
+    header = r.next()
+    CMAP = {}
+    for row in r:
+        CMAP[username] = {
+            ...
+        }
     sys.exit(0)
 
 def build_map(args):
