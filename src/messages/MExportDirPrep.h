@@ -20,29 +20,35 @@
 #include "include/types.h"
 
 class MExportDirPrep : public Message {
+  static const int HEAD_VERSION = 2;
+  static const int COMPAT_VERSION = 1;
+
+private:
   dirfrag_t dirfrag;
- public:
+  set<mds_rank_t> bystanders;
+  bool diri_auth_pinned = false;
+  bool b_did_assim = false;
+
+public:
   bufferlist basedir;
   list<dirfrag_t> bounds;
   list<bufferlist> traces;
-private:
-  set<mds_rank_t> bystanders;
-  bool b_did_assim;
 
-public:
   dirfrag_t get_dirfrag() { return dirfrag; }
   list<dirfrag_t>& get_bounds() { return bounds; }
   set<mds_rank_t> &get_bystanders() { return bystanders; }
 
+  bool is_diri_auth_pinned() const { return diri_auth_pinned; }
+  void mark_diri_auth_pinned() { diri_auth_pinned = true; }
+
   bool did_assim() { return b_did_assim; }
   void mark_assim() { b_did_assim = true; }
 
-  MExportDirPrep() {
-    b_did_assim = false;
-  }
+  MExportDirPrep() :
+    Message(MSG_MDS_EXPORTDIRPREP, HEAD_VERSION, COMPAT_VERSION) {}
   MExportDirPrep(dirfrag_t df, uint64_t tid) :
-    Message(MSG_MDS_EXPORTDIRPREP),
-    dirfrag(df), b_did_assim(false) {
+    Message(MSG_MDS_EXPORTDIRPREP, HEAD_VERSION, COMPAT_VERSION),
+    dirfrag(df) {
     set_tid(tid);
   }
 private:
@@ -72,6 +78,8 @@ public:
     decode(bounds, p);
     decode(traces, p);
     decode(bystanders, p);
+    if (header.version >= 2)
+      decode(diri_auth_pinned, p);
   }
 
   void encode_payload(uint64_t features) override {
@@ -81,6 +89,7 @@ public:
     encode(bounds, payload);
     encode(traces, payload);
     encode(bystanders, payload);
+    encode(diri_auth_pinned, payload);
   }
 };
 

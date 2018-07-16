@@ -266,6 +266,7 @@ struct MDRequestImpl : public MutationImpl {
 
     // export & fragment
     CDir* export_dir = nullptr;
+    unsigned export_ref = 0;
     dirfrag_t fragment_base;
 
     // for internal ops doing lookup
