@@ -396,6 +396,7 @@ void Migrator::export_cancel_finish(export_state_iterator& it)
 {
   CDir *dir = it->first;
   bool unpin = (it->second.state == EXPORT_CANCELLING);
+  auto parent = std::move(it->second.parent);
 
   total_exporting_size -= it->second.approx_size;
   export_state.erase(it);
@@ -409,6 +410,9 @@ void Migrator::export_cancel_finish(export_state_iterator& it)
   }
   // send pending import_maps?  (these need to go out when all exports have finished.)
   cache->maybe_send_pending_resolves();
+
+  if (parent)
+    child_export_finish(parent, false);
 }
 
 // ==========================================================
@@ -1129,6 +1133,10 @@ void Migrator::dispatch_export_dir(MDRequestRef& mdr, int count)
     return;
   }
 
+  auto parent = std::make_shared<export_base_t>(dir->dirfrag(), dest,
+						results.size(),
+						export_queue_gen);
+
   dout(7) << "subtree is too large, splitting it into: " <<  dendl;
   for (auto& p : results) {
     CDir *sub = p.first;
@@ -1149,6 +1157,7 @@ void Migrator::dispatch_export_dir(MDRequestRef& mdr, int count)
     stat.mut = mdr;
     stat.last_cum_auth_pins_change = now;
     stat.approx_size = p.second;
+    stat.parent = parent;
     total_exporting_size += stat.approx_size;
 
     filepath path;
@@ -1166,6 +1175,22 @@ void Migrator::dispatch_export_dir(MDRequestRef& mdr, int count)
   // cancel the original one
   mdr->more()->export_dir = nullptr;
   export_try_cancel(dir);
+}
+
+void Migrator::child_export_finish(std::shared_ptr<export_base_t>& parent, bool success)
+{
+  if (success)
+    parent->any_success = true;
+  if (--parent->pending_children == 0) {
+    if (parent->any_success &&
+	parent->export_queue_gen == export_queue_gen) {
+      CDir *origin = mds->mdcache->get_dirfrag(parent->dirfrag);
+      if (origin && origin->is_auth()) {
+	dout(7) << "child_export_finish requeue " << *origin << dendl;
+	export_queue.emplace_front(origin->dirfrag(), parent->dest);
+      }
+    }
+  }
 }
 
 /*
@@ -2212,7 +2237,8 @@ void Migrator::export_finish(CDir *dir)
   if (!finished.empty())
     mds->queue_waiters(finished);
 
-  MutationRef mut = it->second.mut;
+  MutationRef mut = std::move(it->second.mut);
+  auto parent = std::move(it->second.parent);
   // remove from exporting list, clean up state
   total_exporting_size -= it->second.approx_size;
   export_state.erase(it);
@@ -2233,7 +2259,10 @@ void Migrator::export_finish(CDir *dir)
     mds->locker->drop_locks(mut.get());
     mut->cleanup();
   }
-  
+
+  if (parent)
+    child_export_finish(parent, true);
+
   maybe_do_queued_export();
 }
 
