@@ -34,11 +34,15 @@
 
 #include "include/cephfs/libcephfs.h"
 
+#define DEFAULT_UMASK 002
+
+static mode_t umask_cb(void *);
 
 struct ceph_mount_info
 {
+  mode_t umask = DEFAULT_UMASK;
 public:
-  explicit ceph_mount_info(CephContext *cct_)
+   explicit ceph_mount_info(CephContext *cct_)
     : default_perms(),
       mounted(false),
       inited(false),
@@ -74,14 +78,19 @@ public:
   int init()
   {
     common_init_finish(cct);
-
     int ret;
+    struct client_callback_args args = [this]{
+        struct client_callback_args args;
+        args.handle = this;
+        args.umask_cb = umask_cb;
+        return args;
+    }();
 
     {
       MonClient mc_bootstrap(cct);
       ret = mc_bootstrap.get_monmap_and_config();
       if (ret < 0)
-	return ret;
+	      return ret;
     }
 
     //monmap
@@ -107,6 +116,7 @@ public:
     if (ret)
       goto fail;
 
+    client->ll_register_callbacks(&args);
     default_perms = Client::pick_my_perms(cct);
     inited = true;
     return 0;
@@ -184,6 +194,13 @@ public:
     return mounted;
   }
 
+  mode_t set_umask(mode_t umask)
+  {
+    this->umask = umask;
+    return umask;
+  }
+
+  
   int conf_read_file(const char *path_list)
   {
     int ret = cct->_conf->parse_config_files(path_list, nullptr, 0);
@@ -259,6 +276,11 @@ private:
   CephContext *cct;
   std::string cwd;
 };
+
+static mode_t umask_cb(void *handle)
+{
+  return ((struct ceph_mount_info *)handle)->umask;
+}
 
 static void do_out_buffer(bufferlist& outbl, char **outbuf, size_t *outbuflen)
 {
@@ -368,6 +390,11 @@ extern "C" void ceph_shutdown(struct ceph_mount_info *cmount)
 extern "C" int ceph_conf_read_file(struct ceph_mount_info *cmount, const char *path)
 {
   return cmount->conf_read_file(path);
+}
+
+extern "C" mode_t ceph_umask(struct ceph_mount_info *cmount, mode_t mode)
+{
+  return cmount->set_umask(mode);
 }
 
 extern "C" int ceph_conf_parse_argv(struct ceph_mount_info *cmount, int argc,
@@ -609,14 +636,14 @@ extern "C" int ceph_mkdir(struct ceph_mount_info *cmount, const char *path, mode
 {
   if (!cmount->is_mounted())
     return -ENOTCONN;
-  return cmount->get_client()->mkdir(path, mode, cmount->default_perms);
+  return cmount->get_client()->mkdir(path, cmount->umask ^ mode, cmount->default_perms);
 }
 
 extern "C" int ceph_mkdirs(struct ceph_mount_info *cmount, const char *path, mode_t mode)
 {
   if (!cmount->is_mounted())
     return -ENOTCONN;
-  return cmount->get_client()->mkdirs(path, mode, cmount->default_perms);
+  return cmount->get_client()->mkdirs(path,  cmount->umask ^ mode , cmount->default_perms);
 }
 
 extern "C" int ceph_rmdir(struct ceph_mount_info *cmount, const char *path)
@@ -776,13 +803,13 @@ extern "C" int ceph_chmod(struct ceph_mount_info *cmount, const char *path, mode
 {
   if (!cmount->is_mounted())
     return -ENOTCONN;
-  return cmount->get_client()->chmod(path, mode, cmount->default_perms);
+  return cmount->get_client()->chmod(path, cmount->umask ^ mode, cmount->default_perms);
 }
 extern "C" int ceph_fchmod(struct ceph_mount_info *cmount, int fd, mode_t mode)
 {
   if (!cmount->is_mounted())
     return -ENOTCONN;
-  return cmount->get_client()->fchmod(fd, mode, cmount->default_perms);
+  return cmount->get_client()->fchmod(fd, cmount->umask ^ mode, cmount->default_perms);
 }
 extern "C" int ceph_chown(struct ceph_mount_info *cmount, const char *path,
 			  int uid, int gid)
@@ -845,7 +872,7 @@ extern "C" int ceph_open(struct ceph_mount_info *cmount, const char *path,
 {
   if (!cmount->is_mounted())
     return -ENOTCONN;
-  return cmount->get_client()->open(path, flags, cmount->default_perms, mode);
+  return cmount->get_client()->open(path, flags, cmount->default_perms, cmount->umask ^ mode);
 }
 
 extern "C" int ceph_open_layout(struct ceph_mount_info *cmount, const char *path, int flags,
