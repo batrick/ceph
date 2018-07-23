@@ -137,7 +137,7 @@ write
 lls
 ---
 
- Lists all files and directories in the specified directory.Current local directory files and directories are listed if no     path is mentioned
+ Lists all files and directories in the specified directory. Current local directory files and directories are listed if no path is mentioned
 
  Usage: lls <path>.....
 
@@ -170,8 +170,7 @@ alias
  Usage: alias [name] | [<name> <value>]
      Where:
          name - name of the alias being looked up, added, or replaced
-         value - what the alias will be resolved to (if adding or replacing)
-                 this can contain spaces and does not need to be quoted
+         value - what the alias will be resolved to (if adding or replacing) this can contain spaces and does not need to be quoted.
 
 pyscript
 --------
@@ -180,8 +179,8 @@ pyscript
 
  Usage: pyscript <script_path> [script_arguments]
 
- Console commands can be executed inside this script with cmd("your command")
- However, you cannot run nested "py" or "pyscript" commands from withinthis script
+ Console commands can be executed inside this script with cmd ("your command")
+ However, you cannot run nested "py" or "pyscript" commands from within this script
  Paths or arguments that contain spaces must be enclosed in quotes
 
 py
@@ -204,12 +203,12 @@ history
  Usage : history [-h] [-r | -e | -s | -o FILE | -t TRANSCRIPT] [arg]
 
  Options:
-   -h            show this help message and exit
-   -r            run selected history items
-   -e            edit and then run selected history items
-   -s            script format; no separation lines
-   -o FILE       output commands to a script file
-   -t TRANSCRIPT output commands and results to a transcript file
+   -h             show this help message and exit
+   -r             run selected history items
+   -e             edit and then run selected history items
+   -s             script format; no separation lines
+   -o FILE        output commands to a script file
+   -t TRANSCRIPT  output commands and results to a transcript file
 
 unalias
 -------
@@ -221,7 +220,7 @@ unalias
          name - name of the alias being unset
 
      Options:
-         -a     remove all alias definitions
+       -a     remove all alias definitions
 
 set
 ---
@@ -233,9 +232,9 @@ set
  Call without arguments for a list of settable parameters with their values.
 
  Options :
- -h     show this help message and exit
- -a     display read-only settings as well
- -l     describe function of parameter
+   -h     show this help message and exit
+   -a     display read-only settings as well
+   -l     describe function of parameter
 
 edit
 ----
@@ -251,11 +250,10 @@ load
 
   Runs commands in script file that is encoded as either ASCII or UTF-8 text.
 
-      Usage:  load <file_path>
+  Usage:  load <file_path>
+    * file_path - a file path pointing to a script
 
-      * file_path - a file path pointing to a script
-
-  Script should contain one command per line, just like command would betyped in console.
+ Script should contain one command per line, just like command would betyped in console.
 
 shell
 -----
@@ -272,6 +270,6 @@ locate
  Usage locate [options] <name>
 
  Options :
- -c       Count number of items found
- -i       Ignore case 
+   -c       Count number of items found
+   -i       Ignore case 
 
