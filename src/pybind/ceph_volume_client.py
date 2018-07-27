@@ -640,6 +640,7 @@ class CephFSVolumeClient(object):
                     'fs_name': mds_map['fs_name'],
                     'pool': pool_name
                 })
+            time.sleep(5) # time for MDSMap to be distributed
             self.fs.setxattr(path, 'ceph.dir.layout.pool',
                              to_bytes(pool_name), 0)
 
