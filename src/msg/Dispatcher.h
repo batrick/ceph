@@ -19,9 +19,9 @@
 #include <memory>
 #include "include/buffer_fwd.h"
 #include "include/assert.h"
+#include "msg/MessageRef.h"
 
 class Messenger;
-class Message;
 class Connection;
 class AuthAuthorizer;
 class CryptoKey;
@@ -60,7 +60,10 @@ public:
    * @param m The message we want to fast dispatch.
    * @returns True if the message can be fast dispatched; false otherwise.
    */
-  virtual bool ms_can_fast_dispatch(const Message *m) const { return false;}
+  virtual bool ms_can_fast_dispatch(const Message *m) const { return false; }
+  virtual bool ms_can_fast_dispatch2(const MessageConstRef& m) const {
+    return ms_can_fast_dispatch(m.get());
+  }
   /**
    * This function determines if a dispatcher is included in the
    * list of fast-dispatch capable Dispatchers.
@@ -75,6 +78,13 @@ public:
    * @param m The Message to fast dispatch.
    */
   virtual void ms_fast_dispatch(Message *m) { ceph_abort(); }
+
+  /* ms_fast_dispatch2 because otherwise the child must define both */
+  virtual void ms_fast_dispatch2(const MessageRef &m) {
+    /* allow old style dispatch handling that expects a Message * with a floating ref */
+    return ms_fast_dispatch(MessageRef(m).detach());
+  }
+
   /**
    * Let the Dispatcher preview a Message before it is dispatched. This
    * function is called on *every* Message, prior to the fast/regular dispatch
@@ -91,13 +101,28 @@ public:
    * @param m A message which has been received
    */
   virtual void ms_fast_preprocess(Message *m) {}
+
+  /* ms_fast_preprocess2 because otherwise the child must define both */
+  virtual void ms_fast_preprocess2(const MessageRef &m) {
+    /* allow old style dispatch handling that expects a Message * with a floating ref */
+    return ms_fast_preprocess(MessageRef(m).detach());
+  }
+
   /**
    * The Messenger calls this function to deliver a single message.
    *
    * @param m The message being delivered. You (the Dispatcher)
    * are given a single reference count on it.
    */
-  virtual bool ms_dispatch(Message *m) = 0;
+  virtual bool ms_dispatch(Message *m) {
+    ceph_abort();
+  }
+
+  /* ms_dispatch2 because otherwise the child must define both */
+  virtual bool ms_dispatch2(const MessageRef &m) {
+    /* allow old style dispatch handling that expects a Message * with a floating ref */
+    return ms_dispatch(MessageRef(m).detach());
+  }
 
   /**
    * This function will be called whenever a Connection is newly-created
