@@ -207,6 +207,8 @@ struct InodeStat {
 class MClientReply : public Message {
   // reply data
 public:
+  typedef boost::intrusive_ptr<MClientReply> ref;
+  typedef boost::intrusive_ptr<MClientReply const> const_ref;
   struct ceph_mds_reply_head head {};
   bufferlist trace_bl;
   bufferlist extra_bl;
@@ -229,11 +231,11 @@ public:
   bool is_safe() const { return head.safe; }
 
   MClientReply() : Message(CEPH_MSG_CLIENT_REPLY) {}
-  MClientReply(MClientRequest *req, int result = 0) : 
+  MClientReply(const MClientRequest &req, int result = 0) :
     Message(CEPH_MSG_CLIENT_REPLY) {
     memset(&head, 0, sizeof(head));
-    header.tid = req->get_tid();
-    head.op = req->get_op();
+    header.tid = req.get_tid();
+    head.op = req.get_op();
     head.result = result;
     head.safe = 1;
   }
