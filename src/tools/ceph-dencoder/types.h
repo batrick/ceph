@@ -866,6 +866,3 @@ MESSAGE(MTimeCheck2)
 
 #include "messages/MWatchNotify.h"
 MESSAGE(MWatchNotify)
-
-#include "messages/PaxosServiceMessage.h"
-MESSAGE(PaxosServiceMessage)
