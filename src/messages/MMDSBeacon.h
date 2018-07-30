@@ -210,7 +210,7 @@ private:
 
   uint64_t mds_features;
 
- public:
+protected:
   MMDSBeacon()
     : PaxosServiceMessage(MSG_MDS_BEACON, 0, HEAD_VERSION, COMPAT_VERSION),
     global_id(0), state(MDSMap::STATE_NULL), standby_for_rank(MDS_RANK_NONE),
@@ -223,7 +223,6 @@ private:
     standby_for_rank(MDS_RANK_NONE), standby_for_fscid(FS_CLUSTER_ID_NONE),
     standby_replay(false), mds_features(feat) {
   }
-private:
   ~MMDSBeacon() override {}
 
 public:
