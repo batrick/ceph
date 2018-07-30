@@ -214,16 +214,12 @@ public:
 
 template<class T>
 class MessageDencoderImpl : public Dencoder {
-  T *m_object;
-  list<T*> m_list;
+  typename T::ref m_object;
+  list<typename T::ref> m_list;
 
 public:
-  MessageDencoderImpl() {
-    m_object = new T;
-  }
-  ~MessageDencoderImpl() override {
-    m_object->put();
-  }
+  MessageDencoderImpl() : m_object(T::factory::build()) {}
+  ~MessageDencoderImpl() override {}
 
   string decode(bufferlist bl, uint64_t seek) override {
     auto p = bl.cbegin();
