@@ -19,7 +19,6 @@
 #include "include/stringify.h"
 #include "include/util.h"
 
-#include "messages/MMDSBeacon.h"
 #include "mon/MonClient.h"
 #include "mds/MDLog.h"
 #include "mds/MDSRank.h"
@@ -52,10 +51,9 @@ Beacon::~Beacon()
 }
 
 
-void Beacon::init(MDSMap const *mdsmap)
+void Beacon::init(const MDSMap &mdsmap)
 {
   Mutex::Locker l(lock);
-  assert(mdsmap != NULL);
 
   _notify_mdsmap(mdsmap);
   standby_for_rank = mds_rank_t(g_conf()->mds_standby_for_rank);
@@ -80,11 +78,11 @@ void Beacon::shutdown()
 }
 
 
-bool Beacon::ms_dispatch(Message *m)
+bool Beacon::ms_dispatch2(const Message::ref &m)
 {
   if (m->get_type() == MSG_MDS_BEACON) {
     if (m->get_connection()->get_peer_type() == CEPH_ENTITY_TYPE_MON) {
-      handle_mds_beacon(static_cast<MMDSBeacon*>(m));
+      handle_mds_beacon(boost::static_pointer_cast<MMDSBeacon::const_ref::element_type, std::remove_reference<decltype(m)>::type::element_type>(m));
     }
     return true;
   }
@@ -98,10 +96,9 @@ bool Beacon::ms_dispatch(Message *m)
  *
  * This function puts the passed message before returning
  */
-void Beacon::handle_mds_beacon(MMDSBeacon *m)
+void Beacon::handle_mds_beacon(const MMDSBeacon::const_ref &m)
 {
   Mutex::Locker l(lock);
-  assert(m != NULL);
 
   version_t seq = m->get_seq();
 
@@ -142,7 +139,6 @@ void Beacon::handle_mds_beacon(MMDSBeacon *m)
     dout(10) << "handle_mds_beacon " << ceph_mds_state_name(m->get_state())
 	     << " seq " << m->get_seq() << " dne" << dendl;
   }
-  m->put();
 }
 
 
@@ -204,7 +200,7 @@ void Beacon::_send()
 
   assert(want_state != MDSMap::STATE_NULL);
   
-  MMDSBeacon *beacon = new MMDSBeacon(
+  auto beacon = MMDSBeacon::factory::build(
       monc->get_fsid(), mds_gid_t(monc->get_global_id()),
       name,
       epoch,
@@ -225,29 +221,27 @@ void Beacon::_send()
     sys_info["addr"] = stringify(monc->get_myaddrs());
     beacon->set_sys_info(sys_info);
   }
-  monc->send_mon_message(beacon);
+  monc->send_mon_message(beacon.detach());
 }
 
 /**
  * Call this when there is a new MDSMap available
  */
-void Beacon::notify_mdsmap(MDSMap const *mdsmap)
+void Beacon::notify_mdsmap(const MDSMap &mdsmap)
 {
   Mutex::Locker l(lock);
-  assert(mdsmap != NULL);
 
   _notify_mdsmap(mdsmap);
 }
 
-void Beacon::_notify_mdsmap(MDSMap const *mdsmap)
+void Beacon::_notify_mdsmap(const MDSMap &mdsmap)
 {
-  assert(mdsmap != NULL);
-  assert(mdsmap->get_epoch() >= epoch);
+  assert(mdsmap.get_epoch() >= epoch);
 
-  if (mdsmap->get_epoch() != epoch) {
-    epoch = mdsmap->get_epoch();
+  if (mdsmap.get_epoch() != epoch) {
+    epoch = mdsmap.get_epoch();
     compat = MDSMap::get_compat_set_default();
-    compat.merge(mdsmap->compat);
+    compat.merge(mdsmap.compat);
   }
 }
 
@@ -285,7 +279,7 @@ utime_t Beacon::get_laggy_until() const
   return laggy_until;
 }
 
-void Beacon::set_want_state(MDSMap const *mdsmap, MDSMap::DaemonState const newstate)
+void Beacon::set_want_state(const MDSMap &mdsmap, MDSMap::DaemonState const newstate)
 {
   Mutex::Locker l(lock);
 
