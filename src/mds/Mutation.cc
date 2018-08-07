@@ -16,10 +16,6 @@
 #include "ScatterLock.h"
 #include "CDir.h"
 
-#include "messages/MClientRequest.h"
-#include "messages/MMDSSlaveRequest.h"
-
-
 // MutationImpl
 
 void MutationImpl::pin(MDSCacheObject *o)
