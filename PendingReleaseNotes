@@ -11,6 +11,12 @@
 * The 'ceph pg <pgid> list_missing' command has been renamed to
   'ceph pg <pgid> list_unfound' to better match its behaviour.
 
+* The libcephfs bindings added the ceph_select_filesystem function
+  for use with multiple filesystems.
+
+* The cephfs python bindings now include mount_path and filesystem_name
+  options in the mount() function.
+
 >=13.1.0
 --------
 
