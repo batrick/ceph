@@ -5,6 +5,12 @@
   'ceph osd destroy' or 'ceph osd purge' (but after first confirming it is
   safe to do so via the 'ceph osd safe-to-destroy' command).
 
+* The libcephfs bindings added the ceph_select_filesystem function
+  for use with multiple filesystems.
+
+* The cephfs python bindings now include mount_path and filesystem_name
+  options in the mount() function.
+
 >=13.1.0
 --------
 
