@@ -547,10 +547,10 @@ cdef class LibCephFS(object):
             self.init()
         self.require_state("initialized")
 
-        default_root = "/"
+        root = "/" if mount_root is None else mount_root
         cdef:
             char *_filesystem_name = filesystem_name
-            char *_mount_root = default_root if mount_root is None else mount_root
+            char *_mount_root = root
 
         if filesystem_name is not None:
             with nogil:
