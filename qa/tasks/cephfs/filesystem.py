@@ -1230,7 +1230,7 @@ class Filesystem(MDSCluster):
             base_args = [os.path.join(self._prefix, tool), '--debug-mds=4', '--debug-objecter=1']
 
         if rank is not None:
-            base_args.extend(["--rank", "%d" % rank])
+            base_args.extend(["--rank", "%s" % str(rank)])
 
         t1 = datetime.datetime.now()
         r = self.tool_remote.run(
@@ -1256,6 +1256,8 @@ class Filesystem(MDSCluster):
         """
         Invoke cephfs-journal-tool with the passed arguments, and return its stdout
         """
+        if not rank:
+            rank = self.name + ":0"
         return self._run_tool("cephfs-journal-tool", args, rank, quiet)
 
     def table_tool(self, args, quiet=False):
