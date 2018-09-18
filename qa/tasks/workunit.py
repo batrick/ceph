@@ -418,6 +418,6 @@ def _run_tests(ctx, refspec, role, tests, env, basedir,
         remote.run(
             logger=log.getChild(role),
             args=[
-                'rm', '-rf', '--', workunits_file, clonedir,
+                'rm', '-rf', '--', workunits_file, clonedir, scratch_tmp
             ],
         )
