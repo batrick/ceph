@@ -9,6 +9,7 @@ if(${WITH_CEPHFS})
     acl.cc
     main.cc
     deleg.cc
+    reclaim.cc
   )
   target_link_libraries(ceph_test_libcephfs
     ceph-common
@@ -18,6 +19,18 @@ if(${WITH_CEPHFS})
     ${CMAKE_DL_LIBS}
     )
   install(TARGETS ceph_test_libcephfs
+    DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+  add_executable(ceph_test_libcephfs_dying_client
+     dying_client.cc
+  )
+  target_link_libraries(ceph_test_libcephfs_dying_client
+    cephfs
+    ${UNITTEST_LIBS}
+    ${EXTRALIBS}
+    ${CMAKE_DL_LIBS}
+    )
+  install(TARGETS ceph_test_libcephfs_dying_client
     DESTINATION ${CMAKE_INSTALL_BINDIR})
 
   add_executable(ceph_test_libcephfs_access

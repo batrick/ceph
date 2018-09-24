@@ -1891,3 +1891,29 @@ extern "C" int ceph_set_deleg_timeout(class ceph_mount_info *cmount, uint32_t ti
     return -ENOTCONN;
   return cmount->get_client()->set_deleg_timeout(timeout);
 }
+
+extern "C" void ceph_set_session_timeout(class ceph_mount_info *cmount, unsigned timeout)
+{
+  cmount->get_client()->set_session_timeout(timeout);
+}
+
+extern "C" void ceph_set_uuid(class ceph_mount_info *cmount, const char *uuid)
+{
+  cmount->get_client()->set_uuid(std::string(uuid));
+}
+
+extern "C" int ceph_start_reclaim(class ceph_mount_info *cmount,
+				  const char *uuid, unsigned flags)
+{
+  if (!cmount->is_initialized()) {
+    int ret = cmount->init();
+    if (ret != 0)
+      return ret;
+  }
+  return cmount->get_client()->start_reclaim(std::string(uuid), flags);
+}
+
+extern "C" void ceph_finish_reclaim(class ceph_mount_info *cmount)
+{
+  cmount->get_client()->finish_reclaim();
+}

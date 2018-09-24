@@ -41,6 +41,8 @@ int main(int argc, char **argv)
   if (r < 0)
     exit(1);
 
+  setenv("EXECUTABLE_NAME", argv[0], 1);
+
   ::testing::InitGoogleTest(&argc, argv);
 
   srand(getpid());
