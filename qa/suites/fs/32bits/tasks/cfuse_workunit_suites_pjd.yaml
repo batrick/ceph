@@ -6,6 +6,7 @@ overrides:
         fuse default permissions: false
 tasks:
 - workunit:
+    timeout: 3h
     clients:
       all:
         - suites/pjd.sh

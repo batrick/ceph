@@ -2,6 +2,7 @@ tasks:
 - ceph-fuse:
 - print: "**** done luminous client"
 - workunit:
+    timeout: 3h
     clients:
       all:
       - suites/fsstress.sh
