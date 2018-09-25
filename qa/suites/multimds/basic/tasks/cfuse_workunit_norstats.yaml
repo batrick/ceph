@@ -1,6 +1,6 @@
 tasks:
 - workunit:
-    timeout: 6h
+    timeout: 3h
     clients:
       all:
         - fs/norstats

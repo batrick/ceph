@@ -1,5 +1,6 @@
 tasks:
 - workunit:
+    timeout: 3h
     clients:
       all:
         - fs/test_o_trunc.sh
