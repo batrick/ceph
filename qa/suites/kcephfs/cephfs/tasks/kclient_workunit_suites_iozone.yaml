@@ -1,5 +1,6 @@
 tasks:
 - workunit:
+    timeout: 3h
     clients:
       all:
         - suites/iozone.sh

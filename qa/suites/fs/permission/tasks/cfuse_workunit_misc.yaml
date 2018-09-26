@@ -6,6 +6,7 @@ overrides:
         client acl type: posix_acl
 tasks:
 - workunit:
+    timeout: 3h
     clients:
       all:
         - fs/misc/acl.sh
