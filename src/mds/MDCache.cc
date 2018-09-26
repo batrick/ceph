@@ -370,6 +370,7 @@ void MDCache::create_unlinked_system_inode(CInode *in, inodeno_t ino,
   if (in->inode.is_dir()) {
     in->inode.dir_layout.dl_dir_hash = g_conf()->mds_default_dir_hash;
     ++in->inode.rstat.rsubdirs;
+    in->inode.rstat.rctime = in->inode.ctime;
   } else {
     in->inode.layout = default_file_layout;
     ++in->inode.rstat.rfiles;
@@ -420,9 +421,8 @@ void MDCache::create_empty_hierarchy(MDSGather *gather)
   rootdir->fnode.accounted_rstat = rootdir->fnode.rstat;
 
   root->inode.dirstat = rootdir->fnode.fragstat;
-  root->inode.rstat = rootdir->fnode.rstat;
   ++root->inode.rstat.rsubdirs;
-  root->inode.accounted_rstat = root->inode.rstat;
+  rootdir->fnode.rstat = root->inode.rstat;
 
   rootdir->mark_complete();
   rootdir->mark_dirty(rootdir->pre_dirty(), mds->mdlog->get_current_segment());
