@@ -1,4 +1,5 @@
 tasks:
 - workunit:
+    timeout: 3h
     clients:
       all: [fs/misc/trivial_sync.sh]
