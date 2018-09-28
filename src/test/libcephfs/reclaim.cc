@@ -18,10 +18,12 @@
 #include <sys/xattr.h>
 #include <sys/uio.h>
 #include <libgen.h>
+#include <stdlib.h>
 
 #ifdef __linux__
 #include <limits.h>
 #endif
+
 
 #include <map>
 #include <vector>
@@ -141,7 +143,13 @@ out:
 
 int main(int argc, char **argv)
 {
-  setenv("EXECUTABLE_NAME", argv[0], 1);
+  char fullpath[PATH_MAX];
+  char *path = realpath(argv[0], fullpath);
+
+  if (!path)
+    exit(1);
+
+  setenv("EXECUTABLE_NAME", path, 1);
 
   int r = update_root_mode();
   if (r < 0)
