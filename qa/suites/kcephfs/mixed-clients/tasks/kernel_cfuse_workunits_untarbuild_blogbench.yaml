@@ -6,6 +6,7 @@ user-workload:
   sequential:
   - ceph-fuse: [client.0]
   - workunit:
+      timeout: 3h
       clients:
          client.0:
            - suites/blogbench.sh
@@ -13,6 +14,7 @@ kclient-workload:
   sequential:
   - kclient: [client.1]
   - workunit:
+      timeout: 3h
       clients:
          client.1:
            - kernel_untar_build.sh
