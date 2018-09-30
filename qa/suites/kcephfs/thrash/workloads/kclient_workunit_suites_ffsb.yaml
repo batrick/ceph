@@ -5,6 +5,7 @@ overrides:
         filestore flush min: 0
 tasks:
 - workunit:
+    timeout: 3h
     clients:
       all:
         - suites/ffsb.sh
