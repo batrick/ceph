@@ -5,6 +5,7 @@ overrides:
     disabled: true
 tasks:
 - workunit:
+    timeout: 3h
     clients:
       client.0:
         - fs/test_python.sh
