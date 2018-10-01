@@ -9,6 +9,7 @@ tasks:
       mds:
         - "mds.dir_split"
 - workunit:
+    timeout: 3h
     clients:
       all:
         - kernel_untar_build.sh

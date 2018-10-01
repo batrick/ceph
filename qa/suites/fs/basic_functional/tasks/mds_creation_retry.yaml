@@ -1,6 +1,7 @@
 tasks:
 -mds_creation_failure:
 - workunit:
+    timeout: 3h
     clients:
       all: [fs/misc/trivial_sync.sh]
 
