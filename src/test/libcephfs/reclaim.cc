@@ -80,14 +80,13 @@ static int dying_client(int argc, char **argv)
 TEST(LibCephFS, ReclaimReset) {
   pid_t		pid;
   char		uuid[256];
+  char		*exe = "/proc/self/exe";
 
   sprintf(uuid, "simplereclaim:%x", getpid());
 
   pid = fork();
   ASSERT_GE(pid, 0);
   if (pid == 0) {
-    char *exe = getenv("EXECUTABLE_NAME");
-
     errno = 0;
     execl(exe, exe, uuid, nullptr);
     /* It won't be zero of course, which is sort of the point... */
@@ -148,8 +147,6 @@ int main(int argc, char **argv)
 
   if (!path)
     exit(1);
-
-  setenv("EXECUTABLE_NAME", path, 1);
 
   int r = update_root_mode();
   if (r < 0)
