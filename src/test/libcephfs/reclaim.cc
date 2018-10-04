@@ -80,7 +80,7 @@ static int dying_client(int argc, char **argv)
 TEST(LibCephFS, ReclaimReset) {
   pid_t		pid;
   char		uuid[256];
-  char		*exe = "/proc/self/exe";
+  const char	*exe = "/proc/self/exe";
 
   sprintf(uuid, "simplereclaim:%x", getpid());
 
@@ -142,12 +142,6 @@ out:
 
 int main(int argc, char **argv)
 {
-  char fullpath[PATH_MAX];
-  char *path = realpath(argv[0], fullpath);
-
-  if (!path)
-    exit(1);
-
   int r = update_root_mode();
   if (r < 0)
     exit(1);
