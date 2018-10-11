@@ -69,6 +69,8 @@
 * librados::IoCtx::nobjects_begin() and librados::NObjectIterator now communicate
   errors by throwing a std::system_error exception instead of std::runtime_error.
 
+* The 'cephfs-data-scan scan_links' now automatically repair inotables.
+
 >=13.1.0
 --------
 
