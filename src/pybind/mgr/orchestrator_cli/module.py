@@ -77,6 +77,20 @@ class OrchestratorCli(MgrModule):
             "perm": "rw"
         },
         {
+            'cmd': "orchestrator nfs add "
+                   "name=svc_arg,type=CephString "
+                   "name=pool,type=CephString "
+                   "name=namespace,type=CephString,req=false ",
+            "desc": "Create an NFS service",
+            "perm": "rw"
+        },
+        {
+            'cmd': "orchestrator nfs rm "
+                   "name=svc_id,type=CephString ",
+            "desc": "Remove an NFS service",
+            "perm": "rw"
+        },
+        {
             'cmd': "orchestrator set backend "
                    "name=module,type=CephString,req=true",
             "desc": "Select orchestrator module backend",
@@ -239,6 +253,18 @@ class OrchestratorCli(MgrModule):
         spec.name = cmd['svc_arg']
         return self._add_stateless_svc("rgw", spec)
 
+    def _nfs_add(self, cmd):
+        cluster_name = cmd['svc_arg']
+        pool = cmd['pool']
+        ns = cmd.get('namespace', None)
+
+        spec = orchestrator.StatelessServiceSpec()
+        spec.name = cluster_name
+        spec.extended = { "pool":pool }
+        if ns != None:
+            spec.extended["namespace"] = ns
+        return self._add_stateless_svc("nfs", spec)
+
     def _rm_stateless_svc(self, svc_type, svc_id):
         completion = self._oremote("remove_stateless_service", svc_type, svc_id)
         self._wait([completion])
@@ -252,6 +278,9 @@ class OrchestratorCli(MgrModule):
 
     def _rgw_rm(self, cmd):
         return self._rm_stateless_svc("rgw", cmd['svc_id'])
+
+    def _nfs_rm(self, cmd):
+        return self._rm_stateless_svc("nfs", cmd['svc_id'])
 
     def _set_backend(self, cmd):
         """
@@ -346,6 +375,10 @@ class OrchestratorCli(MgrModule):
             return self._rgw_add(cmd)
         elif cmd['prefix'] == "orchestrator rgw rm":
             return self._rgw_rm(cmd)
+        elif cmd['prefix'] == "orchestrator nfs add":
+            return self._nfs_add(cmd)
+        elif cmd['prefix'] == "orchestrator nfs rm":
+            return self._nfs_rm(cmd)
         elif cmd['prefix'] == "orchestrator set backend":
             return self._set_backend(cmd)
         elif cmd['prefix'] == "orchestrator status":
