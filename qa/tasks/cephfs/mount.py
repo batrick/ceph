@@ -117,7 +117,8 @@ class CephFSMount(object):
         for suffix in self.test_files:
             log.info("Creating file {0}".format(suffix))
             self.client_remote.run(args=[
-                'sudo', 'touch', os.path.join(self.mountpoint, suffix)
+                'sudo', 'touch', os.path.join(self.mountpoint, suffix),
+                deadline="5m",
             ])
 
     def check_files(self):
@@ -127,7 +128,7 @@ class CephFSMount(object):
             log.info("Checking file {0}".format(suffix))
             r = self.client_remote.run(args=[
                 'sudo', 'ls', os.path.join(self.mountpoint, suffix)
-            ], check_status=False)
+            ], check_status=False, deadline="5m")
             if r.exitstatus != 0:
                 raise RuntimeError("Expected file {0} not found".format(suffix))
 
@@ -138,7 +139,7 @@ class CephFSMount(object):
         log.debug("Creating test file {0}".format(filename))
         self.client_remote.run(args=[
             'sudo', 'touch', os.path.join(self.mountpoint, filename)
-        ])
+        ], deadline="5m")
         log.debug("Deleting test file {0}".format(filename))
         self.client_remote.run(args=[
             'sudo', 'rm', '-f', os.path.join(self.mountpoint, filename)
@@ -148,7 +149,7 @@ class CephFSMount(object):
         return self.client_remote.run(
                args=['sudo', 'adjust-ulimits', 'daemon-helper', 'kill',
                      py_version, '-c', pyscript], wait=False, stdin=run.PIPE,
-               stdout=StringIO())
+               stdout=StringIO(), deadline="5m")
 
     def run_python(self, pyscript, py_version='python'):
         p = self._run_python(pyscript, py_version)
@@ -213,7 +214,7 @@ class CephFSMount(object):
         while i < timeout:
             r = self.client_remote.run(args=[
                 'sudo', 'ls', os.path.join(self.mountpoint, basename)
-            ], check_status=False)
+            ], check_status=False, deadline="5m")
             if r.exitstatus == 0:
                 log.debug("File {0} became visible from {1} after {2}s".format(
                     basename, self.client_id, i))
@@ -311,7 +312,7 @@ class CephFSMount(object):
         log.info("check lock on file {0}".format(basename))
         self.client_remote.run(args=[
             'sudo', 'python', '-c', pyscript
-        ])
+        ], deadline="5m")
 
     def write_background(self, basename="background_file", loop=False):
         """

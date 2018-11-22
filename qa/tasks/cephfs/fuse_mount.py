@@ -56,7 +56,7 @@ class FuseMount(CephFSMount):
                 '--',
                 self.mountpoint,
             ],
-            timeout=(15*60)
+            deadline="15m",
         )
 
         run_cmd = [
@@ -96,13 +96,13 @@ class FuseMount(CephFSMount):
             self.client_remote.run(
                 args=["sudo", "mount", "-t", "fusectl", "/sys/fs/fuse/connections", "/sys/fs/fuse/connections"],
                 check_status=False,
-                timeout=(15*60)
+                deadline="15m",
             )
             p = self.client_remote.run(
                 args=["ls", "/sys/fs/fuse/connections"],
                 stdout=StringIO(),
                 check_status=False,
-                timeout=(15*60)
+                deadline="15m",
             )
             if p.exitstatus != 0:
                 return []
@@ -190,7 +190,7 @@ class FuseMount(CephFSMount):
             stdout=StringIO(),
             stderr=StringIO(),
             wait=False,
-            timeout=(15*60)
+            deadline="15m",
         )
         try:
             proc.wait()
@@ -230,12 +230,15 @@ class FuseMount(CephFSMount):
         # Now that we're mounted, set permissions so that the rest of the test will have
         # unrestricted access to the filesystem mount.
         self.client_remote.run(
-            args=['sudo', 'chmod', '1777', self.mountpoint], timeout=(15*60))
+            args=['sudo', 'chmod', '1777', self.mountpoint], deadline="15m"))
 
     def _mountpoint_exists(self):
-        return self.client_remote.run(args=["ls", "-d", self.mountpoint], check_status=False, timeout=(15*60)).exitstatus == 0
+        return self.client_remote.run(args=["ls", "-d", self.mountpoint], check_status=False, deadline="15m").exitstatus == 0
 
-    def umount(self):
+    def umount(self, timeout=None):
+        if timeout is None:
+            timeout = "30m"
+
         try:
             log.info('Running fusermount -u on {name}...'.format(name=self.client_remote.name))
             self.client_remote.run(
@@ -245,7 +248,7 @@ class FuseMount(CephFSMount):
                     '-u',
                     self.mountpoint,
                 ],
-                timeout=(30*60),
+                deadline=timeout,
             )
         except run.CommandFailedError:
             log.info('Failed to unmount ceph-fuse on {name}, aborting...'.format(name=self.client_remote.name))
@@ -257,7 +260,7 @@ class FuseMount(CephFSMount):
                 run.Raw(';'),
                 'ps',
                 'auxf',
-            ], timeout=(60*15))
+            ], deadline="5m")
 
             # abort the fuse mount, killing all hung processes
             if self._fuse_conn:
@@ -281,7 +284,7 @@ class FuseMount(CephFSMount):
                         self.mountpoint,
                     ],
                     stderr=stderr,
-                    timeout=(60*15)
+                    deadline="2m",
                 )
             except CommandFailedError:
                 if self.is_mounted():
@@ -293,7 +296,7 @@ class FuseMount(CephFSMount):
         self.inst = None
         self.addr = None
 
-    def umount_wait(self, force=False, require_clean=False, timeout=900):
+    def umount_wait(self, force=False, require_clean=False, timeout=None):
         """
         :param force: Complete cleanly even if the MDS is offline
         """
@@ -309,7 +312,7 @@ class FuseMount(CephFSMount):
             # mount -o remount (especially if the remount is stuck because MDSs
             # are unavailable)
 
-        self.umount()
+        self.umount(timeout=timeout)
 
         try:
             if self.fuse_daemon:
@@ -340,7 +343,7 @@ class FuseMount(CephFSMount):
                     self.mountpoint,
                 ],
                 stderr=stderr,
-                timeout=(60*5)
+                deadline="5m",
             )
         except CommandFailedError:
             if "No such file or directory" in stderr.getvalue():
@@ -389,7 +392,7 @@ class FuseMount(CephFSMount):
                 '-rf',
                 self.mountpoint,
             ],
-            timeout=(60*5)
+            deadline="5m",
         )
 
     def _asok_path(self):
@@ -429,14 +432,14 @@ print find_socket("{client_name}")
         # Find the admin socket
         p = self.client_remote.run(args=[
             'sudo', 'python2', '-c', pyscript
-        ], stdout=StringIO(), timeout=(15*60))
+        ], stdout=StringIO(), deadline="15m")
         asok_path = p.stdout.getvalue().strip()
         log.info("Found client admin socket at {0}".format(asok_path))
 
         # Query client ID from admin socket
         p = self.client_remote.run(
             args=['sudo', self._prefix + 'ceph', '--admin-daemon', asok_path] + args,
-            stdout=StringIO(), timeout=(15*60))
+            stdout=StringIO(), deadline="15m")
         return json.loads(p.stdout.getvalue())
 
     def get_global_id(self):

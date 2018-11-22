@@ -33,7 +33,8 @@ class TestSessionMap(CephFSTestCase):
 
         ps_txt = remote.run(
             args=["ps", "-ww", "axo", "nlwp,cmd"],
-            stdout=StringIO()
+            stdout=StringIO(),
+            deadline="2m",
         ).stdout.getvalue().strip()
         lines = ps_txt.split("\n")[1:]
 
@@ -184,6 +185,7 @@ class TestSessionMap(CephFSTestCase):
                 path,
             ],
             stdin=data,
+            deadline="5m",
         )
 
     def _configure_auth(self, mount, id_name, mds_caps, osd_caps=None, mon_caps=None):

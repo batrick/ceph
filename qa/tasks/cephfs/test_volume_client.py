@@ -62,6 +62,7 @@ vc.disconnect()
                 path,
             ],
             stdin=data,
+            deadline="5m",
         )
 
     def _configure_vc_auth(self, mount, id_name):

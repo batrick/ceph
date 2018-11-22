@@ -16,13 +16,15 @@ class TestCephFSShell(CephFSTestCase):
         self.py_version = self.ctx.config.get('overrides', {}).get('python', 'python')
         log.info("using python version: {}".format(self.py_version))
 
-    def _cephfs_shell(self, cmd, opts=None):
+    def _cephfs_shell(self, cmd, opts=None, timeout=None):
+        if timeout is None:
+            timeout = "5m"
         args = ["cephfs-shell", "-c", self.mount_a.config_path]
         if opts is not None:
             args.extend(opts)
         args.extend(("--", cmd))
         log.info("Running command: {}".format(" ".join(args)))
-        status = self.mount_a.client_remote.run(args=args, stdout=StringIO())
+        status = self.mount_a.client_remote.run(args=args, stdout=StringIO(), deadline=timeout)
         return status.stdout.getvalue().strip()
 
     def test_help(self):

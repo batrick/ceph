@@ -1351,7 +1351,7 @@ class CephManager:
                           service_type, service_id)
 
     def admin_socket(self, service_type, service_id,
-                     command, check_status=True, timeout=0, stdout=None):
+                     command, check_status=True, timeout=None, stdout=None):
         """
         Remotely start up ceph specifying the admin socket
         :param command: a list of words to use as the command
@@ -1366,8 +1366,6 @@ class CephManager:
             'adjust-ulimits',
             'ceph-coverage',
             '{tdir}/archive/coverage'.format(tdir=testdir),
-            'timeout',
-            str(timeout),
             'ceph',
             '--cluster',
             self.cluster,
@@ -1382,7 +1380,8 @@ class CephManager:
             args=args,
             stdout=stdout,
             wait=True,
-            check_status=check_status
+            check_status=check_status,
+            deadline=timeout,
             )
 
     def objectstore_tool(self, pool, options, args, **kwargs):

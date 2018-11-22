@@ -96,7 +96,8 @@ class TestJournalMigration(CephFSTestCase):
                 "-c",
                 "import json; print len(json.load(open('/tmp/journal.json')))"
             ],
-            stdout=StringIO())
+            stdout=StringIO(),
+            deadline="2m")
         event_count = int(p.stdout.getvalue().strip())
         if event_count < 1000:
             # Approximate value of "lots", expected from having run fsstress
