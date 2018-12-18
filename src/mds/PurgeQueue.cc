@@ -335,6 +335,8 @@ uint32_t PurgeQueue::_calculate_ops(const PurgeItem &item) const
 
 bool PurgeQueue::can_consume()
 {
+  std::lock_guard l(lock);
+
   dout(20) << ops_in_flight << "/" << max_purge_ops << " ops, "
            << in_flight.size() << "/" << g_conf()->mds_max_purge_files
            << " files" << dendl;
@@ -637,6 +639,8 @@ bool PurgeQueue::drain(
     size_t *in_flight_count
     )
 {
+  std::lock_guard l(lock);
+
   ceph_assert(progress != nullptr);
   ceph_assert(progress_total != nullptr);
   ceph_assert(in_flight_count != nullptr);
