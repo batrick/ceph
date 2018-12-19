@@ -76,7 +76,7 @@ public:
     f->close_section();
   }
 
-  std::string get_type_str() const;
+  std::string_view get_type_str() const;
 private:
   static const std::map<std::string, PurgeItem::Action> actions;
 };
@@ -106,6 +106,7 @@ protected:
   CephContext *cct;
   const mds_rank_t rank;
   Mutex lock;
+  bool readonly = false;
 
   int64_t metadata_pool;
 
@@ -163,6 +164,8 @@ protected:
 
   bool recovered;
   std::list<Context*> waiting_for_recovery;
+
+  void _go_readonly(int r);
 
 public:
   void init();
