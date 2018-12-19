@@ -19,6 +19,7 @@
 
 #include "PurgeQueue.h"
 
+#include <string.h>
 
 #define dout_context cct
 #define dout_subsys ceph_subsys_mds
@@ -108,6 +109,7 @@ PurgeQueue::~PurgeQueue()
   if (logger) {
     g_ceph_context->get_perfcounters_collection()->remove(logger.get());
   }
+  delete on_error;
 }
 
 void PurgeQueue::create_logger()
@@ -138,6 +140,12 @@ void PurgeQueue::init()
 void PurgeQueue::activate()
 {
   std::lock_guard l(lock);
+
+  if (readonly) {
+    dout(10) << "skipping activate: PurgeQueue is readonly" << dendl;
+    return;
+  }
+
   if (journaler.get_read_pos() == journaler.get_write_pos())
     return;
 
@@ -192,7 +200,7 @@ void PurgeQueue::open(Context *completion)
       finish_contexts(g_ceph_context, waiting_for_recovery);
     } else {
       derr << "Error " << r << " loading Journaler" << dendl;
-      on_error->complete(r);
+      _go_readonly(r);
     }
   }));
 }
@@ -225,7 +233,7 @@ void PurgeQueue::_recover()
     if (journaler.get_error()) {
       int r = journaler.get_error();
       derr << "Error " << r << " recovering write_pos" << dendl;
-      on_error->complete(r);
+      _go_readonly(r);
       return;
     }
 
@@ -250,6 +258,12 @@ void PurgeQueue::create(Context *fin)
   dout(4) << "creating" << dendl;
   std::lock_guard l(lock);
 
+  if (readonly) {
+    dout(10) << "cannot create: PurgeQueue is readonly" << dendl;
+    fin->complete(-EROFS);
+    return;
+  }
+
   if (fin)
     waiting_for_recovery.push_back(fin);
 
@@ -271,6 +285,12 @@ void PurgeQueue::push(const PurgeItem &pi, Context *completion)
 {
   dout(4) << "pushing inode " << pi.ino << dendl;
   std::lock_guard l(lock);
+
+  if (readonly) {
+    dout(10) << "cannot push inode: PurgeQueue is readonly" << dendl;
+    completion->complete(-EROFS);
+    return;
+  }
 
   // Callers should have waited for open() before using us
   ceph_assert(!journaler.is_readonly());
@@ -334,6 +354,13 @@ uint32_t PurgeQueue::_calculate_ops(const PurgeItem &item) const
 
 bool PurgeQueue::can_consume()
 {
+  std::lock_guard l(lock);
+
+  if (readonly) {
+    dout(10) << "can't consume: PurgeQueue is readonly" << dendl;
+    return false;
+  }
+
   dout(20) << ops_in_flight << "/" << max_purge_ops << " ops, "
            << in_flight.size() << "/" << g_conf()->mds_max_purge_files
            << " files" << dendl;
@@ -361,6 +388,17 @@ bool PurgeQueue::can_consume()
   }
 }
 
+void PurgeQueue::_go_readonly(int r)
+{
+  if (readonly) return;
+  dout(1) << "going readonly because internal IO failed: " << strerror(-r) << dendl;
+  readonly = true;
+  on_error->complete(r);
+  on_error = nullptr;
+  journaler.set_readonly();
+  finish_contexts(g_ceph_context, waiting_for_recovery);
+}
+
 bool PurgeQueue::_consume()
 {
   ceph_assert(lock.is_locked_by_me());
@@ -378,7 +416,7 @@ bool PurgeQueue::_consume()
 
     if (int r = journaler.get_error()) {
       derr << "Error " << r << " recovering write_pos" << dendl;
-      on_error->complete(r);
+      _go_readonly(r);
       return could_consume;
     }
 
@@ -392,7 +430,7 @@ bool PurgeQueue::_consume()
           if (r == 0) {
             _consume();
           } else if (r != -EAGAIN) {
-            on_error->complete(r);
+            _go_readonly(r);
           }
         }));
       }
@@ -414,7 +452,7 @@ bool PurgeQueue::_consume()
     } catch (const buffer::error &err) {
       derr << "Decode error at read_pos=0x" << std::hex
            << journaler.get_read_pos() << dendl;
-      on_error->complete(0);
+      _go_readonly(EIO);
     }
     dout(20) << " executing item (" << item.ino << ")" << dendl;
     _execute_item(item, journaler.get_read_pos());
@@ -581,6 +619,11 @@ void PurgeQueue::update_op_limit(const MDSMap &mds_map)
 {
   std::lock_guard l(lock);
 
+  if (readonly) {
+    dout(10) << "skipping; PurgeQueue is readonly" << dendl;
+    return;
+  }
+
   uint64_t pg_count = 0;
   objecter->with_osdmap([&](const OSDMap& o) {
     // Number of PGs across all data pools
@@ -636,6 +679,13 @@ bool PurgeQueue::drain(
     size_t *in_flight_count
     )
 {
+  std::lock_guard l(lock);
+
+  if (readonly) {
+    dout(10) << "skipping drain; PurgeQueue is readonly" << dendl;
+    return true;
+  }
+
   ceph_assert(progress != nullptr);
   ceph_assert(progress_total != nullptr);
   ceph_assert(in_flight_count != nullptr);
@@ -668,7 +718,7 @@ bool PurgeQueue::drain(
   return false;
 }
 
-std::string PurgeItem::get_type_str() const
+std::string_view PurgeItem::get_type_str() const
 {
   switch(action) {
   case PurgeItem::NONE: return "NONE";
