@@ -86,7 +86,9 @@ public:
   ~StackStringStream() override = default;
 
   void clear() {
+    static std::stringstream const ss;
     basic_ostream<char>::clear();
+    basic_ostream<char>::flags(ss.flags()); /* reset fmtflags to constructor defaults */
     ssb.clear();
   }
 
