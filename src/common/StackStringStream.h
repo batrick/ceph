@@ -99,8 +99,10 @@ public:
   StackStringStream& operator=(StackStringStream&& o) = delete;
   ~StackStringStream() override = default;
 
-  void clear() {
-    basic_ostream<char>::clear();
+  void reset() {
+    static std::stringstream const ss;
+    clear(); /* reset state flags */
+    flags(ss.flags()); /* reset fmtflags to constructor defaults */
     ssb.clear();
   }
 
@@ -129,7 +131,7 @@ public:
     } else {
       osp = std::move(cache.c.back());
       cache.c.pop_back();
-      osp->clear();
+      osp->reset();
     }
   }
   CachedStackStringStream(const CachedStackStringStream&) = delete;
