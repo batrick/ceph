@@ -277,6 +277,10 @@ public:
     }
   }
 
+  bool is_any_flush_waiter() {
+    return !waitfor_flush.empty();
+  }
+
   void add_cap(Capability *cap) {
     caps.push_back(&cap->item_session_caps);
   }
