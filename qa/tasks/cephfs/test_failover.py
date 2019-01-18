@@ -90,6 +90,21 @@ class TestClusterResize(CephFSTestCase):
         self.shrink(2)
         self.wait_for_health_clear(30)
 
+    def test_down_health(self):
+        """
+        That marking a FS down does not generate a health warning
+        """
+
+        self.fs.set_down()
+        try:
+            self.wait_for_health("", 30)
+            raise RuntimeError("got health warning?")
+        except RuntimeError as e:
+            if "Timed out after" in str(e):
+                pass
+            else:
+                raise
+
     def test_down_twice(self):
         """
         That marking a FS down twice does not wipe old_max_mds.
@@ -97,7 +112,7 @@ class TestClusterResize(CephFSTestCase):
 
         self.grow(2)
         self.fs.set_down()
-        self.wait_for_health("MDS_ALL_DOWN", 30)
+        self.fs.wait_for_daemons()
         self.fs.set_down(False)
         mdsmap = self.fs.get_mds_map()
         self.assertTrue(mdsmap["max_mds"] == 2)
@@ -110,11 +125,11 @@ class TestClusterResize(CephFSTestCase):
         """
 
         self.fs.set_down()
-        self.wait_for_health("MDS_ALL_DOWN", 30)
+        self.fs.wait_for_daemons()
         self.fs.set_down(False)
         self.wait_for_health_clear(30)
         self.fs.set_down(True)
-        self.wait_for_health("MDS_ALL_DOWN", 30)
+        self.fs.wait_for_daemons()
         self.grow(2)
         self.wait_for_health_clear(30)
 
