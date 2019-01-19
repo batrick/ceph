@@ -160,6 +160,10 @@
 * The 'cephfs-data-scan scan_links' now automatically repair inotables and
   snaptable.
 
+* The MDS cache trimming is now throttled. Dropping the MDS cache
+  via the `ceph tell mds.<foo> cache drop` command or large reductions in the
+  cache size will no longer cause service unavailability.
+
 >=13.1.0
 --------
 
