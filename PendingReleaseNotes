@@ -8,6 +8,10 @@
   suffixed dump files. Importing journal information from dump files is
   disallowed if operation is targetted for all ranks.
 
+* The MDS cache trimming is now throttled. Dropping the MDS cache
+  via the `ceph tell mds.<foo> cache drop` command or large reductions in the
+  cache size will no longer cause service unavailability.
+
 >= 12.1.2
 ---------
 * When running 'df' on a CephFS filesystem comprising exactly one data pool,
