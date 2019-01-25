@@ -245,7 +245,8 @@ public:
                Formatter *f, Context *on_finish)
     : MDSInternalContext(mds),
       server(server), mdcache(mdcache), mdlog(mdlog),
-      recall_timeout(recall_timeout), f(f), on_finish(on_finish),
+      recall_timeout(recall_timeout), recall_start(mono_clock::now()),
+      f(f), on_finish(on_finish),
       whoami(mds->whoami), incarnation(mds->incarnation) {
   }
 
@@ -255,6 +256,7 @@ public:
     assert(mds->mds_lock.is_locked());
 
     dout(20) << __func__ << dendl;
+    f->open_object_section("result");
     recall_client_state();
   }
 
@@ -313,25 +315,35 @@ private:
 
   void recall_client_state() {
     dout(20) << __func__ << dendl;
-
-    f->open_object_section("result");
+    auto now = mono_clock::now();
+    auto duration = std::chrono::duration<double>(recall_start-now).count();
 
     MDSGatherBuilder *gather = new MDSGatherBuilder(g_ceph_context);
-    server->recall_client_state(1.0, true, gather);
-    if (!gather->has_subs()) {
-      handle_recall_client_state(0);
-      delete gather;
-      return;
+    auto [throttled, count] = server->recall_client_state(gather, Server::RecallFlags::STEADY);
+    dout(10) << __func__
+             << (throttled ? " (throttled)" : "")
+             << " recalled " << count << " caps" << dendl;
+
+    if ((throttled || count > 0) && duration < recall_timeout) {
+      auto timer = new FunctionContext([this](int _) {
+        recall_client_state();
+      });
+      mds->timer.add_event_after(1.0, timer);
+    } else {
+      if (!gather->has_subs()) {
+        delete gather;
+        return handle_recall_client_state(0);
+      }
+
+      C_ContextTimeout *ctx = new C_ContextTimeout(
+        mds, recall_timeout, new FunctionContext([this](int r) {
+            handle_recall_client_state(r);
+          }));
+
+      ctx->start_timer();
+      gather->set_finisher(new MDSInternalContextWrapper(mds, ctx));
+      gather->activate();
     }
-
-    C_ContextTimeout *ctx = new C_ContextTimeout(
-      mds, recall_timeout, new FunctionContext([this](int r) {
-          handle_recall_client_state(r);
-        }));
-
-    ctx->start_timer();
-    gather->set_finisher(new MDSInternalContextWrapper(mds, ctx));
-    gather->activate();
   }
 
   void handle_recall_client_state(int r) {
@@ -344,18 +356,6 @@ private:
     f->close_section();
 
     // we can still continue after recall timeout
-    trim_cache();
-  }
-
-  void trim_cache() {
-    dout(20) << __func__ << dendl;
-
-    if (!mdcache->trim(UINT64_MAX)) {
-      cmd_err(f, "failed to trim cache");
-      complete(-EINVAL);
-      return;
-    }
-
     flush_journal();
   }
 
@@ -385,7 +385,24 @@ private:
     f->dump_string("message", ss.str());
     f->close_section();
 
-    cache_status();
+    trim_cache();
+  }
+
+  void trim_cache() {
+    dout(20) << __func__ << dendl;
+
+    auto [throttled, count] = mdcache->trim(UINT64_MAX);
+    dout(10) << __func__
+             << (throttled ? " (throttled)" : "")
+             << " trimmed " << count << " caps" << dendl;
+    if (throttled && count > 0) {
+      auto timer = new FunctionContext([this](int _) {
+        trim_cache();
+      });
+      mds->timer.add_event_after(1.0, timer);
+    } else {
+      cache_status();
+    }
   }
 
   void cache_status() {
@@ -408,6 +425,7 @@ private:
   MDCache *mdcache;
   MDLog *mdlog;
   uint64_t recall_timeout;
+  mono_time recall_start;
   Formatter *f;
   Context *on_finish;
 
@@ -693,6 +711,7 @@ void MDSRankDispatcher::tick()
   sessionmap.update_average_session_age();
 
   if (is_active() || is_stopping()) {
+    server->recall_client_state(nullptr, Server::RecallFlags::ENFORCE_MAX);
     mdcache->trim();
     mdcache->trim_client_leases();
     mdcache->check_memory_usage();
