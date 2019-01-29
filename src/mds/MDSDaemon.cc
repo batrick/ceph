@@ -1230,7 +1230,7 @@ bool MDSDaemon::ms_handle_reset(Connection *con)
   if (stopping) {
     return false;
   }
-  dout(5) << "ms_handle_reset on " << con->get_peer_addr() << dendl;
+  dout(5) << "ms_handle_reset on " << con->get_peer_socket_addr() << dendl;
   if (beacon.get_want_state() == CEPH_MDS_STATE_DNE)
     return false;
 
@@ -1258,7 +1258,7 @@ void MDSDaemon::ms_handle_remote_reset(Connection *con)
     return;
   }
 
-  dout(5) << "ms_handle_remote_reset on " << con->get_peer_addr() << dendl;
+  dout(5) << "ms_handle_remote_reset on " << con->get_peer_socket_addr() << dendl;
   if (beacon.get_want_state() == CEPH_MDS_STATE_DNE)
     return;
 
@@ -1306,7 +1306,7 @@ int MDSDaemon::ms_handle_authentication(Connection *con)
   if (!s) {
     s = new Session(con);
     s->info.auth_name = con->get_peer_entity_name();
-    s->info.inst.addr = con->get_peer_addr();
+    s->info.inst.addr = con->get_peer_socket_addr();
     s->info.inst.name = n;
     dout(10) << " new session " << s << " for " << s->info.inst
 	     << " con " << con << dendl;
@@ -1376,7 +1376,7 @@ void MDSDaemon::ms_handle_accept(Connection *con)
 
   auto priv = con->get_priv();
   auto s = static_cast<Session *>(priv.get());
-  dout(10) << "ms_handle_accept " << con->get_peer_addr() << " con " << con << " session " << s << dendl;
+  dout(10) << "ms_handle_accept " << con->get_peer_socket_addr() << " con " << con << " session " << s << dendl;
   if (s) {
     if (s->get_connection() != con) {
       dout(10) << " session connection " << s->get_connection()
