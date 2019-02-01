@@ -330,12 +330,13 @@ private:
         recall_client_state();
       });
       mds->timer.add_event_after(1.0, timer);
+      gather->activate();
     } else {
       if (!gather->has_subs()) {
-        delete gather;
+        gather->activate();
         return handle_recall_client_state(0);
       } else if (recall_timeout > 0 && duration > recall_timeout) {
-        delete gather;
+        gather->activate();
         return handle_recall_client_state(-ETIMEDOUT);
       } else {
         uint64_t remaining = (recall_timeout == 0 ? 0 : recall_timeout-duration);
