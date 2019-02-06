@@ -167,7 +167,7 @@ public:
   }
 
   MMgrReport()
-    : MessageInstance(MSG_MGR_REPORT, HEAD_VERSION, COMPAT_VERSION)
+    : MessageInstance<MMgrReport>(MSG_MGR_REPORT, HEAD_VERSION, COMPAT_VERSION)
   {}
 };
 
