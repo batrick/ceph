@@ -14,14 +14,13 @@ class Context;
 
 namespace journal {
 
-class FutureImpl;
+using FutureImplPtr = boost::intrusive_ptr<class FutureImpl>;
 
 class Future {
 public:
-  typedef boost::intrusive_ptr<FutureImpl> FutureImplPtr;
-
-  Future() {}
-  Future(const FutureImplPtr &future_impl) : m_future_impl(future_impl) {}
+  Future();
+  Future(const FutureImplPtr& future_impl);
+  ~Future();
 
   inline bool is_valid() const {
     return m_future_impl.get() != nullptr;
@@ -37,22 +36,17 @@ private:
   friend class Journaler;
   friend std::ostream& operator<<(std::ostream&, const Future&);
 
-  inline FutureImplPtr get_future_impl() const {
+  inline const FutureImplPtr& get_future_impl() const {
     return m_future_impl;
   }
 
   FutureImplPtr m_future_impl;
 };
 
-void intrusive_ptr_add_ref(FutureImpl *p);
-void intrusive_ptr_release(FutureImpl *p);
-
 std::ostream &operator<<(std::ostream &os, const Future &future);
 
 } // namespace journal
 
-using journal::intrusive_ptr_add_ref;
-using journal::intrusive_ptr_release;
 using journal::operator<<;
 
 #endif // CEPH_JOURNAL_FUTURE_H

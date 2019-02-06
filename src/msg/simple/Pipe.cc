@@ -158,7 +158,7 @@ Pipe::Pipe(SimpleMessenger *r, int st, PipeConnection *con)
     connection_state = con;
     connection_state->reset_pipe(this);
   } else {
-    connection_state = new PipeConnection(msgr->cct, msgr);
+    connection_state = PipeConnection::create(msgr->cct, msgr);
     connection_state->pipe = get();
   }
 

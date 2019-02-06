@@ -1363,7 +1363,7 @@ public:
   class OpSequencer;
   typedef boost::intrusive_ptr<OpSequencer> OpSequencerRef;
 
-  struct Collection : public CollectionImpl {
+  struct Collection : public RefCountedObjectInstance<Collection, CollectionImpl> {
     BlueStore *store;
     OpSequencerRef osr;
     Cache *cache;       ///< our cache shard
@@ -1423,6 +1423,8 @@ public:
     void flush() override;
     void flush_all_but_last();
 
+  private:
+    friend factory;
     Collection(BlueStore *ns, Cache *ca, coll_t c);
   };
 
@@ -1709,7 +1711,7 @@ public:
     }
   };
 
-  class OpSequencer : public RefCountedObject {
+  class OpSequencer : public RefCountedObjectInstance<OpSequencer> {
   public:
     ceph::mutex qlock = ceph::make_mutex("BlueStore::OpSequencer::qlock");
     ceph::condition_variable qcond;
@@ -1738,14 +1740,6 @@ public:
     std::atomic_int kv_submitted_waiters = {0};
 
     std::atomic_bool zombie = {false};    ///< in zombie_osr set (collection going away)
-
-    OpSequencer(BlueStore *store, const coll_t& c)
-      : RefCountedObject(store->cct, 0),
-	store(store), cid(c) {
-    }
-    ~OpSequencer() {
-      ceph_assert(q.empty());
-    }
 
     void queue_new(TransContext *txc) {
       std::lock_guard l(qlock);
@@ -1825,6 +1819,15 @@ public:
       }
       txc->oncommits.push_back(c);
       return false;
+    }
+  private:
+    friend factory;
+    OpSequencer(BlueStore *store, const coll_t& c)
+      : RefCountedObjectInstance<OpSequencer>(store->cct),
+	store(store), cid(c) {
+    }
+    ~OpSequencer() {
+      ceph_assert(q.empty());
     }
   };
 
