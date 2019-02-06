@@ -64,7 +64,7 @@ public:
   }
 
   MMgrConfigure()
-    : MessageInstance(MSG_MGR_CONFIGURE, HEAD_VERSION, COMPAT_VERSION)
+    : MessageInstance<MMgrConfigure>(MSG_MGR_CONFIGURE, HEAD_VERSION, COMPAT_VERSION)
   {}
 };
 

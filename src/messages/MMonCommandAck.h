@@ -25,9 +25,9 @@ public:
   errorcode32_t r;
   string rs;
   
-  MMonCommandAck() : MessageInstance(MSG_MON_COMMAND_ACK, 0) {}
+  MMonCommandAck() : MessageInstance<MMonCommandAck, PaxosServiceMessage>(MSG_MON_COMMAND_ACK, 0) {}
   MMonCommandAck(vector<string>& c, int _r, string s, version_t v) : 
-    MessageInstance(MSG_MON_COMMAND_ACK, v),
+    MessageInstance<MMonCommandAck, PaxosServiceMessage>(MSG_MON_COMMAND_ACK, v),
     cmd(c), r(_r), rs(s) { }
 private:
   ~MMonCommandAck() override {}
