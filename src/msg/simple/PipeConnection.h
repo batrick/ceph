@@ -19,19 +19,13 @@
 
 class Pipe;
 
-class PipeConnection : public Connection {
+class PipeConnection : public RefCountedObjectInstance<PipeConnection, Connection> {
   Pipe* pipe;
 
-  friend class boost::intrusive_ptr<PipeConnection>;
   friend class Pipe;
 
 public:
 
-  PipeConnection(CephContext *cct, Messenger *m)
-    : Connection(cct, m),
-      pipe(NULL) { }
-
-  ~PipeConnection() override;
 
   Pipe* get_pipe();
 
@@ -52,8 +46,14 @@ public:
     return peer_addrs->front();
   }
 
+private:
+  friend factory;
+  PipeConnection(CephContext *cct, Messenger *m)
+    : RefCountedObjectInstance<PipeConnection, Connection>(cct, m),
+      pipe(NULL) { }
+  ~PipeConnection() override;
 }; /* PipeConnection */
 
-typedef boost::intrusive_ptr<PipeConnection> PipeConnectionRef;
+using PipeConnectionRef = PipeConnection::ref;
 
 #endif

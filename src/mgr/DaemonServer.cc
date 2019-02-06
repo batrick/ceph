@@ -166,7 +166,7 @@ KeyStore *DaemonServer::ms_get_auth1_authorizer_keystore()
 int DaemonServer::ms_handle_authentication(Connection *con)
 {
   int ret = 0;
-  MgrSession *s = new MgrSession(cct);
+  auto s = MgrSession::create(cct);
   con->set_priv(s);
   s->inst.addr = con->get_peer_addr();
   s->entity_name = con->peer_name;
