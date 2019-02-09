@@ -522,4 +522,11 @@ using MessageSubType = RefCountedObjectSubType<T,M>;
 template<class T, class M = Message>
 using MessageInstance = RefCountedObjectInstance<T, M>;
 
+template<class T, class M = Message>
+using MessageSubTypeSafe = RefCountedObjectSubTypeSafe<T,M>;
+
+template<class T, class M = Message>
+using MessageInstanceSafe = RefCountedObjectInstanceSafe<T, M>;
+
+
 #endif
