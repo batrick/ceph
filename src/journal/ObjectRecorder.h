@@ -26,7 +26,7 @@ class ObjectRecorder;
 typedef std::pair<FutureImpl::ref, bufferlist> AppendBuffer;
 typedef std::list<AppendBuffer> AppendBuffers;
 
-class ObjectRecorder : public RefCountedObjectInstance<ObjectRecorder>, boost::noncopyable {
+class ObjectRecorder : public RefCountedObjectInstanceSafe<ObjectRecorder>, boost::noncopyable {
 public:
   struct Handler {
     virtual ~Handler() {
@@ -76,7 +76,7 @@ private:
   typedef std::set<uint64_t> InFlightTids;
   typedef std::map<uint64_t, AppendBuffers> InFlightAppends;
 
-  struct FlushHandler : public RefCountedObjectInstance<FlushHandler, FutureImpl::FlushHandler> {
+  struct FlushHandler : public RefCountedObjectInstanceSafe<FlushHandler, FutureImpl::FlushHandler> {
     ObjectRecorder* object_recorder;
     virtual void flush(const FutureImpl::ref &future) override {
       Mutex::Locker locker(*(object_recorder->m_lock));

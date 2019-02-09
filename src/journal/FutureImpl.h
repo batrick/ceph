@@ -20,9 +20,9 @@ namespace journal {
 
 class FutureImpl;
 
-class FutureImpl : public RefCountedObjectInstance<FutureImpl>, boost::noncopyable {
+class FutureImpl : public RefCountedObjectInstanceSafe<FutureImpl>, boost::noncopyable {
 public:
-  struct FlushHandler : public RefCountedObjectSubType<FlushHandler> {
+  struct FlushHandler : public RefCountedObjectSubTypeSafe<FlushHandler> {
     virtual void flush(const FutureImpl::ref &future) = 0;
   };
 

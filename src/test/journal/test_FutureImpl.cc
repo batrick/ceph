@@ -9,7 +9,7 @@
 
 class TestFutureImpl : public RadosTestFixture {
 public:
-  struct FlushHandler : public RefCountedObjectInstance<FlushHandler, journal::FutureImpl::FlushHandler> {
+  struct FlushHandler : public RefCountedObjectInstanceSafe<FlushHandler, journal::FutureImpl::FlushHandler> {
     uint64_t flushes = 0;
     void flush(const journal::FutureImplPtr &future) override {
       ++flushes;
