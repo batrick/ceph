@@ -34,11 +34,11 @@ public:
   epoch_t get_epoch() const { return epoch; }
 
   MOSDPGInfo()
-    : MessageInstance(MSG_OSD_PG_INFO, HEAD_VERSION, COMPAT_VERSION) {
+    : MessageInstance<MOSDPGInfo>(MSG_OSD_PG_INFO, HEAD_VERSION, COMPAT_VERSION) {
     set_priority(CEPH_MSG_PRIO_HIGH);
   }
   MOSDPGInfo(version_t mv)
-    : MessageInstance(MSG_OSD_PG_INFO, HEAD_VERSION, COMPAT_VERSION),
+    : MessageInstance<MOSDPGInfo>(MSG_OSD_PG_INFO, HEAD_VERSION, COMPAT_VERSION),
       epoch(mv) {
     set_priority(CEPH_MSG_PRIO_HIGH);
   }

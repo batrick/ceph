@@ -5,6 +5,7 @@
 #include "common/dout.h"
 #include "common/errno.h"
 #include "common/WorkQueue.h"
+#include "journal/FutureImpl.h"
 #include "journal/Journaler.h"
 #include "journal/Settings.h"
 #include "librbd/ImageCtx.h"

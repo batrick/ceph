@@ -26,15 +26,18 @@
 #include "include/ceph_assert.h"
 
 struct RefCountedObject {
-private:
-  mutable std::atomic<uint64_t> nref;
-  CephContext *cct;
 public:
-  RefCountedObject(CephContext *c = NULL, int n=1) : nref(n), cct(c) {}
-  virtual ~RefCountedObject() {
-    ceph_assert(nref == 0);
+  using ref = boost::intrusive_ptr<RefCountedObject>;
+  using const_ref = boost::intrusive_ptr<RefCountedObject const>;
+
+  void set_cct(CephContext *c) {
+    cct = c;
   }
-  
+
+  auto get_nref() const {
+    return nref.load();
+  }
+
   const RefCountedObject *get() const {
     int v = ++nref;
     if (cct)
@@ -53,7 +56,7 @@ public:
   }
   void put() const {
     CephContext *local_cct = cct;
-    int v = --nref;
+    auto v = --nref;
     if (local_cct)
       lsubdout(local_cct, refs, 1) << "RefCountedObject::put " << this << " "
 				   << (v + 1) << " -> " << v
@@ -66,14 +69,117 @@ public:
       ANNOTATE_HAPPENS_BEFORE(&nref);
     }
   }
-  void set_cct(CephContext *c) {
-    cct = c;
+
+protected:
+  RefCountedObject() = default;
+  RefCountedObject(CephContext* c) : cct(c) {}
+
+  virtual ~RefCountedObject() {
+    ceph_assert(nref == 0);
   }
 
-  uint64_t get_nref() const {
-    return nref;
+private:
+  mutable std::atomic<int64_t> nref = {1};
+  CephContext *cct = nullptr;
+};
+
+template <class RefCountedObjectType>
+class RefCountedObjectFactory {
+public:
+template<typename... Args>
+  static typename RefCountedObjectType::ref build(Args&&... args) {
+    return typename RefCountedObjectType::ref(new RefCountedObjectType(std::forward<Args>(args)...), false);
   }
 };
+
+template<class T, class R = RefCountedObject>
+class RefCountedObjectSubType : public R {
+public:
+  using ref = boost::intrusive_ptr<T>;
+  using const_ref = boost::intrusive_ptr<T const>;
+
+  static auto ref_cast(const auto& m) {
+    if constexpr(std::is_const<typename std::remove_reference<decltype(m)>::type::element_type>::value) {
+      return boost::static_pointer_cast<typename T::const_ref::element_type, typename std::remove_reference<decltype(m)>::type::element_type>(m);
+    } else {
+      return boost::static_pointer_cast<typename T::ref::element_type, typename std::remove_reference<decltype(m)>::type::element_type>(m);
+    }
+  }
+  static auto const_ref_cast(const auto& m) {
+    return boost::static_pointer_cast<typename T::const_ref::element_type, typename std::remove_reference<decltype(m)>::type::element_type>(m);
+  }
+
+  const T* get() const {
+    return static_cast<T*>(R::get());
+  }
+  T* get() {
+    return static_cast<T*>(R::get());
+  }
+  void put() const {
+    return R::put();
+  }
+
+protected:
+template<typename... Args>
+  RefCountedObjectSubType(Args&&... args) : R(std::forward<Args>(args)...) {}
+  virtual ~RefCountedObjectSubType() override {}
+};
+
+/* This is a "safe" version of RefCountedObjectSubType. It does not allow
+ * calling get/put methods on these derived classes. This is intended to
+ * prevent some accidental reference leaks. Instead, you must either cast the
+ * derived class to a RefCountedObject and do the get/put or detach an
+ * temporary reference.
+ */
+template<class T, class R = RefCountedObject>
+class RefCountedObjectSubTypeSafe : public R {
+public:
+  using ref = boost::intrusive_ptr<T>;
+  using const_ref = boost::intrusive_ptr<T const>;
+
+  static auto ref_cast(const auto& m) {
+    if constexpr(std::is_const<typename std::remove_reference<decltype(m)>::type::element_type>::value) {
+      return boost::static_pointer_cast<typename T::const_ref::element_type, typename std::remove_reference<decltype(m)>::type::element_type>(m);
+    } else {
+      return boost::static_pointer_cast<typename T::ref::element_type, typename std::remove_reference<decltype(m)>::type::element_type>(m);
+    }
+  }
+  static auto const_ref_cast(const auto& m) {
+    return boost::static_pointer_cast<typename T::const_ref::element_type, typename std::remove_reference<decltype(m)>::type::element_type>(m);
+  }
+  const T* get() const = delete;
+  T* get() = delete;
+  void put() const = delete;
+
+protected:
+template<typename... Args>
+  RefCountedObjectSubTypeSafe(Args&&... args) : R(std::forward<Args>(args)...) {}
+  virtual ~RefCountedObjectSubTypeSafe() override {}
+};
+
+template<class T, class R, template<typename,typename> class SubType>
+class RefCountedObjectInstanceTemplate : public SubType<T, R> {
+public:
+  using factory = RefCountedObjectFactory<T>;
+
+  template<typename... Args>
+  static auto create(Args&&... args) {
+    return RefCountedObjectFactory<T>::build(std::forward<Args>(args)...);
+  }
+
+protected:
+template<typename... Args>
+  RefCountedObjectInstanceTemplate(Args&&... args) : SubType<T,R>(std::forward<Args>(args)...) {}
+  virtual ~RefCountedObjectInstanceTemplate() override {}
+};
+
+template<class T, class R = RefCountedObject>
+using RefCountedObjectInstance = RefCountedObjectInstanceTemplate<T,R,RefCountedObjectSubType>;
+
+template<class T, class R = RefCountedObject>
+using RefCountedObjectInstanceSafe = RefCountedObjectInstanceTemplate<T,R,RefCountedObjectSubTypeSafe>;
+
+using RefCountedPtr = boost::intrusive_ptr<RefCountedObject>;
 
 #ifndef WITH_SEASTAR
 
@@ -82,14 +188,9 @@ public:
  *
  *  a refcounted condition, will be removed when all references are dropped
  */
-
-struct RefCountedCond : public RefCountedObject {
-  bool complete;
-  ceph::mutex lock = ceph::make_mutex("RefCountedCond::lock");
-  ceph::condition_variable cond;
-  int rval;
-
-  RefCountedCond() : complete(false), rval(0) {}
+struct RefCountedCond : public RefCountedObjectInstance<RefCountedCond> {
+  RefCountedCond() = default;
+  ~RefCountedCond() = default;
 
   int wait() {
     std::unique_lock l(lock);
@@ -109,6 +210,12 @@ struct RefCountedCond : public RefCountedObject {
   void done() {
     done(0);
   }
+
+private:
+  bool complete = false;
+  ceph::mutex lock = ceph::make_mutex("RefCountedCond::lock");
+  ceph::condition_variable cond;
+  int rval = 0;
 };
 
 /**
@@ -173,7 +280,5 @@ static inline void intrusive_ptr_add_ref(const RefCountedObject *p) {
 static inline void intrusive_ptr_release(const RefCountedObject *p) {
   p->put();
 }
-
-using RefCountedPtr = boost::intrusive_ptr<RefCountedObject>;
 
 #endif

@@ -20,7 +20,7 @@
 #include "include/ceph_features.h"
 
 
-class MClientReconnect : public MessageInstance<MClientReconnect> {
+class MClientReconnect : public MessageInstanceSafe<MClientReconnect> {
 public:
   friend factory;
 private:
@@ -30,7 +30,7 @@ public:
   map<inodeno_t, cap_reconnect_t>  caps;   // only head inodes
   vector<ceph_mds_snaprealm_reconnect> realms;
 
-  MClientReconnect() : MessageInstance(CEPH_MSG_CLIENT_RECONNECT, HEAD_VERSION) { }
+  MClientReconnect() : MessageInstanceSafe<MClientReconnect>(CEPH_MSG_CLIENT_RECONNECT, HEAD_VERSION) { }
 private:
   ~MClientReconnect() override {}
 

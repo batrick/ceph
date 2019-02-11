@@ -42,7 +42,7 @@ public:
   bool free_data;
 
   MDataPing()
-    : MessageInstance(MSG_DATA_PING, HEAD_VERSION, COMPAT_VERSION),
+    : MessageInstance<MDataPing>(MSG_DATA_PING, HEAD_VERSION, COMPAT_VERSION),
       mdata_hook(NULL),
       free_data(false)
   {}

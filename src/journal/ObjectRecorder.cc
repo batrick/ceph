@@ -24,15 +24,16 @@ ObjectRecorder::ObjectRecorder(librados::IoCtx &ioctx, const std::string &oid,
                                uint8_t order, uint32_t flush_interval,
                                uint64_t flush_bytes, double flush_age,
                                uint64_t max_in_flight_appends)
-  : RefCountedObject(NULL, 0), m_oid(oid), m_object_number(object_number),
+  : m_oid(oid), m_object_number(object_number),
     m_cct(NULL), m_op_work_queue(work_queue), m_timer(timer),
     m_timer_lock(timer_lock), m_handler(handler), m_order(order),
     m_soft_max_size(1 << m_order), m_flush_interval(flush_interval),
     m_flush_bytes(flush_bytes), m_flush_age(flush_age),
-    m_max_in_flight_appends(max_in_flight_appends), m_flush_handler(this),
+    m_max_in_flight_appends(max_in_flight_appends),
     m_lock(lock), m_append_tid(0), m_pending_bytes(0),
     m_size(0), m_overflowed(false), m_object_closed(false),
     m_in_flight_flushes(false), m_aio_scheduled(false) {
+  m_flush_handler = FlushHandler::create(this);
   m_ioctx.dup(ioctx);
   m_cct = reinterpret_cast<CephContext*>(m_ioctx.cct());
   ceph_assert(m_handler != NULL);
@@ -49,7 +50,7 @@ ObjectRecorder::~ObjectRecorder() {
 bool ObjectRecorder::append_unlock(AppendBuffers &&append_buffers) {
   ceph_assert(m_lock->is_locked());
 
-  FutureImplPtr last_flushed_future;
+  FutureImpl::ref last_flushed_future;
   bool schedule_append = false;
 
   if (m_overflowed) {
@@ -117,13 +118,13 @@ void ObjectRecorder::flush(Context *on_safe) {
   }
 }
 
-void ObjectRecorder::flush(const FutureImplPtr &future) {
+void ObjectRecorder::flush(const FutureImpl::ref &future) {
   ldout(m_cct, 20) << __func__ << ": " << m_oid << " flushing " << *future
                    << dendl;
 
   ceph_assert(m_lock->is_locked());
 
-  if (future->get_flush_handler().get() != &m_flush_handler) {
+  if (future->get_flush_handler() != m_flush_handler) {
     // if we don't own this future, re-issue the flush so that it hits the
     // correct journal object owner
     future->flush();
@@ -212,7 +213,7 @@ bool ObjectRecorder::append(const AppendBuffer &append_buffer,
 
   bool flush_requested = false;
   if (!m_object_closed && !m_overflowed) {
-    flush_requested = append_buffer.first->attach(&m_flush_handler);
+    flush_requested = append_buffer.first->attach(m_flush_handler);
   }
 
   m_append_buffers.push_back(append_buffer);

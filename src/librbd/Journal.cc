@@ -7,6 +7,7 @@
 #include "common/Timer.h"
 #include "common/WorkQueue.h"
 #include "cls/journal/cls_journal_types.h"
+#include "journal/FutureImpl.h"
 #include "journal/Journaler.h"
 #include "journal/Policy.h"
 #include "journal/ReplayEntry.h"

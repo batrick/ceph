@@ -44,11 +44,11 @@ private:
   }
 
   MOSDPGNotify()
-    : MessageInstance(MSG_OSD_PG_NOTIFY, HEAD_VERSION, COMPAT_VERSION) { 
+    : MessageInstance<MOSDPGNotify>(MSG_OSD_PG_NOTIFY, HEAD_VERSION, COMPAT_VERSION) { 
     set_priority(CEPH_MSG_PRIO_HIGH);
   }
   MOSDPGNotify(epoch_t e, vector<pair<pg_notify_t,PastIntervals> >& l)
-    : MessageInstance(MSG_OSD_PG_NOTIFY, HEAD_VERSION, COMPAT_VERSION),
+    : MessageInstance<MOSDPGNotify>(MSG_OSD_PG_NOTIFY, HEAD_VERSION, COMPAT_VERSION),
       epoch(e) {
     pg_list.swap(l);
     set_priority(CEPH_MSG_PRIO_HIGH);
