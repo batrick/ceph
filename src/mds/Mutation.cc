@@ -12,6 +12,9 @@
  * 
  */
 
+#include "messages/MClientRequest.h"
+#include "messages/MMDSSlaveRequest.h"
+
 #include "Mutation.h"
 #include "ScatterLock.h"
 #include "CDir.h"
@@ -484,5 +487,13 @@ MDRequestImpl::More::More()
 }
 
 MDRequestImpl::More::~More()
+{
+}
+
+MDRequestImpl::Params::Params()
+{
+}
+
+MDRequestImpl::Params::~Params()
 {
 }
