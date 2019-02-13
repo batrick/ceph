@@ -29,18 +29,15 @@
 
 class MemStore : public ObjectStore {
 public:
-  struct Object : public RefCountedObject {
+  struct Object : public RefCountedObjectSubTypeSafe<Object> {
     ceph::mutex xattr_mutex{ceph::make_mutex("MemStore::Object::xattr_mutex")};
     ceph::mutex omap_mutex{ceph::make_mutex("MemStore::Object::omap_mutex")};
     map<string,bufferptr> xattr;
     bufferlist omap_header;
     map<string,bufferlist> omap;
 
-    typedef boost::intrusive_ptr<Object> Ref;
-    friend void intrusive_ptr_add_ref(Object *o) { o->get(); }
-    friend void intrusive_ptr_release(Object *o) { o->put(); }
+    using Ref = ref;
 
-    Object() : RefCountedObject(nullptr, 0) {}
     // interface for object data
     virtual size_t get_size() const = 0;
     virtual int read(uint64_t offset, uint64_t len, bufferlist &bl) = 0;
@@ -90,11 +87,13 @@ public:
       }
       f->close_section();
     }
+  protected:
+    Object() = default;
   };
   typedef Object::Ref ObjectRef;
 
   struct PageSetObject;
-  struct Collection : public CollectionImpl {
+  struct Collection : public RefCountedObjectInstanceSafe<Collection, CollectionImpl> {
     int bits = 0;
     CephContext *cct;
     bool use_page_set;
@@ -110,8 +109,6 @@ public:
       ceph::make_mutex("MemStore::Collection::sequencer_mutex")};
 
     typedef boost::intrusive_ptr<Collection> Ref;
-    friend void intrusive_ptr_add_ref(Collection *c) { c->get(); }
-    friend void intrusive_ptr_release(Collection *c) { c->put(); }
 
     ObjectRef create_object() const;
 
@@ -184,8 +181,10 @@ public:
       return true;
     }
 
+  private:
+    friend factory;
     explicit Collection(CephContext *cct, coll_t c)
-      : CollectionImpl(c),
+      : RefCountedObjectInstanceSafe<Collection, CollectionImpl>(c),
 	cct(cct),
 	use_page_set(cct->_conf->memstore_page_set) {}
   };

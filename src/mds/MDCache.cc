@@ -42,10 +42,31 @@
 #include "include/filepath.h"
 #include "include/util.h"
 
+#include "messages/MCacheExpire.h"
 #include "messages/MClientCaps.h"
-
-#include "msg/Message.h"
-#include "msg/Messenger.h"
+#include "messages/MClientQuota.h"
+#include "messages/MClientRequest.h"
+#include "messages/MClientSnap.h"
+#include "messages/MDentryLink.h"
+#include "messages/MDentryUnlink.h"
+#include "messages/MDirUpdate.h"
+#include "messages/MDiscover.h"
+#include "messages/MDiscoverReply.h"
+#include "messages/MGatherCaps.h"
+#include "messages/MGenericMessage.h"
+#include "messages/MInodeFileCaps.h"
+#include "messages/MLock.h"
+#include "messages/MMDSCacheRejoin.h"
+#include "messages/MMDSFindIno.h"
+#include "messages/MMDSFindInoReply.h"
+#include "messages/MMDSFragmentNotify.h"
+#include "messages/MMDSFragmentNotifyAck.h"
+#include "messages/MMDSOpenIno.h"
+#include "messages/MMDSOpenInoReply.h"
+#include "messages/MMDSResolve.h"
+#include "messages/MMDSResolveAck.h"
+#include "messages/MMDSSlaveRequest.h"
+#include "messages/MMDSSnapUpdate.h"
 
 #include "common/MemoryModel.h"
 #include "common/errno.h"
@@ -2004,7 +2025,7 @@ void MDCache::broadcast_quota_to_client(CInode *in, client_t exclude_ct, bool qu
     mds->server->create_quota_realm(in);
 
   for (auto &p : in->client_caps) {
-    Session *session = mds->get_session(p.first);
+    auto&& session = mds->get_session(p.first);
     if (!session ||
 	!session->get_connection() ||
         !session->get_connection()->has_feature(CEPH_FEATURE_MDS_QUOTA))
@@ -3229,7 +3250,7 @@ void MDCache::handle_resolve(const MMDSResolve::const_ref &m)
 	    im.issue_seq = 1;
 	    im.mseq = q->second.mseq;
 
-	    Session *session = mds->sessionmap.get_session(entity_name_t::CLIENT(q->first.v));
+	    auto&& session = mds->sessionmap.get_session(entity_name_t::CLIENT(q->first.v));
 	    if (session)
 	      rejoin_client_map.emplace(q->first, session->info.inst);
 	  }
@@ -4017,7 +4038,7 @@ void MDCache::rejoin_send_rejoins()
 	client_exports[q->first].insert(target);
     }
     for (auto& p : client_exports) {
-      Session *session = mds->sessionmap.get_session(entity_name_t::CLIENT(p.first.v));
+      auto&& session = mds->sessionmap.get_session(entity_name_t::CLIENT(p.first.v));
       for (auto& q : p.second) {
 	auto rejoin =  rejoins[q];
 	rejoin->client_map[p.first] = session->info.inst;
@@ -5122,7 +5143,7 @@ void MDCache::handle_cache_rejoin_ack(const MMDSCacheRejoin::const_ref &ack)
       ceph_assert(r != ex.second.end());
 
       dout(10) << " exporting caps for client." << q->first << " ino " << p->first << dendl;
-      Session *session = mds->sessionmap.get_session(entity_name_t::CLIENT(q->first.v));
+      auto&& session = mds->sessionmap.get_session(entity_name_t::CLIENT(q->first.v));
       if (!session) {
 	dout(10) << " no session for client." << p->first << dendl;
 	ex.second.erase(r);
@@ -5308,7 +5329,7 @@ void MDCache::rejoin_open_ino_finish(inodeno_t ino, int ret)
 
 class C_MDC_RejoinSessionsOpened : public MDCacheLogContext {
 public:
-  map<client_t,pair<Session*,uint64_t> > session_map;
+  map<client_t,pair<Session::ref,uint64_t> > session_map;
   C_MDC_RejoinSessionsOpened(MDCache *c) : MDCacheLogContext(c) {}
   void finish(int r) override {
     ceph_assert(r == 0);
@@ -5316,7 +5337,7 @@ public:
   }
 };
 
-void MDCache::rejoin_open_sessions_finish(map<client_t,pair<Session*,uint64_t> >& session_map)
+void MDCache::rejoin_open_sessions_finish(map<client_t,pair<Session::ref,uint64_t> >& session_map)
 {
   dout(10) << "rejoin_open_sessions_finish" << dendl;
   mds->server->finish_force_open_sessions(session_map);
@@ -5410,7 +5431,7 @@ bool MDCache::process_imported_caps()
 	if (r == rejoin_session_map.end())
 	  continue;
 
-	Session *session = r->second.first;
+	auto session = r->second.first;
 	Capability *cap = in->get_client_cap(q->first);
 	if (!cap) {
 	  cap = in->add_client_cap(q->first, session);
@@ -5443,7 +5464,7 @@ bool MDCache::process_imported_caps()
       }
       ceph_assert(in->is_auth());
       for (auto q = p->second.begin(); q != p->second.end(); ++q) {
-	Session *session;
+	Session::ref session;
 	{
 	  auto r = rejoin_session_map.find(q->first);
 	  session = (r != rejoin_session_map.end() ? r->second.first : nullptr);
@@ -5615,7 +5636,7 @@ void MDCache::send_snaps(map<client_t,MClientSnap::ref>& splits)
   dout(10) << "send_snaps" << dendl;
   
   for (auto &p : splits) {
-    Session *session = mds->sessionmap.get_session(entity_name_t::CLIENT(p.first.v));
+    auto&& session = mds->sessionmap.get_session(entity_name_t::CLIENT(p.first.v));
     if (session) {
       dout(10) << " client." << p.first
 	       << " split " << p.second->head.split
@@ -5687,7 +5708,7 @@ Capability* MDCache::rejoin_import_cap(CInode *in, client_t client, const cap_re
 {
   dout(10) << "rejoin_import_cap for client." << client << " from mds." << frommds
 	   << " on " << *in << dendl;
-  Session *session = mds->sessionmap.get_session(entity_name_t::CLIENT(client.v));
+  auto&& session = mds->sessionmap.get_session(entity_name_t::CLIENT(client.v));
   if (!session) {
     dout(10) << " no session for client." << client << dendl;
     return NULL;
@@ -5713,7 +5734,7 @@ void MDCache::export_remaining_imported_caps()
   for (auto p = cap_imports.begin(); p != cap_imports.end(); ++p) {
     warn_str << " ino " << p->first << "\n";
     for (auto q = p->second.begin(); q != p->second.end(); ++q) {
-      Session *session = mds->sessionmap.get_session(entity_name_t::CLIENT(q->first.v));
+      auto&& session = mds->sessionmap.get_session(entity_name_t::CLIENT(q->first.v));
       if (session) {
 	// mark client caps stale.
 	auto stale = MClientCaps::create(CEPH_CAP_OP_EXPORT, p->first, 0, 0, 0, mds->get_osd_epoch_barrier());
@@ -5739,7 +5760,7 @@ void MDCache::export_remaining_imported_caps()
   }
 }
 
-Capability* MDCache::try_reconnect_cap(CInode *in, Session *session)
+Capability* MDCache::try_reconnect_cap(CInode *in, const Session::ref& session)
 {
   client_t client = session->info.get_client();
   Capability *cap = nullptr;
@@ -5781,7 +5802,7 @@ Capability* MDCache::try_reconnect_cap(CInode *in, Session *session)
 // -------
 // cap imports and delayed snap parent opens
 
-void MDCache::do_cap_import(Session *session, CInode *in, Capability *cap,
+void MDCache::do_cap_import(const Session::ref& session, CInode *in, Capability *cap,
 			    uint64_t p_cap_id, ceph_seq_t p_seq, ceph_seq_t p_mseq,
 			    int peer, int p_flags)
 {
@@ -7958,62 +7979,62 @@ void MDCache::dispatch(const Message::const_ref &m)
 
     // RESOLVE
   case MSG_MDS_RESOLVE:
-    handle_resolve(MMDSResolve::msgref_cast(m));
+    handle_resolve(MMDSResolve::ref_cast(m));
     break;
   case MSG_MDS_RESOLVEACK:
-    handle_resolve_ack(MMDSResolveAck::msgref_cast(m));
+    handle_resolve_ack(MMDSResolveAck::ref_cast(m));
     break;
 
     // REJOIN
   case MSG_MDS_CACHEREJOIN:
-    handle_cache_rejoin(MMDSCacheRejoin::msgref_cast(m));
+    handle_cache_rejoin(MMDSCacheRejoin::ref_cast(m));
     break;
 
   case MSG_MDS_DISCOVER:
-    handle_discover(MDiscover::msgref_cast(m));
+    handle_discover(MDiscover::ref_cast(m));
     break;
   case MSG_MDS_DISCOVERREPLY:
-    handle_discover_reply(MDiscoverReply::msgref_cast(m));
+    handle_discover_reply(MDiscoverReply::ref_cast(m));
     break;
 
   case MSG_MDS_DIRUPDATE:
-    handle_dir_update(MDirUpdate::msgref_cast(m));
+    handle_dir_update(MDirUpdate::ref_cast(m));
     break;
 
   case MSG_MDS_CACHEEXPIRE:
-    handle_cache_expire(MCacheExpire::msgref_cast(m));
+    handle_cache_expire(MCacheExpire::ref_cast(m));
     break;
 
   case MSG_MDS_DENTRYLINK:
-    handle_dentry_link(MDentryLink::msgref_cast(m));
+    handle_dentry_link(MDentryLink::ref_cast(m));
     break;
   case MSG_MDS_DENTRYUNLINK:
-    handle_dentry_unlink(MDentryUnlink::msgref_cast(m));
+    handle_dentry_unlink(MDentryUnlink::ref_cast(m));
     break;
 
   case MSG_MDS_FRAGMENTNOTIFY:
-    handle_fragment_notify(MMDSFragmentNotify::msgref_cast(m));
+    handle_fragment_notify(MMDSFragmentNotify::ref_cast(m));
     break;
   case MSG_MDS_FRAGMENTNOTIFYACK:
-    handle_fragment_notify_ack(MMDSFragmentNotifyAck::msgref_cast(m));
+    handle_fragment_notify_ack(MMDSFragmentNotifyAck::ref_cast(m));
     break;
 
   case MSG_MDS_FINDINO:
-    handle_find_ino(MMDSFindIno::msgref_cast(m));
+    handle_find_ino(MMDSFindIno::ref_cast(m));
     break;
   case MSG_MDS_FINDINOREPLY:
-    handle_find_ino_reply(MMDSFindInoReply::msgref_cast(m));
+    handle_find_ino_reply(MMDSFindInoReply::ref_cast(m));
     break;
 
   case MSG_MDS_OPENINO:
-    handle_open_ino(MMDSOpenIno::msgref_cast(m));
+    handle_open_ino(MMDSOpenIno::ref_cast(m));
     break;
   case MSG_MDS_OPENINOREPLY:
-    handle_open_ino_reply(MMDSOpenInoReply::msgref_cast(m));
+    handle_open_ino_reply(MMDSOpenInoReply::ref_cast(m));
     break;
 
   case MSG_MDS_SNAPUPDATE:
-    handle_snap_update(MMDSSnapUpdate::msgref_cast(m));
+    handle_snap_update(MMDSSnapUpdate::ref_cast(m));
     break;
     
   default:
@@ -9695,7 +9716,7 @@ void MDCache::notify_global_snaprealm_update(int snap_op)
 {
   if (snap_op != CEPH_SNAP_OP_DESTROY)
     snap_op = CEPH_SNAP_OP_UPDATE;
-  set<Session*> sessions;
+  set<Session::ref> sessions;
   mds->sessionmap.get_client_session_set(sessions);
   for (auto &session : sessions) {
     if (!session->is_open() && !session->is_stale())
