@@ -228,9 +228,13 @@ class TestMisc(CephFSTestCase):
     def _run_drop_cache_cmd(self, timeout):
         drop_res = None
         mds_id = self.fs.get_lone_mds_id()
-        drop_res = json.loads(
-            self.fs.mon_manager.raw_cluster_cmd("tell", "mds.{0}".format(mds_id),
-                                                "cache", "drop", str(timeout)))
+        if timeout is not None:
+            r = self.fs.mon_manager.raw_cluster_cmd("tell", "mds.{0}".format(mds_id),
+                                                    "cache", "drop", str(timeout))
+        else:
+            r = self.fs.mon_manager.raw_cluster_cmd("tell", "mds.{0}".format(mds_id),
+                                                    "cache", "drop")
+        drop_res = json.loads(r)
         return drop_res
 
     def _drop_cache_command(self, timeout):
@@ -246,7 +250,7 @@ class TestMisc(CephFSTestCase):
         self.assertTrue(drop_res['client_recall']['return_code'] == 0)
         self.assertTrue(drop_res['flush_journal']['return_code'] == 0)
 
-    def _drop_cache_command_timeout(self, timeout):
+    def _drop_cache_command_timeout(self, timeout=None):
         self.mount_b.umount_wait()
         ls_data = self.fs.mds_asok(['session', 'ls'])
         self.assert_session_count(1, ls_data)
@@ -270,7 +274,7 @@ class TestMisc(CephFSTestCase):
         Basic test for checking drop cache command using tell interface.
         Note that the cache size post trimming is not checked here.
         """
-        self._drop_cache_command(10)
+        self._drop_cache_command()
 
     def test_drop_cache_command_timeout(self):
         """
@@ -278,4 +282,4 @@ class TestMisc(CephFSTestCase):
         interface. Note that the cache size post trimming is not checked
         here.
         """
-        self._drop_cache_command_timeout(5)
+        self._drop_cache_command_timeout(timeout=5)
