@@ -269,11 +269,17 @@ class TestMisc(CephFSTestCase):
         self.mount_a.mount()
         self.mount_a.wait_until_mounted()
 
+    def _config_drop_test(self):
+        # Reduce this so the MDS doesn't recall the maximum for simple tests
+        self.fs.rank_asok(['config', 'set', 'mds_recall_max_caps', "20"])
+        self.fs.rank_asok(['config', 'set', 'mds_recall_max_decay_threshold', "40"])
+
     def test_drop_cache_command(self):
         """
         Basic test for checking drop cache command using tell interface.
         Note that the cache size post trimming is not checked here.
         """
+        self._config_drop_test()
         self._drop_cache_command()
 
     def test_drop_cache_command_timeout(self):
@@ -282,4 +288,5 @@ class TestMisc(CephFSTestCase):
         interface. Note that the cache size post trimming is not checked
         here.
         """
+        self._config_drop_test()
         self._drop_cache_command_timeout(timeout=5)
