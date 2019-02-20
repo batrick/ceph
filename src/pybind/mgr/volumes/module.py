@@ -11,6 +11,8 @@ import orchestrator
 
 from ceph_volume_client import CephFSVolumeClient, VolumePath
 
+from . import Volume, SubVolume
+
 class PurgeJob(object):
     def __init__(self, volume_fscid, subvolume_path):
         """
@@ -120,64 +122,9 @@ class Module(orchestrator.OrchestratorClientMixin, MgrModule):
 
     def _cmd_fs_volume_create(self, inbuf, cmd):
         vol_id = cmd['name']
-        # TODO: validate name against any rules for pool/fs names
-        # (...are there any?)
-
         size = cmd.get('size', None)
 
-        base_name = self._pool_base_name(vol_id)
-        mdp_name, dp_name = self._pool_names(base_name)
-
-        r, outb, outs = self.mon_command({
-            'prefix': 'osd pool create',
-            'pool': mdp_name,
-            'pg_num': 8
-        })
-        if r != 0:
-            return r, outb, outs
-
-        r, outb, outs = self.mon_command({
-            'prefix': 'osd pool create',
-            'pool': dp_name,
-            'pg_num': 8
-        })
-        if r != 0:
-            return r, outb, outs
-
-        # Create a filesystem
-        # ====================
-        r, outb, outs = self.mon_command({
-            'prefix': 'fs new',
-            'fs_name': vol_id,
-            'metadata': mdp_name,
-            'data': dp_name
-        })
-
-        if r != 0:
-            self.log.error("Filesystem creation error: {0} {1} {2}".format(
-                r, outb, outs
-            ))
-            return r, outb, outs
-
-        # TODO: apply quotas to the filesystem root
-
-        # Create an MDS cluster
-        # =====================
-        spec = orchestrator.StatelessServiceSpec()
-        spec.name = vol_id
-        try:
-            completion = self.add_stateless_service("mds", spec)
-            self._orchestrator_wait([completion])
-            orchestrator.raise_if_exception(completion)
-        except (ImportError, orchestrator.OrchestratorError):
-            return 0, "", "Volume created successfully (no MDS daemons created)"
-        except Exception as e:
-            # Don't let detailed orchestrator exceptions (python backtraces)
-            # bubble out to the user
-            self.log.exception("Failed to create MDS daemons")
-            return -errno.EINVAL, "", str(e)
-
-        return 0, "", ""
+        vindex.create(vol_id, size=size)
 
     def _volume_get_fs(self, vol_name):
         fs_map = self.get('fs_map')
@@ -244,6 +191,7 @@ class Module(orchestrator.OrchestratorClientMixin, MgrModule):
 
     def _cmd_fs_volume_rm(self, inbuf, cmd):
         vol_name = cmd['vol_name']
+        return vindex.rm(vol_name)
 
         # Tear down MDS daemons
         # =====================
