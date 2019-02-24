@@ -1408,6 +1408,35 @@ int MDSMonitor::filesystem_command(
     }
 
     r = 0;
+  } else if (prefix == "mds frozen") {
+    std::string who;
+    cmd_getval(g_ceph_context, cmdmap, "role_or_gid", who);
+    mds_gid_t gid = gid_from_arg(fsmap, who, ss);
+    if (gid == MDS_GID_NONE) {
+      return -EINVAL;
+    }
+
+    bool frozen = false;
+    {
+      std::string str;
+      cmd_getval(g_ceph_context, cmdmap, "is_frozen", str);
+      if ((r = parse_bool(str, &frozen, ss)) != 0) {
+        return r;
+      }
+    }
+
+    auto f = [frozen,gid,&ss](auto& info) {
+      if (frozen) {
+        ss << "freezing mds." << gid;
+        info.freeze();
+      } else {
+        ss << "unfreezing mds." << gid;
+        info.unfreeze();
+      }
+    };
+    fsmap.modify_daemon(gid, f);
+    r = 0;
+    return 0;
   } else {
     return -ENOSYS;
   }
@@ -1782,6 +1811,11 @@ void MDSMonitor::maybe_replace_gid(FSMap &fsmap, mds_gid_t gid,
 {
   ceph_assert(mds_propose != nullptr);
   ceph_assert(osd_propose != nullptr);
+
+  if (info.is_frozen()) {
+    dout(20) << "skipping replacement for frozen mds." << gid << dendl;
+    return;
+  }
 
   const auto fscid = fsmap.mds_roles.at(gid);
 
