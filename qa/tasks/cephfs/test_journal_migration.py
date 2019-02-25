@@ -24,8 +24,7 @@ class TestJournalMigration(CephFSTestCase):
         # Enable standby replay, to cover the bug case #8811 where
         # a standby replay might mistakenly end up trying to rewrite
         # the journal at the same time as an active daemon.
-        self.fs.set_ceph_conf('mds', 'mds standby replay', "true")
-        self.fs.set_ceph_conf('mds', 'mds standby for rank', "0")
+        self.fs.set_allow_standby_replay(True)
 
         # Create a filesystem using the older journal format.
         self.fs.set_ceph_conf('mds', 'mds journal format', old_journal_version)
