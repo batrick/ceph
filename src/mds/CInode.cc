@@ -1560,8 +1560,7 @@ void CInode::encode_lock_state(int type, bufferlist& bl)
 
       // also specify which frags are mine
       set<frag_t> myfrags;
-      list<CDir*> dfls;
-      get_dirfrags(dfls);
+      auto&& dfls = get_dirfrags();
       for (const auto& dir : dfls) {
 	if (dir->is_auth()) {
 	  frag_t fg = dir->get_frag();
@@ -4624,8 +4623,7 @@ void CInode::dump(Formatter *f, int flags) const
 
   if (flags & DUMP_DIRFRAGS) {
     f->open_array_section("dirfrags");
-    list<CDir*> dfs;
-    get_dirfrags(dfs);
+    auto&& dfs = get_dirfrags();
     for(const auto &dir: dfs) {
       f->open_object_section("dir");
       dir->dump(f, CDir::DUMP_DEFAULT | CDir::DUMP_ITEMS);
@@ -4922,6 +4920,28 @@ bool CInode::is_exportable(mds_rank_t dest) const
   } else {
     return true;
   }
+}
+
+std::vector<CDir*> CInode::get_nested_dirfrags() const
+{
+  std::vector<CDir*> result;
+  for (const auto &p : dirfrags) {
+    const auto& dir = p.second;
+    if (!dir->is_subtree_root())
+      result.push_back(dir);
+  }
+  return result;
+}
+
+std::vector<CDir*> CInode::get_subtree_dirfrags() const
+{
+  std::vector<CDir*> result;
+  for (const auto &p : dirfrags) {
+    const auto& dir = p.second;
+    if (dir->is_subtree_root())
+      result.push_back(dir);
+  }
+  return result;
 }
 
 MEMPOOL_DEFINE_OBJECT_FACTORY(CInode, co_inode, mds_co);
