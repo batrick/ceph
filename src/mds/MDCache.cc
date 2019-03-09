@@ -2997,7 +2997,7 @@ void MDCache::handle_mds_failure(mds_rank_t who)
 
     ++p;
     dout(10) << "cancelling fragment " << df << " bit " << info.bits << dendl;
-    list<CDir*> dirs;
+    std::vector<CDir*> dirs;
     info.dirs.swap(dirs);
     fragments.erase(df);
     fragment_unmark_unfreeze_dirs(dirs);
@@ -3036,12 +3036,12 @@ void MDCache::handle_mds_recovery(mds_rank_t who)
     ceph_assert(!dir->is_auth());
    
     // wake any waiters
-    list<CDir*> q;
-    q.push_back(dir);
+    std::queue<CDir*> q;
+    q.push(dir);
 
     while (!q.empty()) {
       CDir *d = q.front();
-      q.pop_front();
+      q.pop();
       d->take_waiting(d_mask, waiters);
 
       // inode waiters too
@@ -3055,7 +3055,7 @@ void MDCache::handle_mds_recovery(mds_rank_t who)
 	  auto&& ls = dnl->get_inode()->get_dirfrags();
 	  for (const auto& subdir : ls) {
 	    if (!subdir->is_subtree_root())
-	      q.push_back(subdir);
+	      q.push(subdir);
 	  }
 	}
       }
@@ -3740,15 +3740,15 @@ void MDCache::recalc_auth_bits(bool replay)
       }
     }
 
-    std::deque<CDir*> dfq;  // dirfrag queue
-    dfq.push_back(p->first);
+    std::queue<CDir*> dfq;  // dirfrag queue
+    dfq.push(p->first);
 
     bool auth = p->first->authority().first == mds->get_nodeid();
     dout(10) << " subtree auth=" << auth << " for " << *p->first << dendl;
 
     while (!dfq.empty()) {
       CDir *dir = dfq.front();
-      dfq.pop_front();
+      dfq.pop();
 
       // dir
       if (auth) {
@@ -3806,7 +3806,7 @@ void MDCache::recalc_auth_bits(bool replay)
 	  if (in->is_dir()) {
 	    auto&& dfv = in->get_nested_dirfrags();
             for (const auto& dir : dfv) {
-              dfq.push_back(dir);
+              dfq.push(dir);
             }
           }
 	}
@@ -5994,12 +5994,12 @@ void MDCache::rejoin_send_acks()
     dout(10) << "subtree " << *dir << dendl;
     
     // auth items in this subtree
-    std::deque<CDir*> dq;
-    dq.push_back(dir);
+    std::queue<CDir*> dq;
+    dq.push(dir);
 
     while (!dq.empty()) {
       CDir *dir = dq.front();
-      dq.pop_front();
+      dq.pop();
       
       // dir
       for (auto &r : dir->get_replicas()) {
@@ -6052,7 +6052,7 @@ void MDCache::rejoin_send_acks()
 	{
           auto&& dirs = in->get_nested_dirfrags();
           for (const auto& dir : dirs) {
-            dq.push_back(dir);
+            dq.push(dir);
           }
         }
       }
@@ -10754,17 +10754,16 @@ void MDCache::handle_dentry_unlink(const MDentryUnlink::const_ref &m)
  * @param bits bit adjustment.  positive for split, negative for merge.
  */
 void MDCache::adjust_dir_fragments(CInode *diri, frag_t basefrag, int bits,
-				   list<CDir*>& resultfrags, 
+				   std::vector<CDir*>* resultfrags,
 				   MDSContext::vec& waiters,
 				   bool replay)
 {
   dout(10) << "adjust_dir_fragments " << basefrag << " " << bits 
 	   << " on " << *diri << dendl;
 
-  list<CDir*> srcfrags;
-  diri->get_dirfrags_under(basefrag, srcfrags);
+  auto&& p = diri->get_dirfrags_under(basefrag);
 
-  adjust_dir_fragments(diri, srcfrags, basefrag, bits, resultfrags, waiters, replay);
+  adjust_dir_fragments(diri, p.second, basefrag, bits, resultfrags, waiters, replay);
 }
 
 CDir *MDCache::force_dir_fragment(CInode *diri, frag_t fg, bool replay)
@@ -10775,7 +10774,7 @@ CDir *MDCache::force_dir_fragment(CInode *diri, frag_t fg, bool replay)
 
   dout(10) << "force_dir_fragment " << fg << " on " << *diri << dendl;
 
-  list<CDir*> src, result;
+  std::vector<CDir*> src, result;
   MDSContext::vec waiters;
 
   // split a parent?
@@ -10786,7 +10785,7 @@ CDir *MDCache::force_dir_fragment(CInode *diri, frag_t fg, bool replay)
       int split = fg.bits() - parent.bits();
       dout(10) << " splitting parent by " << split << " " << *pdir << dendl;
       src.push_back(pdir);
-      adjust_dir_fragments(diri, src, parent, split, result, waiters, replay);
+      adjust_dir_fragments(diri, src, parent, split, &result, waiters, replay);
       dir = diri->get_dirfrag(fg);
       if (dir) {
 	dout(10) << "force_dir_fragment result " << *dir << dendl;
@@ -10802,12 +10801,15 @@ CDir *MDCache::force_dir_fragment(CInode *diri, frag_t fg, bool replay)
 
   if (!dir) {
     // hoover up things under fg?
-    diri->get_dirfrags_under(fg, src);
+    {
+      auto&& p = diri->get_dirfrags_under(fg);
+      src.insert(std::end(src), std::cbegin(p.second), std::cend(p.second));
+    }
     if (src.empty()) {
       dout(10) << "force_dir_fragment no frags under " << fg << dendl;
     } else {
       dout(10) << " will combine frags under " << fg << ": " << src << dendl;
-      adjust_dir_fragments(diri, src, fg, 0, result, waiters, replay);
+      adjust_dir_fragments(diri, src, fg, 0, &result, waiters, replay);
       dir = result.front();
       dout(10) << "force_dir_fragment result " << *dir << dendl;
     }
@@ -10818,9 +10820,9 @@ CDir *MDCache::force_dir_fragment(CInode *diri, frag_t fg, bool replay)
 }
 
 void MDCache::adjust_dir_fragments(CInode *diri,
-				   list<CDir*>& srcfrags,
+				   const std::vector<CDir*>& srcfrags,
 				   frag_t basefrag, int bits,
-				   list<CDir*>& resultfrags, 
+				   std::vector<CDir*>* resultfrags,
 				   MDSContext::vec& waiters,
 				   bool replay)
 {
@@ -10846,6 +10848,7 @@ void MDCache::adjust_dir_fragments(CInode *diri,
   if (parent_dir)
     parent_subtree = get_subtree_root(parent_dir);
 
+  ceph_assert(srcfrags.size() >= 1);
   if (bits > 0) {
     // SPLIT
     ceph_assert(srcfrags.size() == 1);
@@ -10856,7 +10859,7 @@ void MDCache::adjust_dir_fragments(CInode *diri,
     // did i change the subtree map?
     if (dir->is_subtree_root()) {
       // new frags are now separate subtrees
-      for (const auto& dir : resultfrags) {
+      for (const auto& dir : *resultfrags) {
 	subtrees[dir].clear();   // new frag is now its own subtree
       }
       
@@ -10864,7 +10867,7 @@ void MDCache::adjust_dir_fragments(CInode *diri,
       if (parent_subtree) {
 	ceph_assert(subtrees[parent_subtree].count(dir));
 	subtrees[parent_subtree].erase(dir);
-	for (const auto& dir : resultfrags) {
+	for (const auto& dir : *resultfrags) {
 	  ceph_assert(dir->is_subtree_root());
 	  subtrees[parent_subtree].insert(dir);
 	}
@@ -10892,7 +10895,7 @@ void MDCache::adjust_dir_fragments(CInode *diri,
     // are my constituent bits subtrees?  if so, i will be too.
     // (it's all or none, actually.)
     bool any_subtree = false, any_non_subtree = false;
-    for (CDir *dir : srcfrags) {
+    for (const auto& dir : srcfrags) {
       if (dir->is_subtree_root())
 	any_subtree = true;
       else
@@ -10902,7 +10905,7 @@ void MDCache::adjust_dir_fragments(CInode *diri,
 
     set<CDir*> new_bounds;
     if (any_subtree)  {
-      for (CDir *dir : srcfrags) {
+      for (const auto& dir : srcfrags) {
 	// this simplifies the code that find subtrees underneath the dirfrag
 	if (!dir->is_subtree_root()) {
 	  dir->state_set(CDir::STATE_AUXSUBTREE);
@@ -10910,7 +10913,7 @@ void MDCache::adjust_dir_fragments(CInode *diri,
 	}
       }
 
-      for (CDir *dir : srcfrags) {
+      for (const auto& dir : srcfrags) {
 	ceph_assert(dir->is_subtree_root());
 	dout(10) << " taking srcfrag subtree bounds from " << *dir << dendl;
 	map<CDir*, set<CDir*> >::iterator q = subtrees.find(dir);
@@ -10940,7 +10943,7 @@ void MDCache::adjust_dir_fragments(CInode *diri,
       show_subtrees(10);
     }
 
-    resultfrags.push_back(f);
+    resultfrags->push_back(f);
   }
 }
 
@@ -10956,7 +10959,7 @@ public:
   }
 };
 
-bool MDCache::can_fragment(CInode *diri, list<CDir*>& dirs)
+bool MDCache::can_fragment(CInode *diri, const std::vector<CDir*>& dirs)
 {
   if (is_readonly()) {
     dout(7) << "can_fragment: read-only FS, no fragmenting for now" << dendl;
@@ -11010,7 +11013,7 @@ void MDCache::split_dir(CDir *dir, int bits)
   ceph_assert(dir->is_auth());
   CInode *diri = dir->inode;
 
-  list<CDir*> dirs;
+  std::vector<CDir*> dirs;
   dirs.push_back(dir);
 
   if (!can_fragment(diri, dirs)) {
@@ -11042,8 +11045,8 @@ void MDCache::merge_dir(CInode *diri, frag_t frag)
 {
   dout(7) << "merge_dir to " << frag << " on " << *diri << dendl;
 
-  list<CDir*> dirs;
-  if (!diri->get_dirfrags_under(frag, dirs)) {
+  auto&& [all, dirs] = diri->get_dirfrags_under(frag);
+  if (!all) {
     dout(7) << "don't have all frags under " << frag << " for " << *diri << dendl;
     return;
   }
@@ -11076,10 +11079,10 @@ void MDCache::merge_dir(CInode *diri, frag_t frag)
   fragment_mark_and_complete(mdr);
 }
 
-void MDCache::fragment_freeze_dirs(list<CDir*>& dirs)
+void MDCache::fragment_freeze_dirs(const std::vector<CDir*>& dirs)
 {
   bool any_subtree = false, any_non_subtree = false;
-  for (CDir* dir : dirs) {
+  for (const auto& dir : dirs) {
     dir->auth_pin(dir);  // until we mark and complete them
     dir->state_set(CDir::STATE_FRAGMENTING);
     dir->freeze_dir();
@@ -11093,7 +11096,7 @@ void MDCache::fragment_freeze_dirs(list<CDir*>& dirs)
 
   if (any_subtree && any_non_subtree) {
     // either all dirfrags are subtree roots or all are not.
-    for (CDir *dir : dirs) {
+    for (const auto& dir : dirs) {
       if (dir->is_subtree_root()) {
 	ceph_assert(dir->state_test(CDir::STATE_AUXSUBTREE));
       } else {
@@ -11190,7 +11193,7 @@ void MDCache::fragment_mark_and_complete(MDRequestRef& mdr)
   fragment_frozen(mdr, 0);
 }
 
-void MDCache::fragment_unmark_unfreeze_dirs(list<CDir*>& dirs)
+void MDCache::fragment_unmark_unfreeze_dirs(const std::vector<CDir*>& dirs)
 {
   dout(10) << "fragment_unmark_unfreeze_dirs " << dirs << dendl;
   for (const auto& dir : dirs) {
@@ -11284,7 +11287,7 @@ void MDCache::find_stale_fragment_freeze()
     if (info.num_remote_waiters > 0 ||
 	(!dir->inode->is_root() && dir->get_parent_dir()->is_freezing())) {
       dout(10) << " cancel fragmenting " << df << " bit " << info.bits << dendl;
-      list<CDir*> dirs;
+      std::vector<CDir*> dirs;
       info.dirs.swap(dirs);
       fragments.erase(df);
       fragment_unmark_unfreeze_dirs(dirs);
@@ -11409,7 +11412,7 @@ void MDCache::dispatch_fragment_dir(MDRequestRef& mdr)
   // refragment
   MDSContext::vec waiters;
   adjust_dir_fragments(diri, info.dirs, basedirfrag.frag, info.bits,
-		       info.resultfrags, waiters, false);
+		       &info.resultfrags, waiters, false);
   if (g_conf()->mds_debug_frag)
     diri->verify_dirfrags();
   mds->queue_waiters(waiters);
@@ -11417,7 +11420,7 @@ void MDCache::dispatch_fragment_dir(MDRequestRef& mdr)
   for (const auto& fg : le->orig_frags)
     ceph_assert(!diri->dirfragtree.is_leaf(fg));
 
-  le->metablob.add_dir_context(*info.resultfrags.begin());
+  le->metablob.add_dir_context(info.resultfrags.front());
   for (const auto& dir : info.resultfrags) {
     if (diri->is_auth()) {
       le->metablob.add_fragmented_dir(dir, false, false);
@@ -11710,8 +11713,8 @@ void MDCache::handle_fragment_notify(const MMDSFragmentNotify::const_ref &notify
 
     // refragment
     MDSContext::vec waiters;
-    list<CDir*> resultfrags;
-    adjust_dir_fragments(diri, base, bits, resultfrags, waiters, false);
+    std::vector<CDir*> resultfrags;
+    adjust_dir_fragments(diri, base, bits, &resultfrags, waiters, false);
     if (g_conf()->mds_debug_frag)
       diri->verify_dirfrags();
     
@@ -11809,11 +11812,11 @@ void MDCache::rollback_uncommitted_fragments()
     frag_vec_t old_frags;
     diri->dirfragtree.get_leaves_under(p->first.frag, old_frags);
 
-    list<CDir*> resultfrags;
+    std::vector<CDir*> resultfrags;
     if (uf.old_frags.empty()) {
       // created by old format EFragment
       MDSContext::vec waiters;
-      adjust_dir_fragments(diri, p->first.frag, -uf.bits, resultfrags, waiters, true);
+      adjust_dir_fragments(diri, p->first.frag, -uf.bits, &resultfrags, waiters, true);
     } else {
       auto bp = uf.rollback.cbegin();
       for (const auto& fg : uf.old_frags) {
