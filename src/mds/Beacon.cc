@@ -25,6 +25,8 @@
 #include "mds/MDSMap.h"
 #include "mds/Locker.h"
 
+#include "messages/MMDSBeacon.h"
+
 #include "Beacon.h"
 
 #include <chrono>
@@ -101,7 +103,7 @@ bool Beacon::ms_dispatch2(const Message::ref& m)
 {
   if (m->get_type() == MSG_MDS_BEACON) {
     if (m->get_connection()->get_peer_type() == CEPH_ENTITY_TYPE_MON) {
-      handle_mds_beacon(MMDSBeacon::msgref_cast(m));
+      handle_mds_beacon(MMDSBeacon::ref_cast(m));
     }
     return true;
   }
@@ -330,8 +332,8 @@ void Beacon::notify_health(MDSRank const *mds)
       // client_t is equivalent to session.info.inst.name.num
       // Construct an entity_name_t to lookup into SessionMap
       entity_name_t ename(CEPH_ENTITY_TYPE_CLIENT, i->v);
-      Session const *s = mds->sessionmap.get_session(ename);
-      if (s == NULL) {
+      auto&& s = mds->sessionmap.get_session(ename);
+      if (!s) {
         // Shouldn't happen, but not worth crashing if it does as this is
         // just health-reporting code.
         derr << "Client ID without session: " << i->v << dendl;
@@ -363,7 +365,7 @@ void Beacon::notify_health(MDSRank const *mds)
   //
   // Detect clients failing to advance their old_client_tid
   {
-    set<Session*> sessions;
+    set<Session::ref> sessions;
     mds->sessionmap.get_client_session_set(sessions);
 
     const auto recall_warning_threshold = g_conf().get_val<Option::size_t>("mds_recall_warning_threshold");

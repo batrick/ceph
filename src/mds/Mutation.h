@@ -24,17 +24,15 @@
 
 #include "SimpleLock.h"
 #include "Capability.h"
+#include "SessionRef.h"
 
 #include "common/TrackedOp.h"
-#include "messages/MClientRequest.h"
-#include "messages/MMDSSlaveRequest.h"
 
 class LogSegment;
 class Capability;
 class CInode;
 class CDir;
 class CDentry;
-class Session;
 class ScatterLock;
 struct sr_t;
 
@@ -235,22 +233,22 @@ typedef boost::intrusive_ptr<MutationImpl> MutationRef;
  * the request is finished or forwarded.  see request_*().
  */
 struct MDRequestImpl : public MutationImpl {
-  Session *session;
+  SessionRef session;
   elist<MDRequestImpl*>::item item_session_request;  // if not on list, op is aborted.
 
   // -- i am a client (master) request
-  MClientRequest::const_ref client_request; // client request (if any)
+  ceph::cref_t<MClientRequest> client_request; // client request (if any)
 
   // store up to two sets of dn vectors, inode pointers, for request path1 and path2.
   vector<CDentry*> dn[2];
-  CDentry *straydn;
-  CInode *in[2];
-  snapid_t snapid;
+  CDentry *straydn = nullptr;
+  std::array<CInode *, 2> in = {};
+  snapid_t snapid = CEPH_NOSNAP;
 
-  CInode *tracei;
-  CDentry *tracedn;
+  CInode *tracei = nullptr;
+  CDentry *tracedn = nullptr;
 
-  inodeno_t alloc_ino, used_prealloc_ino;  
+  inodeno_t alloc_ino = 0, used_prealloc_ino = 0;
   interval_set<inodeno_t> prealloc_inos;
 
   int snap_caps = 0;
@@ -266,18 +264,18 @@ struct MDRequestImpl : public MutationImpl {
   map<vinodeno_t, ceph_seq_t> cap_releases;  
 
   // -- i am a slave request
-  MMDSSlaveRequest::const_ref slave_request; // slave request (if one is pending; implies slave == true)
+  ceph::cref_t<MMDSSlaveRequest> slave_request; // slave request (if one is pending; implies slave == true)
 
   // -- i am an internal op
   int internal_op;
-  Context *internal_op_finish;
-  void *internal_op_private;
+  Context *internal_op_finish = nullptr;
+  void *internal_op_private = nullptr;
 
   // indicates how may retries of request have been made
-  int retry;
+  int retry = 0;
 
   // indicator for vxattr osdmap update
-  bool waited_for_osdmap;
+  bool waited_for_osdmap = false;
 
   // break rarely-used fields into a separately allocated structure 
   // to save memory for most ops
@@ -305,7 +303,7 @@ struct MDRequestImpl : public MutationImpl {
     bool is_remote_frozen_authpin = false;
     bool is_inode_exporter = false;
 
-    map<client_t, pair<Session*, uint64_t> > imported_session_map;
+    map<client_t, pair<SessionRef, uint64_t> > imported_session_map;
     map<CInode*, map<client_t,Capability::Export> > cap_imports;
     
     // for lock/flock
@@ -332,22 +330,24 @@ struct MDRequestImpl : public MutationImpl {
     filepath filepath1;
     filepath filepath2;
 
-    More() {}
-  } *_more;
-
+    More();
+    ~More();
+  };
+  std::unique_ptr<More> _more;
 
   // ---------------------------------------------------
   struct Params {
     metareqid_t reqid;
-    __u32 attempt;
-    MClientRequest::const_ref client_req;
-    Message::const_ref triggering_slave_req;
-    mds_rank_t slave_to;
+    __u32 attempt = 0;
+    ceph::cref_t<MClientRequest> client_req;
+    ceph::cref_t<Message> triggering_slave_req;
+    mds_rank_t slave_to = MDS_RANK_NONE;
     utime_t initiated;
     utime_t throttled, all_read, dispatched;
-    int internal_op;
+    int internal_op = -1;
     // keep these default values synced to MutationImpl's
-    Params() : attempt(0), slave_to(MDS_RANK_NONE), internal_op(-1) {}
+    Params();
+    ~Params();
     const utime_t& get_recv_stamp() const {
       return initiated;
     }
@@ -361,18 +361,7 @@ struct MDRequestImpl : public MutationImpl {
       return dispatched;
     }
   };
-  MDRequestImpl(const Params* params, OpTracker *tracker) :
-    MutationImpl(tracker, params->initiated,
-		 params->reqid, params->attempt, params->slave_to),
-    session(NULL), item_session_request(this),
-    client_request(params->client_req), straydn(NULL), snapid(CEPH_NOSNAP),
-    tracei(NULL), tracedn(NULL), alloc_ino(0), used_prealloc_ino(0),
-    internal_op(params->internal_op), internal_op_finish(NULL),
-    internal_op_private(NULL),
-    retry(0),
-    waited_for_osdmap(false), _more(NULL) {
-    in[0] = in[1] = NULL;
-  }
+  MDRequestImpl(const Params* params, OpTracker *tracker);
   ~MDRequestImpl() override;
   
   More* more();
@@ -397,8 +386,8 @@ struct MDRequestImpl : public MutationImpl {
   void print(ostream &out) const override;
   void dump(Formatter *f) const override;
 
-  MClientRequest::const_ref release_client_request();
-  void reset_slave_request(const MMDSSlaveRequest::const_ref& req=nullptr);
+  ceph::cref_t<MClientRequest> release_client_request();
+  void reset_slave_request(const ceph::cref_t<MMDSSlaveRequest>& req=nullptr);
 
   // TrackedOp stuff
   typedef boost::intrusive_ptr<MDRequestImpl> Ref;

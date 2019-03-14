@@ -18,8 +18,10 @@
 
 #include "msg/Message.h"
 
+#include "mds/mdstypes.h"
+#include "include/cephfs/libcephfs.h"
 
-class MExportCaps : public MessageInstance<MExportCaps> {
+class MExportCaps : public MessageInstanceSafe<MExportCaps> {
 public:
   friend factory;
 private:
@@ -33,7 +35,7 @@ public:
 
 protected:
   MExportCaps() :
-    MessageInstance(MSG_MDS_EXPORTCAPS, HEAD_VERSION, COMPAT_VERSION) {}
+    MessageInstanceSafe<MExportCaps>(MSG_MDS_EXPORTCAPS, HEAD_VERSION, COMPAT_VERSION) {}
   ~MExportCaps() override {}
 
 public:

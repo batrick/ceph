@@ -50,7 +50,7 @@ SimpleMessenger::SimpleMessenger(CephContext *cct, entity_name_t name,
     cluster_protocol(0),
     reaper_started(false), reaper_stop(false),
     timeout(0),
-    local_connection(new PipeConnection(cct, this))
+    local_connection(PipeConnection::create(cct, this))
 {
   ANNOTATE_BENIGN_RACE_SIZED(&timeout, sizeof(timeout),
                              "SimpleMessenger read timeout");
