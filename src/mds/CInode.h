@@ -28,6 +28,7 @@
 #include "include/types.h"
 #include "include/lru.h"
 #include "include/compact_set.h"
+#include "msg/MessageRef.h"
 
 #include "MDSCacheObject.h"
 #include "MDSContext.h"
@@ -38,10 +39,9 @@
 #include "ScatterLock.h"
 #include "LocalLock.h"
 #include "Capability.h"
+#include "SessionRef.h"
 #include "SnapRealm.h"
 #include "Mutation.h"
-
-#include "messages/MClientCaps.h"
 
 #define dout_context g_ceph_context
 
@@ -51,7 +51,6 @@ class CInode;
 class MDCache;
 class LogSegment;
 struct SnapRealm;
-class Session;
 struct ObjectOperation;
 class EMetaBlob;
 
@@ -892,10 +891,10 @@ public:
   
 
   // for giving to clients
-  int encode_inodestat(bufferlist& bl, Session *session, SnapRealm *realm,
+  int encode_inodestat(bufferlist& bl, const SessionRef& session, SnapRealm *realm,
 		       snapid_t snapid=CEPH_NOSNAP, unsigned max_bytes=0,
 		       int getattr_wants=0);
-  void encode_cap_message(const MClientCaps::ref &m, Capability *cap);
+  void encode_cap_message(const ceph::ref_t<MClientCaps>& m, Capability *cap);
 
 
   // -- locks --
@@ -1032,11 +1031,11 @@ public:
   int get_num_caps_wanted() const { return num_caps_wanted; }
   void adjust_num_caps_wanted(int d);
 
-  Capability *add_client_cap(client_t client, Session *session, SnapRealm *conrealm=0);
+  Capability *add_client_cap(client_t client, const SessionRef& session, SnapRealm *conrealm=0);
   void remove_client_cap(client_t client);
   void move_to_realm(SnapRealm *realm);
 
-  Capability *reconnect_cap(client_t client, const cap_reconnect_t& icr, Session *session);
+  Capability *reconnect_cap(client_t client, const cap_reconnect_t& icr, const SessionRef& session);
   void clear_client_caps_after_export();
   void export_client_caps(std::map<client_t,Capability::Export>& cl);
 
@@ -1046,7 +1045,7 @@ public:
   int get_caps_allowed_by_type(int type) const;
   int get_caps_careful() const;
   int get_xlocker_mask(client_t client) const;
-  int get_caps_allowed_for_client(Session *s, mempool_inode *file_i) const;
+  int get_caps_allowed_for_client(const SessionRef& s, mempool_inode *file_i) const;
 
   // caps issued, wanted
   int get_caps_issued(int *ploner = 0, int *pother = 0, int *pxlocker = 0,

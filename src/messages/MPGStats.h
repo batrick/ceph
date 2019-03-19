@@ -31,9 +31,9 @@ public:
   epoch_t epoch = 0;
   utime_t had_map_for;
   
-  MPGStats() : MessageInstance(MSG_PGSTATS, 0, HEAD_VERSION, COMPAT_VERSION) {}
+  MPGStats() : MessageInstance<MPGStats, PaxosServiceMessage>(MSG_PGSTATS, 0, HEAD_VERSION, COMPAT_VERSION) {}
   MPGStats(const uuid_d& f, epoch_t e, utime_t had)
-    : MessageInstance(MSG_PGSTATS, 0, HEAD_VERSION, COMPAT_VERSION),
+    : MessageInstance<MPGStats, PaxosServiceMessage>(MSG_PGSTATS, 0, HEAD_VERSION, COMPAT_VERSION),
       fsid(f),
       epoch(e),
       had_map_for(had)
