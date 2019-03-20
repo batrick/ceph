@@ -211,7 +211,7 @@ private:
    * @param dest_type The peer type of the address we're sending to
    * just drop silently under failure.
    */
-  void submit_message(Message *m, AsyncConnectionRef con,
+  void submit_message(Message *m, const AsyncConnectionRef& con,
                       const entity_addrvec_t& dest_addrs, int dest_type);
 
   void _finish_bind(const entity_addrvec_t& bind_addrs,
@@ -306,7 +306,7 @@ private:
   Cond  stop_cond;
   bool stopped;
 
-  AsyncConnectionRef _lookup_conn(const entity_addrvec_t& k) {
+  const AsyncConnectionRef& _lookup_conn(const entity_addrvec_t& k) {
     ceph_assert(lock.is_locked());
     auto p = conns.find(k);
     if (p == conns.end())
@@ -350,7 +350,7 @@ public:
     return _lookup_conn(k);
   }
 
-  int accept_conn(AsyncConnectionRef conn);
+  int accept_conn(const AsyncConnectionRef& conn);
   bool learned_addr(const entity_addr_t &peer_addr_for_me);
   void add_accept(Worker *w, ConnectedSocket cli_socket,
 		  const entity_addr_t &listen_addr,
