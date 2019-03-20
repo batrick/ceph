@@ -42,7 +42,7 @@ class Messenger;
 class Interceptor;
 #endif
 
-struct Connection : public RefCountedObject {
+struct Connection : public RefCountedObjectSubType<Connection> {
   mutable Mutex lock;
   Messenger *msgr;
   RefCountedPtr priv;
@@ -69,26 +69,9 @@ public:
   Interceptor *interceptor;
 #endif
 
-  friend class boost::intrusive_ptr<Connection>;
   friend class PipeConnection;
 
 public:
-  Connection(CephContext *cct, Messenger *m)
-    // we are managed exclusively by ConnectionRef; make it so you can
-    //   ConnectionRef foo = new Connection;
-    : RefCountedObject(cct, 0),
-      lock("Connection::lock"),
-      msgr(m),
-      peer_type(-1),
-      features(0),
-      failed(false),
-      rx_buffers_version(0) {
-  }
-
-  ~Connection() override {
-    //generic_dout(0) << "~Connection " << this << dendl;
-  }
-
   void set_priv(const RefCountedPtr& o) {
     Mutex::Locker l(lock);
     priv = o;
@@ -245,6 +228,20 @@ public:
     last_keepalive_ack = t;
   }
 
+protected:
+  Connection(CephContext *cct, Messenger *m)
+    : RefCountedObjectSubType<Connection>(cct),
+      lock("Connection::lock"),
+      msgr(m),
+      peer_type(-1),
+      features(0),
+      failed(false),
+      rx_buffers_version(0) {
+  }
+
+  ~Connection() override {
+    //generic_dout(0) << "~Connection " << this << dendl;
+  }
 };
 
 typedef boost::intrusive_ptr<Connection> ConnectionRef;
