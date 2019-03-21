@@ -26,7 +26,7 @@
 #include "Mantle.h"
 
 #include "include/Context.h"
-#include "msg/Messenger.h"
+#include "messages/MHeartbeat.h"
 
 #include <fstream>
 #include <iostream>
@@ -64,7 +64,7 @@ int MDBalancer::proc_message(const Message::const_ref &m)
   switch (m->get_type()) {
 
   case MSG_MDS_HEARTBEAT:
-    handle_heartbeat(MHeartbeat::msgref_cast(m));
+    handle_heartbeat(MHeartbeat::ref_cast(m));
     break;
 
   default:
