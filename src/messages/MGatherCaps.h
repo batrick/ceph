@@ -3,6 +3,7 @@
 
 #include "msg/Message.h"
 
+#include "include/cephfs/libcephfs.h"
 
 class MGatherCaps : public MessageInstance<MGatherCaps> {
 public:
@@ -13,7 +14,7 @@ public:
 
 protected:
   MGatherCaps() :
-    MessageInstance(MSG_MDS_GATHERCAPS) {}
+    MessageInstance<MGatherCaps>(MSG_MDS_GATHERCAPS) {}
   ~MGatherCaps() override {}
 
 public:

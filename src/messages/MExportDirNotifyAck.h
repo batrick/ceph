@@ -17,7 +17,9 @@
 
 #include "msg/Message.h"
 
-class MExportDirNotifyAck : public MessageInstance<MExportDirNotifyAck> {
+#include "mds/mdstypes.h"
+
+class MExportDirNotifyAck : public MessageInstanceSafe<MExportDirNotifyAck> {
 public:
   friend factory;
 private:
@@ -31,7 +33,7 @@ private:
 protected:
   MExportDirNotifyAck() {}
   MExportDirNotifyAck(dirfrag_t df, uint64_t tid, pair<__s32,__s32> na) :
-    MessageInstance(MSG_MDS_EXPORTDIRNOTIFYACK), dirfrag(df), new_auth(na) {
+    MessageInstanceSafe<MExportDirNotifyAck>(MSG_MDS_EXPORTDIRNOTIFYACK), dirfrag(df), new_auth(na) {
     set_tid(tid);
   }
   ~MExportDirNotifyAck() override {}
