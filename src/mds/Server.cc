@@ -1363,7 +1363,13 @@ void Server::update_required_client_features()
   vector<size_t> bits = CEPHFS_FEATURES_MDS_REQUIRED;
 
   int min_compat = mds->mdsmap->get_min_compat_client();
-  if (min_compat >= CEPH_RELEASE_MIMIC)
+  if (min_compat >= CEPH_RELEASE_NAUTILUS) {
+    bits.push_back(CEPHFS_FEATURE_MIMIC);
+    bits.push_back(CEPHFS_FEATURE_REPLY_ENCODING);
+    bits.push_back(CEPHFS_FEATURE_RECLAIM_CLIENT);
+    bits.push_back(CEPHFS_FEATURE_LAZY_CAP_WANTED);
+    bits.push_back(CEPHFS_FEATURE_MULTI_RECONNECT);
+  } else if (min_compat >= CEPH_RELEASE_MIMIC)
     bits.push_back(CEPHFS_FEATURE_MIMIC);
   else if (min_compat >= CEPH_RELEASE_LUMINOUS)
     bits.push_back(CEPHFS_FEATURE_LUMINOUS);

@@ -27,6 +27,8 @@
 #define CEPHFS_FEATURE_RECLAIM_CLIENT	10
 #define CEPHFS_FEATURE_LAZY_CAP_WANTED  11
 #define CEPHFS_FEATURE_MULTI_RECONNECT  12
+/* N.B.: oops, we can't use CEPHFS_FEATURE_NAUTILUS because we didn't add a bit for it. */
+#define CEPHFS_FEATURE_NAUTILUS         Ooops
 
 #define CEPHFS_FEATURES_ALL {		\
   0, 1, 2, 3, 4,			\
