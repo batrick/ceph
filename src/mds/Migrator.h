@@ -20,6 +20,7 @@
 #include "include/types.h"
 
 #include "MDSContext.h"
+#include "SessionRef.h"
 
 #include <map>
 #include <list>
@@ -30,22 +31,6 @@ class MDSRank;
 class CDir;
 class CInode;
 class CDentry;
-class Session;
-
-#include "messages/MExportCaps.h"
-#include "messages/MExportCapsAck.h"
-#include "messages/MExportDir.h"
-#include "messages/MExportDirAck.h"
-#include "messages/MExportDirCancel.h"
-#include "messages/MExportDirDiscover.h"
-#include "messages/MExportDirDiscoverAck.h"
-#include "messages/MExportDirFinish.h"
-#include "messages/MExportDirNotify.h"
-#include "messages/MExportDirNotifyAck.h"
-#include "messages/MExportDirPrep.h"
-#include "messages/MExportDirPrepAck.h"
-#include "messages/MGatherCaps.h"
-
 class EImportStart;
 
 class Migrator {
@@ -152,7 +137,7 @@ protected:
     std::set<mds_rank_t> bystanders;
     std::list<dirfrag_t> bound_ls;
     std::list<ScatterLock*> updated_scatterlocks;
-    std::map<client_t,pair<Session*,uint64_t> > session_map;
+    std::map<client_t,pair<SessionRef,uint64_t> > session_map;
     std::map<CInode*, std::map<client_t,Capability::Export> > peer_exports;
     MutationRef mut;
     import_state_t() : state(0), peer(0), tid(0), mut() {}
@@ -160,9 +145,9 @@ protected:
 
   std::map<dirfrag_t, import_state_t>  import_state;
 
-  void handle_export_discover_ack(const MExportDirDiscoverAck::const_ref &m);
+  void handle_export_discover_ack(const ceph::cref_t<MExportDirDiscoverAck>& m);
   void export_frozen(CDir *dir, uint64_t tid);
-  void handle_export_prep_ack(const MExportDirPrepAck::const_ref &m);
+  void handle_export_prep_ack(const ceph::cref_t<MExportDirPrepAck>& m);
   void export_sessions_flushed(CDir *dir, uint64_t tid);
   void export_go(CDir *dir);
   void export_go_synced(CDir *dir, uint64_t tid);
@@ -170,12 +155,12 @@ protected:
   void export_cancel_finish(export_state_iterator& it);
   void export_reverse(CDir *dir, export_state_t& stat);
   void export_notify_abort(CDir *dir, export_state_t& stat, std::set<CDir*>& bounds);
-  void handle_export_ack(const MExportDirAck::const_ref &m);
+  void handle_export_ack(const ceph::cref_t<MExportDirAck>& m);
   void export_logged_finish(CDir *dir);
-  void handle_export_notify_ack(const MExportDirNotifyAck::const_ref &m);
+  void handle_export_notify_ack(const ceph::cref_t<MExportDirNotifyAck>& m);
   void export_finish(CDir *dir);
 
-  void handle_gather_caps(const MGatherCaps::const_ref &m);
+  void handle_gather_caps(const ceph::cref_t<MGatherCaps>& m);
 
   friend class C_MDC_ExportFreeze;
   friend class C_MDS_ExportFinishLogged;
@@ -187,10 +172,10 @@ protected:
   friend class MigratorLogContext;
 
   // importer
-  void handle_export_discover(const MExportDirDiscover::const_ref &m, bool started=false);
-  void handle_export_cancel(const MExportDirCancel::const_ref &m);
-  void handle_export_prep(const MExportDirPrep::const_ref &m, bool did_assim=false);
-  void handle_export_dir(const MExportDir::const_ref &m);
+  void handle_export_discover(const ceph::cref_t<MExportDirDiscover>& m, bool started=false);
+  void handle_export_cancel(const ceph::cref_t<MExportDirCancel>& m);
+  void handle_export_prep(const ceph::cref_t<MExportDirPrep>& m, bool did_assim=false);
+  void handle_export_dir(const ceph::cref_t<MExportDir>& m);
 
   void import_reverse_discovering(dirfrag_t df);
   void import_reverse_discovered(dirfrag_t df, CInode *diri);
@@ -201,14 +186,14 @@ protected:
   void import_notify_abort(CDir *dir, std::set<CDir*>& bounds);
   void import_notify_finish(CDir *dir, std::set<CDir*>& bounds);
   void import_logged_start(dirfrag_t df, CDir *dir, mds_rank_t from,
-			   std::map<client_t,pair<Session*,uint64_t> >& imported_session_map);
-  void handle_export_finish(const MExportDirFinish::const_ref &m);
+			   std::map<client_t,pair<SessionRef,uint64_t> >& imported_session_map);
+  void handle_export_finish(const ceph::cref_t<MExportDirFinish>& m);
 
-  void handle_export_caps(const MExportCaps::const_ref &m);
-  void handle_export_caps_ack(const MExportCapsAck::const_ref &m);
+  void handle_export_caps(const ceph::cref_t<MExportCaps>& m);
+  void handle_export_caps_ack(const ceph::cref_t<MExportCapsAck>& m);
   void logged_import_caps(CInode *in,
 			  mds_rank_t from,
-			  std::map<client_t,pair<Session*,uint64_t> >& imported_session_map,
+			  std::map<client_t,pair<SessionRef,uint64_t> >& imported_session_map,
 			  std::map<CInode*, std::map<client_t,Capability::Export> >& cap_imports);
 
 
@@ -217,12 +202,12 @@ protected:
   friend class C_M_LoggedImportCaps;
 
   // bystander
-  void handle_export_notify(const MExportDirNotify::const_ref &m);
+  void handle_export_notify(const ceph::cref_t<MExportDirNotify>& m);
 
 
 public:
 
-  void dispatch(const Message::const_ref &);
+  void dispatch(const ceph::cref_t<Message>& );
 
   void show_importing();
   void show_exporting();
@@ -353,7 +338,7 @@ public:
   void decode_import_inode_caps(CInode *in, bool auth_cap, bufferlist::const_iterator &blp,
 				std::map<CInode*, std::map<client_t,Capability::Export> >& cap_imports);
   void finish_import_inode_caps(CInode *in, mds_rank_t from, bool auth_cap,
-				const std::map<client_t,pair<Session*,uint64_t> >& smap,
+				const std::map<client_t,pair<SessionRef,uint64_t> >& smap,
 				const std::map<client_t,Capability::Export> &export_map,
 				std::map<client_t,Capability::Import> &import_map);
   int decode_import_dir(bufferlist::const_iterator& blp,

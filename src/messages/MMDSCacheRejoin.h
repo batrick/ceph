@@ -20,6 +20,7 @@
 #include "msg/Message.h"
 
 #include "include/types.h"
+#include "mds/mdstypes.h"
 
 #include "mds/CInode.h"
 #include "mds/CDir.h"
@@ -27,7 +28,7 @@
 
 // sent from replica to auth
 
-class MMDSCacheRejoin : public MessageInstance<MMDSCacheRejoin> {
+class MMDSCacheRejoin : public MessageInstanceSafe<MMDSCacheRejoin> {
 public:
   friend factory;
 private:
@@ -216,10 +217,10 @@ private:
   
 protected:
   MMDSCacheRejoin() :
-    MessageInstance(MSG_MDS_CACHEREJOIN, HEAD_VERSION, COMPAT_VERSION),
+    MessageInstanceSafe<MMDSCacheRejoin>(MSG_MDS_CACHEREJOIN, HEAD_VERSION, COMPAT_VERSION),
     op(0) {}
   MMDSCacheRejoin(int o) : 
-    MessageInstance(MSG_MDS_CACHEREJOIN, HEAD_VERSION, COMPAT_VERSION),
+    MessageInstanceSafe<MMDSCacheRejoin>(MSG_MDS_CACHEREJOIN, HEAD_VERSION, COMPAT_VERSION),
     op(o) {}
   ~MMDSCacheRejoin() override {}
 
