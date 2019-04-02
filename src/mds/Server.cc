@@ -1366,7 +1366,9 @@ void Server::update_required_client_features()
   static_assert(CEPHFS_CURRENT_RELEASE == CEPH_RELEASE_MAX-1);
 
   int min_compat = mds->mdsmap->get_min_compat_client();
-  if (min_compat >= CEPH_RELEASE_NAUTILUS) {
+  if (min_compat >= CEPH_RELEASE_OCTOPUS)
+    bits.push_back(CEPHFS_FEATURE_OCTOPUS);
+  else if (min_compat >= CEPH_RELEASE_NAUTILUS) {
     bits.push_back(CEPHFS_FEATURE_MIMIC);
     bits.push_back(CEPHFS_FEATURE_REPLY_ENCODING);
     bits.push_back(CEPHFS_FEATURE_RECLAIM_CLIENT);
