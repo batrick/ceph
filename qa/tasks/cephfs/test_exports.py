@@ -157,3 +157,132 @@ class TestExports(CephFSTestCase):
         # Check if rank1 changed (standby tookover?)
         new_rank1 = self.fs.get_rank(rank=1)
         self.assertEqual(rank1['gid'], new_rank1['gid'])
+
+class TestKillPoints(CephFSTestCase):
+    # Two active MDS
+    MDSS_REQUIRED = 2
+
+    init = False
+
+    def _setup_cluster(self):
+        # Set Multi-MDS cluster
+        self.fs.set_max_mds(2)
+
+        self.fs.wait_for_daemons()
+        
+        all_daemons = self.fs.get_daemon_names()
+
+        # Create test data
+        if self.init is False:
+            self._populate_data(8)
+            self.init = True
+
+        return True
+
+    def _populate_data(self, nfiles):
+            size_mb = 8
+            dname = "abc"
+            self.mount_a.run_shell(["mkdir", dname])
+            for i in range(nfiles):
+                fname =dname.join("/").join(str(i)).join(".txt")
+                self.mount_a.write_n_mb(fname, size_mb)
+
+            # Get the list of file to confirm the count of files
+            self.org_files = self.mount_a.ls()
+
+    def _verify_data(self):
+        s1 = set(self.mount_a.ls())
+        s2 = set(self.org_files)
+
+        if s1.isdisjoint(s2):
+            log.error("Directory contents org: %s" %str(org_files))
+            log.error("Directory contents new: %s" %str(out))
+            return False
+
+        log.info("Directory contents matches")
+        return True
+
+    def _run_export_dir(self, importv, exportv):
+        # Wait till all MDS becomes active
+        self.fs.wait_for_daemons()
+
+        # Get all active ranks
+        ranks = self.fs.get_all_mds_rank()
+
+        rank_0 = self.fs.get_rank(rank=0)
+        rank_0_name = rank_0['name']
+
+        killpoint = {}
+        killpoint[0] = ('export', exportv)
+        killpoint[1] = ('import', importv)
+
+        command = ["config", "set", "mds_kill_export_at", str(exportv)]
+        result = self.fs.mds_asok(command, rank_0_name)
+        assert(result["success"])
+
+        command = ["config", "set", "mds_kill_import_at", str(importv)]
+        result = self.fs.mds_asok(command, rank_1_name)
+        assert(result["success"])
+
+        # This should kill either or both MDS process
+        command = ["export", "dir", "/abc", "1"]
+        try:
+            result = self.fs.mds_asok(command, rank_0_name)
+        except Exception as e:
+            log.error(e.__str__())
+
+        active_mds = self.fs.get_active_names()
+        if rank_0_name in active_mds:
+            log.info("MDS %s crashed at type %s killpoint %d"
+                    %(rank_0_name, killpoint[0][0], killpoint[0][1]))
+
+        # Waiting time for monitor to promote replacement for dead MDS
+        grace = int(float(self.fs.get_config("mds_beacon_grace", service_type="mon")))
+
+        #log_active_mds()
+        #log_crashed_mds()
+
+        status = self.fs.wait_for_daemons(timeout=grace*2)
+
+        # Check if rank0 changed (standby tookover?)
+        new_rank_0 = self.fs.get_rank(rank=0)
+        self.assertEqual(rank_0['gid'], new_rank_0['gid'])
+        new_rank_0_name = new_rank_0['name']
+        active_mds = self.fs.get_active_names()
+        if new_rank_0_name in active_mds:
+            log.info("MDS %s active at type %s killpoint %d"
+                    %(new_rank_0_name, killpoint[0][0], killpoint[0][1]))
+
+        status = self.fs.wait_for_daemons(timeout=grace*2)
+
+        active_mds = self.fs.get_active_names()
+        if len(active_mds) != 2:
+            "One or more MDS did not come up"
+            return False
+
+        if not self._verify_data():
+            return False;
+
+        return True
+
+
+    def _run_export(self, importv, exportv):
+        if !(self._run_export_dir(importv, exportv)):
+            log.error("Error for killpoint %d:%d" %(importv, exportv))
+        else:
+            return True
+
+
+def make_test_killpoints(importv, exportv):
+    def test_export_killpoints(self)
+        self.init = False
+        self._setup_cluster()
+        assert(self._run_export(importv, exportv))
+        log.info("Test passed for killpoint (%d, %d)" %importv, %exportv))
+    return test_export_killpoints
+
+for i in range(1, 14):
+    for j in range(1, 14):
+        test_export_killpoints = make_test_killpoints(i, j)
+        setattr(TestKillPoints, "test_export_killpoints_%d_%d" % (i,j), test_export_killpoints)
+
