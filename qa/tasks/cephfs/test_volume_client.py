@@ -14,7 +14,7 @@ class TestVolumeClient(CephFSTestCase):
     # One for looking at the global filesystem, one for being
     # the VolumeClient, two for mounting the created shares
     CLIENTS_REQUIRED = 4
-    py_version = 'python'
+    py_version = 'python3'
 
     def setUp(self):
         CephFSTestCase.setUp(self)
@@ -55,16 +55,8 @@ vc.disconnect()
 
         Both perms and owner are passed directly to chmod.
         """
-        remote.run(
-            args=[
-                'sudo',
-                'python',
-                '-c',
-                'import shutil, sys; shutil.copyfileobj(sys.stdin, file(sys.argv[1], "wb"))',
-                path,
-            ],
-            stdin=data,
-        )
+        remote.run(args=['sudo', 'python3', '-c',
+                         'open("%s", "w").write("""%s""")' % (path, data)])
 
     def _configure_vc_auth(self, mount, id_name):
         """
@@ -707,9 +699,9 @@ vc.disconnect()
         # Check the list of authorized IDs and their access levels.
         if self.py_version == 'python3':
             expected_result = [('guest1', 'rw'), ('guest2', 'r')]
+        # TODO: remove as soon as Python 2 support is deprecated.
         else:
             expected_result = [(u'guest1', u'rw'), (u'guest2', u'r')]
-
         self.assertItemsEqual(str(expected_result), auths)
 
         # Disallow both the auth IDs' access to the volume.
@@ -1000,9 +992,9 @@ vc.disconnect()
         expected_exception = 'rados_OSError'
         output = self._volume_client_python(vc_mount, dedent("""
                     data, version = vc.get_object_and_version("{pool_name}", "{obj_name}")
-                    data += 'm1'
+                    data = str.encode(data.decode() + 'm1')
                     vc.put_object("{pool_name}", "{obj_name}", data)
-                    data += 'm2'
+                    data = str.encode(data.decode() + 'm2')
                     try:
                         vc.put_object_versioned("{pool_name}", "{obj_name}", data, version)
                     except {expected_exception}:
