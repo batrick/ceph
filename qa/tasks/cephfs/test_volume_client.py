@@ -14,11 +14,12 @@ class TestVolumeClient(CephFSTestCase):
     # One for looking at the global filesystem, one for being
     # the VolumeClient, two for mounting the created shares
     CLIENTS_REQUIRED = 4
-    py_version = 'python'
+    py_version = 'python3'
 
     def setUp(self):
         CephFSTestCase.setUp(self)
-        self.py_version = self.ctx.config.get('overrides', {}).get('python', 'python')
+        self.py_version = self.ctx.config.get('overrides', {}).\
+                          get('python', self.py_version)
         log.info("using python version: %s".format(self.py_version))
 
     def _volume_client_python(self, client, script, vol_prefix=None, ns_prefix=None):
@@ -32,6 +33,7 @@ class TestVolumeClient(CephFSTestCase):
 from __future__ import print_function
 from ceph_volume_client import CephFSVolumeClient, VolumePath
 import logging
+from rados import OSError as rados_OSError
 log = logging.getLogger("ceph_volume_client")
 log.addHandler(logging.StreamHandler())
 log.setLevel(logging.DEBUG)
@@ -53,16 +55,8 @@ vc.disconnect()
 
         Both perms and owner are passed directly to chmod.
         """
-        remote.run(
-            args=[
-                'sudo',
-                'python',
-                '-c',
-                'import shutil, sys; shutil.copyfileobj(sys.stdin, file(sys.argv[1], "wb"))',
-                path,
-            ],
-            stdin=data,
-        )
+        remote.run(args=['sudo', 'python3', '-c',
+                         'open("%s", "w").write("""%s""")' % (path, data)])
 
     def _configure_vc_auth(self, mount, id_name):
         """
@@ -686,8 +680,7 @@ vc.disconnect()
             volume_id=volume_id,
         )))
         # Check the list of authorized IDs for the volume.
-        expected_result = None
-        self.assertEqual(str(expected_result), auths)
+        self.assertEqual('None', auths)
 
         # Allow two auth IDs access to the volume.
         auths = self._volume_client_python(volumeclient_mount, dedent("""
@@ -703,12 +696,7 @@ vc.disconnect()
             guest_entity_2=guest_entity_2,
         )))
         # Check the list of authorized IDs and their access levels.
-        if self.py_version == 'python3':
-            expected_result = [('guest1', 'rw'), ('guest2', 'r')]
-        else:
-            expected_result = [(u'guest1', u'rw'), (u'guest2', u'r')]
-
-        self.assertItemsEqual(str(expected_result), auths)
+        self.assertItemsEqual("[('guest1', 'rw'), ('guest2', 'r')]", auths)
 
         # Disallow both the auth IDs' access to the volume.
         auths = self._volume_client_python(volumeclient_mount, dedent("""
@@ -724,8 +712,7 @@ vc.disconnect()
             guest_entity_2=guest_entity_2,
         )))
         # Check the list of authorized IDs for the volume.
-        expected_result = None
-        self.assertItemsEqual(str(expected_result), auths)
+        self.assertEqual('None', auths)
 
     def test_multitenant_volumes(self):
         """
@@ -995,14 +982,19 @@ vc.disconnect()
 
         # Test if put_object_versioned() crosschecks the version of the
         # given object. Being a negative test, an exception is expected.
-        with self.assertRaises(CommandFailedError):
-            self._volume_client_python(vc_mount, dedent("""
-                data, version = vc.get_object_and_version("{pool_name}", "{obj_name}")
-                data += 'm1'
-                vc.put_object("{pool_name}", "{obj_name}", data)
-                data += 'm2'
-                vc.put_object_versioned("{pool_name}", "{obj_name}", data, version)
-            """).format(pool_name=pool_name, obj_name=obj_name))
+        expected_exception = 'rados_OSError'
+        output = self._volume_client_python(vc_mount, dedent("""
+                    data, version = vc.get_object_and_version("{pool_name}", "{obj_name}")
+                    data = str.encode(data.decode() + 'm1')
+                    vc.put_object("{pool_name}", "{obj_name}", data)
+                    data = str.encode(data.decode() + 'm2')
+                    try:
+                        vc.put_object_versioned("{pool_name}", "{obj_name}", data, version)
+                    except {expected_exception}:
+                        print('{expected_exception} raised')
+                """).format(pool_name=pool_name, obj_name=obj_name,
+                            expected_exception=expected_exception))
+        self.assertEqual(expected_exception + ' raised', output)
 
     def test_delete_object(self):
         vc_mount = self.mounts[1]
