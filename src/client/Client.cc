@@ -2067,14 +2067,14 @@ void Client::_close_mds_session(MetaSession *s)
   s->con->send_message2(make_message<MClientSession>(CEPH_SESSION_REQUEST_CLOSE, s->seq));
 }
 
-void Client::_closed_mds_session(MetaSession *s)
+void Client::_closed_mds_session(MetaSession *s, int err)
 {
   ldout(cct, 5) << __func__ << " mds." << s->mds_num << " seq " << s->seq << dendl;
   s->state = MetaSession::STATE_CLOSED;
   s->con->mark_down();
   signal_context_list(s->waiting_for_open);
   mount_cond.Signal();
-  remove_session_caps(s);
+  remove_session_caps(s, err);
   kick_requests_closed(s);
   mds_sessions.erase(s->mds_num);
 }
@@ -2189,6 +2189,11 @@ bool Client::_any_stale_sessions() const
 void Client::_kick_stale_sessions()
 {
   ldout(cct, 1) << __func__ << dendl;
+
+  if (blacklisted) {
+    messenger->client_reset();
+    blacklisted = false;
+  }
 
   for (auto it = mds_sessions.begin(); it != mds_sessions.end(); ) {
     MetaSession &s = it->second;
@@ -2505,7 +2510,6 @@ void Client::handle_osd_map(const MConstRef<MOSDMap>& m)
         return o.get_epoch();
         });
     lderr(cct) << "I was blacklisted at osd epoch " << epoch << dendl;
-    blacklisted = true;
 
     _abort_mds_sessions(-EBLACKLISTED);
 
@@ -2514,6 +2518,12 @@ void Client::handle_osd_map(const MConstRef<MOSDMap>& m)
     // some PGs were inaccessible.
     objecter->op_cancel_writes(-EBLACKLISTED);
 
+    if (cct->_conf.get_val<bool>("client_reconnect_stale")) {
+      // make messenger use new entries
+      messenger->client_reset();
+    } else {
+      blacklisted = true;
+    }
   } else if (blacklisted) {
     // Handle case where we were blacklisted but no longer are
     blacklisted = objecter->with_osdmap([myaddrs](const OSDMap &o){
@@ -4114,7 +4124,7 @@ void Client::remove_all_caps(Inode *in)
     remove_cap(&in->caps.begin()->second, true);
 }
 
-void Client::remove_session_caps(MetaSession *s)
+void Client::remove_session_caps(MetaSession *s, int err)
 {
   ldout(cct, 10) << __func__ << " mds." << s->mds_num << dendl;
 
@@ -4128,6 +4138,7 @@ void Client::remove_session_caps(MetaSession *s)
       in->wanted_max_size = 0;
       in->requested_max_size = 0;
     }
+    auto caps = cap->implemented;
     if (cap->wanted | cap->issued)
       in->flags |= I_CAP_DROPPED;
     remove_cap(cap, false);
@@ -4144,6 +4155,17 @@ void Client::remove_session_caps(MetaSession *s)
       in->mark_caps_clean();
       put_inode(in.get());
     }
+    caps &= CEPH_CAP_FILE_CACHE | CEPH_CAP_FILE_BUFFER;
+    if (err == -EBLACKLISTED &&
+	cct->_conf.get_val<bool>("client_discard_dirty_on_blacklisted") &&
+	caps && !in->caps_issued_mask(caps, true)) {
+      if (in->oset.dirty_or_tx) {
+	lderr(cct) << __func__ << " still has dirty data on " << *in << dendl;
+	in->set_async_err(err);
+      }
+      objectcacher->purge_set(&in->oset);
+    }
+
     signal_cond_list(in->waitfor_caps);
   }
   s->flushing_caps_tids.clear();
@@ -5983,7 +6005,7 @@ void Client::_abort_mds_sessions(int err)
   // Force-close all sessions
   while(!mds_sessions.empty()) {
     auto& session = mds_sessions.begin()->second;
-    _closed_mds_session(&session);
+    _closed_mds_session(&session, err);
   }
 }
 
@@ -9595,9 +9617,11 @@ int64_t Client::_write(Fh *f, int64_t offset, uint64_t size, const char *buf,
 		       in->truncate_size, in->truncate_seq,
 		       &onfinish);
     client_lock.Unlock();
-    onfinish.wait();
+    r = onfinish.wait();
     client_lock.Lock();
     _sync_write_commit(in);
+    if (r < 0)
+      goto done;
   }
 
   // if we get here, write was successful, update client metadata
@@ -13987,8 +14011,7 @@ void Client::ms_handle_remote_reset(Connection *con)
 	case MetaSession::STATE_OPEN:
 	  {
 	    objecter->maybe_request_map(); /* to check if we are blacklisted */
-	    const auto& conf = cct->_conf;
-	    if (conf->client_reconnect_stale) {
+	    if (cct->_conf.get_val<bool>("client_reconnect_stale")) {
 	      ldout(cct, 1) << "reset from mds we were open; close mds session for reconnect" << dendl;
 	      _closed_mds_session(s);
 	    } else {
