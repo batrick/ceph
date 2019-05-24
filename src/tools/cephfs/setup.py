@@ -14,6 +14,7 @@ setup(
         'cephfs',
         'cmd2',
         'colorama',
+        'tox',
     ],
     classifiers=[
         'Development Status :: 3 - Alpha',
