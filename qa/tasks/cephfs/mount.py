@@ -516,6 +516,13 @@ class CephFSMount(object):
         self._kill_background(p)
         self.background_procs.remove(p)
 
+    def send_signal(self, signal):
+        signal = signal.lower()
+        if signal.lower() not in ['sigstop', 'sigcont', 'sigterm', 'sigkill']:
+            raise NotImplementedError
+
+        self.run_shell(['kill', '-{0}'.format(signal), self.get_client_pid()])
+
     def get_global_id(self):
         raise NotImplementedError()
 
