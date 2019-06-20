@@ -127,6 +127,60 @@ class TestVolumes(CephFSTestCase):
         # remove group
         self._fs_cmd("subvolumegroup", "rm", self.volname, group)
 
+    def test_subvolume_group_create_with_desired_data_pool_layout(self):
+        group1 = self._generate_random_group_name()
+        group2 = self._generate_random_group_name()
+
+        # create group
+        self._fs_cmd("subvolumegroup", "create", self.volname, group1)
+        group1_path = os.path.join('volumes', group1)
+
+        default_pool = self.mount_a.getfattr(group1_path, "ceph.dir.layout.pool")
+        new_pool = "new_pool"
+        self.assertNotEqual(default_pool, new_pool)
+
+        # add data pool
+        self.fs.add_data_pool(new_pool)
+
+        # create group specifying the new data pool as its pool layout
+        self._fs_cmd("subvolumegroup", "create", self.volname, group2,
+                     "--pool_layout", new_pool)
+        group2_path = os.path.join('volumes', group2)
+
+        desired_pool = self.mount_a.getfattr(group2_path, "ceph.dir.layout.pool")
+        self.assertEqual(desired_pool, new_pool)
+
+    def test_subvolume_create_with_desired_data_pool_layout_in_group(self):
+        subvol1 = self._generate_random_subvolume_name()
+        subvol2 = self._generate_random_subvolume_name()
+        group = self._generate_random_group_name()
+
+        # create group. this also helps set default pool layout for subvolumes
+        # created within the group.
+        self._fs_cmd("subvolumegroup", "create", self.volname, group)
+
+        # create subvolume in group.
+        self._fs_cmd("subvolume", "create", self.volname, subvol1, "--group_name", group)
+        subvol1_path = self._fs_cmd("subvolume", "getpath", self.volname, subvol1, group)
+
+        # remove leading '/' and trailing whitespaces from subvolume path
+        default_pool = self.mount_a.getfattr(subvol1_path[1:].rstrip(),
+                                             "ceph.dir.layout.pool")
+        new_pool = "new_pool"
+        self.assertNotEqual(default_pool, new_pool)
+
+        # add data pool
+        self.fs.add_data_pool(new_pool)
+
+        # create subvolume specifying the new data pool as its pool layout
+        self._fs_cmd("subvolume", "create", self.volname, subvol2, "--group_name", group,
+                     "--pool_layout", new_pool)
+        subvol2_path = self._fs_cmd("subvolume", "getpath", self.volname, subvol2, group)
+
+        desired_pool = self.mount_a.getfattr(subvol2_path[1:].rstrip(),
+                                             "ceph.dir.layout.pool")
+        self.assertEqual(desired_pool, new_pool)
+
     def test_nonexistent_subvolme_group_rm(self):
         group = "non_existent_group"
 
