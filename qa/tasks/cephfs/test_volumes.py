@@ -1,3 +1,4 @@
+import os
 import json
 import errno
 import random
@@ -126,6 +127,111 @@ class TestVolumes(CephFSTestCase):
 
         # remove group
         self._fs_cmd("subvolumegroup", "rm", self.volname, group)
+
+    def test_subvolume_group_create_with_desired_data_pool_layout(self):
+        group1 = self._generate_random_group_name()
+        group2 = self._generate_random_group_name()
+
+        # create group
+        self._fs_cmd("subvolumegroup", "create", self.volname, group1)
+        group1_path = os.path.join('volumes', group1)
+
+        default_pool = self.mount_a.getfattr(group1_path, "ceph.dir.layout.pool")
+        new_pool = "new_pool"
+        self.assertNotEqual(default_pool, new_pool)
+
+        # add data pool
+        self.fs.add_data_pool(new_pool)
+
+        # create group specifying the new data pool as its pool layout
+        self._fs_cmd("subvolumegroup", "create", self.volname, group2,
+                     "--pool_layout", new_pool)
+        group2_path = os.path.join('volumes', group2)
+
+        desired_pool = self.mount_a.getfattr(group2_path, "ceph.dir.layout.pool")
+        self.assertEqual(desired_pool, new_pool)
+
+    def test_subvolume_create_with_desired_data_pool_layout_in_group(self):
+        subvol1 = self._generate_random_subvolume_name()
+        subvol2 = self._generate_random_subvolume_name()
+        group = self._generate_random_group_name()
+
+        # create group. this also helps set default pool layout for subvolumes
+        # created within the group.
+        self._fs_cmd("subvolumegroup", "create", self.volname, group)
+
+        # create subvolume in group.
+        self._fs_cmd("subvolume", "create", self.volname, subvol1, "--group_name", group)
+        subvol1_path = self._fs_cmd("subvolume", "getpath", self.volname, subvol1, group)
+
+        # remove leading '/' and trailing whitespaces from subvolume path
+        default_pool = self.mount_a.getfattr(subvol1_path[1:].rstrip(),
+                                             "ceph.dir.layout.pool")
+        new_pool = "new_pool"
+        self.assertNotEqual(default_pool, new_pool)
+
+        # add data pool
+        self.fs.add_data_pool(new_pool)
+
+        # create subvolume specifying the new data pool as its pool layout
+        self._fs_cmd("subvolume", "create", self.volname, subvol2, "--group_name", group,
+                     "--pool_layout", new_pool)
+        subvol2_path = self._fs_cmd("subvolume", "getpath", self.volname, subvol2, group)
+
+        desired_pool = self.mount_a.getfattr(subvol2_path[1:].rstrip(),
+                                             "ceph.dir.layout.pool")
+        self.assertEqual(desired_pool, new_pool)
+
+    def test_subvolume_group_create_with_desired_mode(self):
+        group1 = self._generate_random_group_name()
+        group2 = self._generate_random_group_name()
+        # default mode
+        expected_mode1 = "755"
+        # desired mode
+        expected_mode2 = "777"
+
+        # create group
+        self._fs_cmd("subvolumegroup", "create", self.volname, group1)
+        self._fs_cmd("subvolumegroup", "create", self.volname, group2, "--mode", "777")
+
+        group1_path = os.path.join('volumes', group1)
+        group2_path = os.path.join('volumes', group2)
+
+        # check group's mode
+        actual_mode1 = self.mount_a.run_shell(['stat', '-c' '%a', group1_path]).stdout.getvalue().strip()
+        actual_mode2 = self.mount_a.run_shell(['stat', '-c' '%a', group2_path]).stdout.getvalue().strip()
+        self.assertEqual(actual_mode1, expected_mode1)
+        self.assertEqual(actual_mode2, expected_mode2)
+
+    def test_subvolume_create_with_desired_mode_in_group(self):
+        subvol1 = self._generate_random_subvolume_name()
+        subvol2 = self._generate_random_subvolume_name()
+        subvol3 = self._generate_random_subvolume_name()
+        group = self._generate_random_group_name()
+        # default mode
+        expected_mode1 = "755"
+        # desired mode
+        expected_mode2 = "777"
+
+        # create group
+        self._fs_cmd("subvolumegroup", "create", self.volname, group)
+
+        # create subvolume in group
+        self._fs_cmd("subvolume", "create", self.volname, subvol1, "--group_name", group)
+        self._fs_cmd("subvolume", "create", self.volname, subvol2, "--group_name", group, "--mode", "777")
+        # check whether mode 0777 also works
+        self._fs_cmd("subvolume", "create", self.volname, subvol3, "--group_name", group, "--mode", "0777")
+        subvol1_path = self._fs_cmd("subvolume", "getpath", self.volname, subvol1, group)
+        subvol2_path = self._fs_cmd("subvolume", "getpath", self.volname, subvol2, group)
+        subvol3_path = self._fs_cmd("subvolume", "getpath", self.volname, subvol3, group)
+
+        # check subvolume's  mode
+        actual_mode1 = self.mount_a.run_shell(['stat', '-c' '%a', subvol1_path[1:].rstrip()]).stdout.getvalue().strip()
+        actual_mode2 = self.mount_a.run_shell(['stat', '-c' '%a', subvol2_path[1:].rstrip()]).stdout.getvalue().strip()
+        actual_mode3 = self.mount_a.run_shell(['stat', '-c' '%a', subvol3_path[1:].rstrip()]).stdout.getvalue().strip()
+        self.assertEqual(actual_mode1, expected_mode1)
+        self.assertEqual(actual_mode2, expected_mode2)
+        self.assertEqual(actual_mode3, expected_mode2)
 
     def test_nonexistent_subvolme_group_rm(self):
         group = "non_existent_group"
