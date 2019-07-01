@@ -176,7 +176,7 @@ class KernelMount(CephFSMount):
                                                 self.ipmi_user,
                                                 self.ipmi_password,
                                                 self.ipmi_domain)
-        con.power_off()
+        con.hard_reset(wait_for_login=False)
 
         self.mounted = False
 
@@ -187,7 +187,8 @@ class KernelMount(CephFSMount):
                                                 self.ipmi_user,
                                                 self.ipmi_password,
                                                 self.ipmi_domain)
-        con.power_on()
+
+        con.check_status(timeout=60)
 
         # Wait for node to come back up after reboot
         misc.reconnect(None, 300, [self.client_remote])
