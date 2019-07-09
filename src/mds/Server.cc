@@ -4654,7 +4654,6 @@ public:
     ceph_assert(r == 0);
 
     // apply
-    in->pop_and_dirty_projected_inode(mdr->ls);
     mdr->apply();
 
     MDSRank *mds = get_mds();
@@ -4907,7 +4906,7 @@ void Server::handle_client_setattr(MDRequestRef& mdr)
   EUpdate *le = new EUpdate(mdlog, "setattr");
   mdlog->start_entry(le);
 
-  auto pi = cur->project_inode();
+  auto pi = cur->project_inode(mdr);
 
   if (mask & CEPH_SETATTR_UID)
     pi.inode.uid = req->head.args.setattr.uid;
@@ -4988,7 +4987,7 @@ void Server::do_open_truncate(MDRequestRef& mdr, int cmode)
   mdlog->start_entry(le);
 
   // prepare
-  auto pi = in->project_inode();
+  auto pi = in->project_inode(mdr);
   pi.inode.version = in->pre_dirty();
   pi.inode.mtime = pi.inode.ctime = mdr->get_op_stamp();
   if (mdr->get_op_stamp() > pi.inode.rstat.rctime)
@@ -5104,7 +5103,7 @@ void Server::handle_client_setlayout(MDRequestRef& mdr)
     return;
 
   // project update
-  auto pi = cur->project_inode();
+  auto pi = cur->project_inode(mdr);
   pi.inode.layout = layout;
   // add the old pool to the inode
   pi.inode.add_old_pool(old_layout.pool_id);
@@ -5232,7 +5231,7 @@ void Server::handle_client_setdirlayout(MDRequestRef& mdr)
   if (!check_access(mdr, cur, access))
     return;
 
-  auto pi = cur->project_inode();
+  auto pi = cur->project_inode(mdr);
   pi.inode.layout = layout;
   pi.inode.version = cur->pre_dirty();
 
@@ -5487,7 +5486,7 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
     if (check_layout_vxattr(mdr, rest, value, &layout) < 0)
       return;
 
-    auto pi = cur->project_inode();
+    auto pi = cur->project_inode(mdr);
     pi.inode.layout = layout;
     mdr->no_early_reply = true;
     pip = &pi.inode;
@@ -5511,7 +5510,7 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
     if (!mds->locker->acquire_locks(mdr, lov))
       return;
 
-    auto pi = cur->project_inode();
+    auto pi = cur->project_inode(mdr);
     int64_t old_pool = pi.inode.layout.pool_id;
     pi.inode.add_old_pool(old_pool);
     pi.inode.layout = layout;
@@ -5537,7 +5536,7 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
     if (!xlock_policylock(mdr, cur, false, new_realm))
       return;
 
-    auto pi = cur->project_inode(false, new_realm);
+    auto pi = cur->project_inode(mdr, false, new_realm);
     pi.inode.quota = quota;
 
     if (new_realm) {
@@ -5571,7 +5570,7 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
     if (!xlock_policylock(mdr, cur))
       return;
 
-    auto pi = cur->project_inode();
+    auto pi = cur->project_inode(mdr);
     cur->set_export_pin(rank);
     pip = &pi.inode;
   } else {
@@ -5629,7 +5628,7 @@ void Server::handle_remove_vxattr(MDRequestRef& mdr, CInode *cur)
     if (!mds->locker->acquire_locks(mdr, lov))
       return;
 
-    auto pi = cur->project_inode();
+    auto pi = cur->project_inode(mdr);
     pi.inode.clear_layout();
     pi.inode.version = cur->pre_dirty();
 
@@ -5656,26 +5655,6 @@ void Server::handle_remove_vxattr(MDRequestRef& mdr, CInode *cur)
 
   respond_to_request(mdr, -ENODATA);
 }
-
-class C_MDS_inode_xattr_update_finish : public ServerLogContext {
-  CInode *in;
-public:
-
-  C_MDS_inode_xattr_update_finish(Server *s, MDRequestRef& r, CInode *i) :
-    ServerLogContext(s, r), in(i) { }
-  void finish(int r) override {
-    ceph_assert(r == 0);
-
-    // apply
-    in->pop_and_dirty_projected_inode(mdr->ls);
-    
-    mdr->apply();
-
-    get_mds()->balancer->hit_inode(in, META_POP_IWR);
-
-    server->respond_to_request(mdr, 0);
-  }
-};
 
 void Server::handle_client_setxattr(MDRequestRef& mdr)
 {
@@ -5750,7 +5729,7 @@ void Server::handle_client_setxattr(MDRequestRef& mdr)
   dout(10) << "setxattr '" << name << "' len " << len << " on " << *cur << dendl;
 
   // project update
-  auto pi = cur->project_inode(true);
+  auto pi = cur->project_inode(mdr, true);
   pi.inode.version = cur->pre_dirty();
   pi.inode.ctime = mdr->get_op_stamp();
   if (mdr->get_op_stamp() > pi.inode.rstat.rctime)
@@ -5819,7 +5798,7 @@ void Server::handle_client_removexattr(MDRequestRef& mdr)
   dout(10) << "removexattr '" << name << "' on " << *cur << dendl;
 
   // project update
-  auto pi = cur->project_inode(true);
+  auto pi = cur->project_inode(mdr, true);
   auto &px = *pi.xattrs;
   pi.inode.version = cur->pre_dirty();
   pi.inode.ctime = mdr->get_op_stamp();
@@ -6252,7 +6231,7 @@ void Server::_link_local(MDRequestRef& mdr, CDentry *dn, CInode *targeti)
   version_t tipv = targeti->pre_dirty();
   
   // project inode update
-  auto pi = targeti->project_inode();
+  auto pi = targeti->project_inode(mdr);
   pi.inode.nlink++;
   pi.inode.ctime = mdr->get_op_stamp();
   if (mdr->get_op_stamp() > pi.inode.rstat.rctime)
@@ -6296,8 +6275,6 @@ void Server::_link_local_finish(MDRequestRef& mdr, CDentry *dn, CInode *targeti,
   dn->mark_dirty(dnpv, mdr->ls);
 
   // target inode
-  targeti->pop_and_dirty_projected_inode(mdr->ls);
-
   mdr->apply();
 
   MDRequestRef null_ref;
@@ -6509,7 +6486,7 @@ void Server::handle_slave_link_prep(MDRequestRef& mdr)
 				      ESlaveUpdate::OP_PREPARE, ESlaveUpdate::LINK);
   mdlog->start_entry(le);
 
-  auto pi = dnl->get_inode()->project_inode();
+  auto pi = dnl->get_inode()->project_inode(mdr);
 
   // update journaled target inode
   bool inc;
@@ -6589,7 +6566,6 @@ void Server::_logged_slave_link(MDRequestRef& mdr, CInode *targeti, bool adjust_
   ceph_assert(g_conf()->mds_kill_link_at != 6);
 
   // update the target
-  targeti->pop_and_dirty_projected_inode(mdr->ls);
   mdr->apply();
 
   // hit pop
@@ -6692,14 +6668,12 @@ void Server::do_link_rollback(bufferlist &rbl, mds_rank_t master, MDRequestRef& 
   dout(10) << " target is " << *in << dendl;
   ceph_assert(!in->is_projected());  // live slave request hold versionlock xlock.
   
-  auto pi = in->project_inode();
+  auto pi = in->project_inode(mut);
   pi.inode.version = in->pre_dirty();
-  mut->add_projected_inode(in);
 
   // parent dir rctime
   CDir *parent = in->get_projected_parent_dn()->get_dir();
-  auto pf = parent->project_fnode();
-  mut->add_projected_fnode(parent);
+  auto pf = parent->project_fnode(mut);
   pf->version = parent->pre_dirty();
   if (pf->fragstat.mtime == pi.inode.ctime) {
     pf->fragstat.mtime = rollback.old_dir_mtime;
@@ -6999,7 +6973,7 @@ void Server::_unlink_local(MDRequestRef& mdr, CDentry *dn, CDentry *straydn)
   // the unlinked dentry
   dn->pre_dirty();
 
-  auto pi = in->project_inode();
+  auto pi = in->project_inode(mdr);
   {
     std::string t;
     dn->make_path_string(t, true);
@@ -7030,7 +7004,6 @@ void Server::_unlink_local(MDRequestRef& mdr, CDentry *dn, CDentry *straydn)
     pi.inode.update_backtrace();
     le->metablob.add_primary_dentry(straydn, in, true, true);
   } else {
-    mdr->add_projected_inode(in);
     // remote link.  update remote inode.
     mdcache->predirty_journal_parents(mdr, &le->metablob, in, dn->get_dir(), PREDIRTY_DIR, -1);
     mdcache->predirty_journal_parents(mdr, &le->metablob, in, 0, PREDIRTY_PRIMARY);
@@ -7082,18 +7055,15 @@ void Server::_unlink_local_finish(MDRequestRef& mdr,
   // unlink main dentry
   dn->get_dir()->unlink_inode(dn);
   dn->pop_projected_linkage();
+  dn->mark_dirty(dnpv, mdr->ls);
 
   // relink as stray?  (i.e. was primary link?)
   if (straydn) {
     dout(20) << " straydn is " << *straydn << dendl;
     straydn->pop_projected_linkage();
-
-    strayin->pop_and_dirty_projected_inode(mdr->ls);
-
     mdcache->touch_dentry_bottom(straydn);
   }
 
-  dn->mark_dirty(dnpv, mdr->ls);
   mdr->apply();
   
   mdcache->send_dentry_unlink(dn, straydn, mdr);
@@ -8181,7 +8151,7 @@ void Server::_rename_prepare(MDRequestRef& mdr,
       ceph_assert(straydn);  // moving to straydn.
       // link--, and move.
       if (destdn->is_auth()) {
-	auto pi= oldin->project_inode(); //project_snaprealm
+	auto pi= oldin->project_inode(mdr); //project_snaprealm
 	pi.inode.version = straydn->pre_dirty(pi.inode.version);
 	pi.inode.update_backtrace();
         tpi = &pi.inode;
@@ -8190,7 +8160,7 @@ void Server::_rename_prepare(MDRequestRef& mdr,
     } else if (destdnl->is_remote()) {
       // nlink-- targeti
       if (oldin->is_auth()) {
-	auto pi = oldin->project_inode();
+	auto pi = oldin->project_inode(mdr);
 	pi.inode.version = oldin->pre_dirty();
         tpi = &pi.inode;
       }
@@ -8206,14 +8176,14 @@ void Server::_rename_prepare(MDRequestRef& mdr,
       destdn->push_projected_linkage(srcdnl->get_remote_ino(), srcdnl->get_remote_d_type());
       // srci
       if (srci->is_auth()) {
-	auto pi = srci->project_inode();
+	auto pi = srci->project_inode(mdr);
 	pi.inode.version = srci->pre_dirty();
         spi = &pi.inode;
       }
     } else {
       dout(10) << " will merge remote onto primary link" << dendl;
       if (destdn->is_auth()) {
-	auto pi = oldin->project_inode();
+	auto pi = oldin->project_inode(mdr);
 	pi.inode.version = mdr->more()->pvmap[destdn] = destdn->pre_dirty(oldin->get_version());
         spi = &pi.inode;
       }
@@ -8237,7 +8207,7 @@ void Server::_rename_prepare(MDRequestRef& mdr,
 	  dout(10) << " noting renamed dir open frags " << metablob->renamed_dir_frags << dendl;
 	}
       }
-      auto pi = srci->project_inode(); // project snaprealm if srcdnl->is_primary
+      auto pi = srci->project_inode(mdr); // project snaprealm if srcdnl->is_primary
                                                  // & srcdnl->snaprealm
       pi.inode.version = mdr->more()->pvmap[destdn] = destdn->pre_dirty(oldpv);
       pi.inode.update_backtrace();
@@ -8503,13 +8473,13 @@ void Server::_rename_apply(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, C
 
       // nlink-- targeti
       if (destdn->is_auth())
-	oldin->pop_and_dirty_projected_inode(mdr->ls);
+	oldin->pop_and_dirty_projected_inode(mdr->ls, mdr);
 
       mdcache->touch_dentry_bottom(straydn);  // drop dn as quickly as possible.
     } else if (destdnl->is_remote()) {
       destdn->get_dir()->unlink_inode(destdn, false);
       if (oldin->is_auth()) {
-	oldin->pop_and_dirty_projected_inode(mdr->ls);
+	oldin->pop_and_dirty_projected_inode(mdr->ls, mdr);
       } else if (mdr->slave_request) {
 	if (mdr->slave_request->desti_snapbl.length() > 0) {
 	  ceph_assert(oldin->snaprealm);
@@ -8560,7 +8530,7 @@ void Server::_rename_apply(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, C
 	destdn->mark_dirty(mdr->more()->pvmap[destdn], mdr->ls);
       // in
       if (in->is_auth()) {
-	in->pop_and_dirty_projected_inode(mdr->ls);
+	in->pop_and_dirty_projected_inode(mdr->ls, mdr);
       } else if (mdr->slave_request) {
 	if (mdr->slave_request->srci_snapbl.length() > 0) {
 	  ceph_assert(in->snaprealm);
@@ -8572,7 +8542,7 @@ void Server::_rename_apply(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, C
       }
     } else {
       dout(10) << "merging remote onto primary link" << dendl;
-      oldin->pop_and_dirty_projected_inode(mdr->ls);
+      oldin->pop_and_dirty_projected_inode(mdr->ls, mdr);
     }
   } else { // primary
     if (linkmerge) {
@@ -8623,7 +8593,7 @@ void Server::_rename_apply(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, C
     }
 
     if (destdn->is_auth())
-      in->pop_and_dirty_projected_inode(mdr->ls);
+      in->pop_and_dirty_projected_inode(mdr->ls, mdr);
   }
 
   // src
@@ -9115,8 +9085,7 @@ static void _rollback_repair_dir(MutationRef& mut, CDir *dir,
 				 rename_rollback::drec &r, utime_t ctime,
 				 bool isdir, const nest_info_t &rstat)
 {
-  auto pf = dir->project_fnode();
-  mut->add_projected_fnode(dir);
+  auto pf = dir->project_fnode(mut);
   pf->version = dir->pre_dirty();
 
   if (isdir) {
@@ -9269,12 +9238,10 @@ void Server::do_rename_rollback(bufferlist &rbl, mds_rank_t master, MDRequestRef
     bool projected;
     CDir *pdir = in->get_projected_parent_dir();
     if (pdir->authority().first == whoami) {
-      auto pi = in->project_inode();
-      mut->add_projected_inode(in);
+      auto pi = in->project_inode(mut);
       pi.inode.version = in->pre_dirty();
       if (pdir != srcdir) {
-	auto pf = pdir->project_fnode();
-	mut->add_projected_fnode(pdir);
+	auto pf = pdir->project_fnode(mut);
 	pf->version = pdir->pre_dirty();
       }
       if (pi.inode.ctime == rollback.ctime)
@@ -9342,12 +9309,10 @@ void Server::do_rename_rollback(bufferlist &rbl, mds_rank_t master, MDRequestRef
     CInode::inode_ptr ti;
     CDir *pdir = target->get_projected_parent_dir();
     if (pdir->authority().first == whoami) {
-      auto pi = target->project_inode();
-      mut->add_projected_inode(target);
+      auto pi = target->project_inode(mut);
       pi.inode.version = target->pre_dirty();
       if (pdir != srcdir) {
-	auto pf = pdir->project_fnode();
-	mut->add_projected_fnode(pdir);
+	auto pf = pdir->project_fnode(mut);
 	pf->version = pdir->pre_dirty();
       }
       ti = target->_get_projected_inode();
@@ -9859,7 +9824,7 @@ void Server::handle_client_mksnap(MDRequestRef& mdr)
   info.name = snapname;
   info.stamp = mdr->get_op_stamp();
 
-  auto pi = diri->project_inode(false, true);
+  auto pi = diri->project_inode(mdr, false, true);
   pi.inode.ctime = info.stamp;
   if (info.stamp > pi.inode.rstat.rctime)
     pi.inode.rstat.rctime = info.stamp;
@@ -9897,7 +9862,6 @@ void Server::_mksnap_finish(MDRequestRef& mdr, CInode *diri, SnapInfo &info)
 
   int op = (diri->snaprealm? CEPH_SNAP_OP_CREATE : CEPH_SNAP_OP_SPLIT);
 
-  diri->pop_and_dirty_projected_inode(mdr->ls);
   mdr->apply();
 
   mds->snapclient->commit(mdr->more()->stid, mdr->ls);
@@ -9997,7 +9961,7 @@ void Server::handle_client_rmsnap(MDRequestRef& mdr)
   ceph_assert(mds->snapclient->get_cached_version() >= stid);
 
   // journal
-  auto pi = diri->project_inode(false, true);
+  auto pi = diri->project_inode(mdr, false, true);
   pi.inode.version = diri->pre_dirty();
   pi.inode.ctime = mdr->get_op_stamp();
   if (mdr->get_op_stamp() > pi.inode.rstat.rctime)
@@ -10032,7 +9996,6 @@ void Server::_rmsnap_finish(MDRequestRef& mdr, CInode *diri, snapid_t snapid)
   snapid_t seq;
   decode(seq, p);  
 
-  diri->pop_and_dirty_projected_inode(mdr->ls);
   mdr->apply();
 
   mds->snapclient->commit(stid, mdr->ls);
@@ -10141,7 +10104,7 @@ void Server::handle_client_renamesnap(MDRequestRef& mdr)
   ceph_assert(mds->snapclient->get_cached_version() >= stid);
 
   // journal
-  auto pi = diri->project_inode(false, true);
+  auto pi = diri->project_inode(mdr, false, true);
   pi.inode.ctime = pi.inode.rstat.rctime = mdr->get_op_stamp();
   if (mdr->get_op_stamp() > pi.inode.rstat.rctime)
     pi.inode.rstat.rctime = mdr->get_op_stamp();
@@ -10173,7 +10136,6 @@ void Server::_renamesnap_finish(MDRequestRef& mdr, CInode *diri, snapid_t snapid
 {
   dout(10) << "_renamesnap_finish " << *mdr << " " << snapid << dendl;
 
-  diri->pop_and_dirty_projected_inode(mdr->ls);
   mdr->apply();
 
   mds->snapclient->commit(mdr->more()->stid, mdr->ls);
