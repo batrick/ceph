@@ -234,6 +234,7 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
   static const int STATE_EVALSTALECAPS		= (1<<16);
   static const int STATE_QUEUEDEXPORTPIN	= (1<<17);
   static const int STATE_TRACKEDBYOFT		= (1<<18);  // tracked by open file table
+  static const int STATE_DELAYEDEXPORTPIN	= (1<<19);
   // orphan inode needs notification of releasing reference
   static const int STATE_ORPHAN =	STATE_NOTIFYREF;
 
