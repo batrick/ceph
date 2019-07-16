@@ -404,7 +404,7 @@ void PurgeQueue::_go_readonly(int r)
   if (readonly) return;
   dout(1) << "going readonly because internal IO failed: " << strerror(-r) << dendl;
   readonly = true;
-  on_error->complete(r);
+  finisher.queue(on_error, r);
   on_error = nullptr;
   journaler.set_readonly();
   finish_contexts(g_ceph_context, waiting_for_recovery, r);
