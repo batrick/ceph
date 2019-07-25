@@ -42,7 +42,14 @@
 #undef dout_prefix
 #define dout_prefix *_dout << "mgr.server " << __func__ << " "
 
-
+namespace {
+  template <typename Map>
+  bool map_compare(Map const &lhs, Map const &rhs) {
+    return lhs.size() == rhs.size()
+      && std::equal(lhs.begin(), lhs.end(), rhs.begin(),
+                    [] (auto a, auto b) { return a.first == b.first && a.second == b.second; });
+  }
+}
 
 DaemonServer::DaemonServer(MonClient *monc_,
                            Finisher &finisher_,
@@ -416,6 +423,7 @@ bool DaemonServer::handle_open(const ref_t<MMgrOpen>& m)
     std::lock_guard l(daemon->lock);
     daemon->perf_counters.clear();
 
+    daemon->service_daemon = m->service_daemon;
     if (m->service_daemon) {
       daemon->set_metadata(m->daemon_metadata);
       daemon->service_status = m->daemon_status;
@@ -423,7 +431,7 @@ bool DaemonServer::handle_open(const ref_t<MMgrOpen>& m)
       utime_t now = ceph_clock_now();
       auto d = pending_service_map.get_daemon(m->service_name,
 					      m->daemon_name);
-      if (d->gid != (uint64_t)m->get_source().num()) {
+      if (!d->gid || d->gid != (uint64_t)m->get_source().num()) {
 	dout(10) << "registering " << key << " in pending_service_map" << dendl;
 	d->gid = m->get_source().num();
 	d->addr = m->get_source_addr();
@@ -586,8 +594,16 @@ bool DaemonServer::handle_report(const ref_t<MMgrReport>& m)
     if (daemon->service_daemon) {
       utime_t now = ceph_clock_now();
       if (m->daemon_status) {
-        daemon->service_status = *m->daemon_status;
         daemon->service_status_stamp = now;
+        daemon->service_status = *m->daemon_status;
+      }
+      if (m->task_status && !map_compare(daemon->task_status, *m->task_status)) {
+        auto d = pending_service_map.get_daemon(m->service_name, m->daemon_name);
+        if (d->gid) {
+          daemon->task_status = *m->task_status;
+          d->task_status = *m->task_status;
+          pending_service_map_dirty = pending_service_map.epoch;
+        }
       }
       daemon->last_service_beacon = now;
     } else if (m->daemon_status) {
