@@ -1,6 +1,7 @@
 from StringIO import StringIO
 import json
 import logging
+import time
 from textwrap import dedent
 from teuthology.orchestra.run import CommandFailedError
 from teuthology import misc
@@ -176,21 +177,29 @@ class KernelMount(CephFSMount):
                                                 self.ipmi_user,
                                                 self.ipmi_password,
                                                 self.ipmi_domain)
-        con.power_off()
+        con.hard_reset(wait_for_login=False)
 
         self.mounted = False
 
     def kill_cleanup(self):
         assert not self.mounted
 
+        # We need to do a sleep here because we don't know how long it will
+        # take for a hard_reset to be effected.
+        time.sleep(30)
+
         con = orchestra_remote.getRemoteConsole(self.client_remote.hostname,
                                                 self.ipmi_user,
                                                 self.ipmi_password,
                                                 self.ipmi_domain)
-        con.power_on()
+
+        con.check_status(timeout=60)
 
         # Wait for node to come back up after reboot
         misc.reconnect(None, 300, [self.client_remote])
+
+        # Remove mount directory
+        self.client_remote.run(args=['uptime'], timeout=10)
 
         # Remove mount directory
         self.client_remote.run(
