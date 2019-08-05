@@ -17,11 +17,12 @@ from teuthology import misc
 from teuthology.exceptions import CommandFailedError
 from teuthology.task import Task
 from teuthology.orchestra import run
+from tasks.thrasher import Thrasher
 
 log = logging.getLogger(__name__)
 
 
-class RBDMirrorThrasher(Greenlet):
+class RBDMirrorThrasher(Greenlet, Thrasher):
     """
     RBDMirrorThrasher::
 
@@ -64,13 +65,13 @@ class RBDMirrorThrasher(Greenlet):
 
     def __init__(self, ctx, config, cluster, daemons):
         Greenlet.__init__(self)
+        Thrasher.__init__(self)
 
         self.ctx = ctx
         self.config = config
         self.cluster = cluster
         self.daemons = daemons
 
-        self.e = None
         self.logger = log
         self.name = 'thrasher.rbd_mirror.[{cluster}]'.format(cluster = cluster)
         self.stopping = Event()
@@ -85,7 +86,7 @@ class RBDMirrorThrasher(Greenlet):
         try:
             self.do_thrash()
         except Exception as e:
-            self.e = e
+            self.setexception(e)
             self.logger.exception("exception:")
 
     def log(self, x):
@@ -211,7 +212,7 @@ def task(ctx, config):
     finally:
         log.info('joining rbd_mirror_thrash')
         thrasher.stop()
-        if thrasher.e:
+        if thrasher.getexception() is not None:
             raise RuntimeError('error during thrashing')
         thrasher.join()
         log.info('done joining')
