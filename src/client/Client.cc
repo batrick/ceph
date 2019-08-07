@@ -8001,7 +8001,18 @@ int Client::_readdir_cache_cb(dir_result_t *dirp, add_dirent_cb_t cb, void *p,
       return -EAGAIN;
     if (pd == dir->readdir_cache.end())
       break;
+    
     Dentry *dn = *pd;
+    int idx = pd - dir->readdir_cache.begin();
+    int r = _getattr(dn->inode, caps, dirp->perms);
+    if (r < 0)
+      return r;
+    
+    // the content of readdir_cache may change after _getattr(), so pd may be invalid iterator    
+    pd = dir->readdir_cache.begin() + idx;
+    if (pd >= dir->readdir_cache.end() || *pd != dn)
+      return -EAGAIN;
+
     if (dn->inode == NULL) {
       ldout(cct, 15) << " skipping null '" << dn->name << "'" << dendl;
       ++pd;
@@ -8012,10 +8023,6 @@ int Client::_readdir_cache_cb(dir_result_t *dirp, add_dirent_cb_t cb, void *p,
       ++pd;
       continue;
     }
-
-    int r = _getattr(dn->inode, caps, dirp->perms);
-    if (r < 0)
-      return r;
 
     struct ceph_statx stx;
     struct dirent de;
