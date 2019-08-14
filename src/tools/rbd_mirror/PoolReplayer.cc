@@ -774,7 +774,7 @@ void PoolReplayer<I>::init_image_map(Context *on_finish) {
                                         m_instance_watcher->get_instance_id(),
                                         m_image_map_listener));
 
-  auto ctx = new FunctionContext([this, on_finish](int r) {
+  auto ctx = new LambdaContext([this, on_finish](int r) {
       handle_init_image_map(r, on_finish);
     });
   m_image_map->init(create_async_context_callback(
@@ -786,7 +786,7 @@ void PoolReplayer<I>::handle_init_image_map(int r, Context *on_finish) {
   dout(5) << "r=" << r << dendl;
   if (r < 0) {
     derr << "failed to init image map: " << cpp_strerror(r) << dendl;
-    on_finish = new FunctionContext([on_finish, r](int) {
+    on_finish = new LambdaContext([on_finish, r](int) {
         on_finish->complete(r);
       });
     shut_down_image_map(on_finish);
@@ -807,7 +807,7 @@ void PoolReplayer<I>::init_local_pool_watcher(Context *on_finish) {
 
   // ensure the initial set of local images is up-to-date
   // after acquiring the leader role
-  auto ctx = new FunctionContext([this, on_finish](int r) {
+  auto ctx = new LambdaContext([this, on_finish](int r) {
       handle_init_local_pool_watcher(r, on_finish);
     });
   m_local_pool_watcher->init(create_async_context_callback(
@@ -820,7 +820,7 @@ void PoolReplayer<I>::handle_init_local_pool_watcher(
   dout(10) << "r=" << r << dendl;
   if (r < 0) {
     derr << "failed to retrieve local images: " << cpp_strerror(r) << dendl;
-    on_finish = new FunctionContext([on_finish, r](int) {
+    on_finish = new LambdaContext([on_finish, r](int) {
         on_finish->complete(r);
       });
     shut_down_pool_watchers(on_finish);
@@ -839,7 +839,7 @@ void PoolReplayer<I>::init_remote_pool_watcher(Context *on_finish) {
   m_remote_pool_watcher.reset(PoolWatcher<I>::create(
     m_threads, m_remote_io_ctx, m_remote_pool_watcher_listener));
 
-  auto ctx = new FunctionContext([this, on_finish](int r) {
+  auto ctx = new LambdaContext([this, on_finish](int r) {
       handle_init_remote_pool_watcher(r, on_finish);
     });
   m_remote_pool_watcher->init(create_async_context_callback(
@@ -858,7 +858,7 @@ void PoolReplayer<I>::handle_init_remote_pool_watcher(
     dout(0) << "remote peer does not have mirroring configured" << dendl;
   } else if (r < 0) {
     derr << "failed to retrieve remote images: " << cpp_strerror(r) << dendl;
-    on_finish = new FunctionContext([on_finish, r](int) {
+    on_finish = new LambdaContext([on_finish, r](int) {
         on_finish->complete(r);
       });
     shut_down_pool_watchers(on_finish);
@@ -875,7 +875,7 @@ void PoolReplayer<I>::init_image_deleter(Context *on_finish) {
   std::lock_guard locker{m_lock};
   ceph_assert(!m_image_deleter);
 
-  on_finish = new FunctionContext([this, on_finish](int r) {
+  on_finish = new LambdaContext([this, on_finish](int r) {
       handle_init_image_deleter(r, on_finish);
     });
   m_image_deleter.reset(ImageDeleter<I>::create(m_local_io_ctx, m_threads,
@@ -889,7 +889,7 @@ void PoolReplayer<I>::handle_init_image_deleter(int r, Context *on_finish) {
   dout(10) << "r=" << r << dendl;
   if (r < 0) {
     derr << "failed to init image deleter: " << cpp_strerror(r) << dendl;
-    on_finish = new FunctionContext([on_finish, r](int) {
+    on_finish = new LambdaContext([on_finish, r](int) {
         on_finish->complete(r);
       });
     shut_down_image_deleter(on_finish);
@@ -908,7 +908,7 @@ void PoolReplayer<I>::shut_down_image_deleter(Context* on_finish) {
   {
     std::lock_guard locker{m_lock};
     if (m_image_deleter) {
-      Context *ctx = new FunctionContext([this, on_finish](int r) {
+      Context *ctx = new LambdaContext([this, on_finish](int r) {
           handle_shut_down_image_deleter(r, on_finish);
 	});
       ctx = create_async_context_callback(m_threads->work_queue, ctx);
@@ -941,7 +941,7 @@ void PoolReplayer<I>::shut_down_pool_watchers(Context *on_finish) {
   {
     std::lock_guard locker{m_lock};
     if (m_local_pool_watcher) {
-      Context *ctx = new FunctionContext([this, on_finish](int r) {
+      Context *ctx = new LambdaContext([this, on_finish](int r) {
           handle_shut_down_pool_watchers(r, on_finish);
 	});
       ctx = create_async_context_callback(m_threads->work_queue, ctx);
@@ -982,7 +982,7 @@ void PoolReplayer<I>::wait_for_update_ops(Context *on_finish) {
 
   std::lock_guard locker{m_lock};
 
-  Context *ctx = new FunctionContext([this, on_finish](int r) {
+  Context *ctx = new LambdaContext([this, on_finish](int r) {
       handle_wait_for_update_ops(r, on_finish);
     });
   ctx = create_async_context_callback(m_threads->work_queue, ctx);
@@ -1005,7 +1005,7 @@ void PoolReplayer<I>::shut_down_image_map(Context *on_finish) {
   {
     std::lock_guard locker{m_lock};
     if (m_image_map) {
-      on_finish = new FunctionContext([this, on_finish](int r) {
+      on_finish = new LambdaContext([this, on_finish](int r) {
           handle_shut_down_image_map(r, on_finish);
         });
       m_image_map->shut_down(create_async_context_callback(
