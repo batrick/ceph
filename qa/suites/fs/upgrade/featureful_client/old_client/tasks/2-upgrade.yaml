@@ -36,6 +36,8 @@ tasks:
     daemons: [osd.*]
     wait-for-healthy: false
     wait-for-osds-up: true
+- sleep:
+  duration: 60
 - ceph.stop: [mds.*]
 - ceph.restart:
     daemons: [mds.*]
@@ -47,6 +49,8 @@ tasks:
     - ceph config rm global mon_warn_on_msgr2_not_enabled
 - exec:
     mon.a:
+    - ceph osd dump -f json-pretty
+    - ceph versions
     - ceph osd require-osd-release nautilus
     #- ceph osd set-require-min-compat-client nautilus
 - ceph.healthy:
