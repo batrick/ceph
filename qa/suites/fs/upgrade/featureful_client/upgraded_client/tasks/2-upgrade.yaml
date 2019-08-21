@@ -36,8 +36,6 @@ tasks:
     daemons: [osd.*]
     wait-for-healthy: false
     wait-for-osds-up: true
-- sleep:
-  duration: 60
 - ceph.stop: [mds.*]
 - ceph.restart:
     daemons: [mds.*]
