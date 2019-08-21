@@ -1639,9 +1639,13 @@ def restart(ctx, config):
         for dmon in daemons:
             if '.' in dmon:
                 dm_parts = dmon.split('.')
-                if dm_parts[1].isdigit():
-                    if dm_parts[0] == 'osd':
+                if dm_parts[0] == 'osd':
+                    if dm_parts[1].isdigit():
                         manager.mark_down_osd(int(dm_parts[1]))
+                    elif dm_pars[1] == '*':
+                        osd_status = self.ceph_manager.get_osd_status()
+                        for i in osd_status['in']:
+                            manager.mark_down_osd(int(i))
 
     if config.get('wait-for-healthy', True):
         for cluster in clusters:
