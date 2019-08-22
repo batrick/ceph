@@ -12624,15 +12624,6 @@ int Client::_rename(Inode *fromdir, const char *fromname, Inode *todir, const ch
     else
       return -EROFS;
   }
-  if (fromdir != todir) {
-    Inode *fromdir_root =
-      fromdir->quota.is_enable() ? fromdir : get_quota_root(fromdir, perm);
-    Inode *todir_root =
-      todir->quota.is_enable() ? todir : get_quota_root(todir, perm);
-    if (fromdir_root != todir_root) {
-      return -EXDEV;
-    }
-  }
 
   InodeRef target;
   MetaRequest *req = new MetaRequest(op);
@@ -12673,6 +12664,46 @@ int Client::_rename(Inode *fromdir, const char *fromname, Inode *todir, const ch
     oldinode->break_all_delegs();
     req->set_old_inode(oldinode);
     req->old_inode_drop = CEPH_CAP_LINK_SHARED;
+
+    if (fromdir != todir) {
+      Inode *fromdir_root =
+        fromdir->quota.is_enable() ? fromdir : get_quota_root(fromdir, perm);
+      Inode *todir_root =
+        todir->quota.is_enable() ? todir : get_quota_root(todir, perm);
+
+      if (todir_root->quota.is_enable() && fromdir_root != todir_root) {
+        int64_t old_bytes, old_files;
+        if (oldinode->is_dir()) {
+          old_bytes = oldinode->rstat.rbytes;
+          old_files = oldinode->rstat.rsize();
+        } else {
+          old_bytes = oldinode->size;
+          old_files = 1;
+        }
+
+        bool quota_exceed = false;
+        if (todir_root->quota.max_bytes &&
+           (old_bytes + todir_root->rstat.rbytes) >= todir_root->quota.max_bytes) {
+          ldout(cct, 10) << "_rename (" << oldinode->ino << " bytes="
+                         << old_bytes << ") to (" << todir->ino 
+			 << ") will exceed quota on " << *todir_root << dendl;
+          quota_exceed = true;
+        }
+
+        if (todir_root->quota.max_files &&
+           (old_files + todir_root->rstat.rsize()) >= todir_root->quota.max_files) {
+          ldout(cct, 10) << "_rename (" << oldinode->ino << " files="
+                         << old_files << ") to (" << todir->ino 
+                         << ") will exceed quota on " << *todir_root << dendl;
+          quota_exceed = true;
+        }
+
+        if (quota_exceed) {
+          res = (oldinode->is_dir()) ? -EXDEV : -EDQUOT;
+          goto fail;
+        }
+      }
+    }
 
     res = _lookup(todir, toname, 0, &otherin, perm);
     switch (res) {
