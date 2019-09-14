@@ -142,3 +142,8 @@
   autoscaling, see :ref:`pg-autoscaler`.  Note that existing pools in
   upgraded clusters will still be set to ``warn`` by default.
 
+* Inline data support for CephFS has been deprecated. When setting the flag,
+  users will see a warning to that effect, and enabling it now requires the
+  ``--yes-i-really-really-mean-it`` flag. If the MDS is started on a
+  filesystem that has it enabled, a health warning is generated. Support for
+  this feature will be removed in a future release.
