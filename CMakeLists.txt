@@ -132,6 +132,11 @@ if(LINUX)
   set(HAVE_UDEV ${UDEV_FOUND})
   find_package(blkid REQUIRED)
   set(HAVE_BLKID ${BLKID_FOUND})
+  if(WITH_LIBCEPHFS OR WITH_KRBD)
+    # keyutils is only used when talking to the Linux Kernel key store 
+    find_package(keyutils REQUIRED)
+    set(HAVE_KEYUTILS ${KEYUTILS_FOUND})
+  endif()
 elseif(FREEBSD)
   set(HAVE_UDEV OFF)
   set(HAVE_LIBAIO OFF)
@@ -299,10 +304,6 @@ endif()
 
 if (HAVE_LIBTCMALLOC AND TCMALLOC_VERSION_STRING VERSION_LESS 2.6.2)
   set(LIBTCMALLOC_MISSING_ALIGNED_ALLOC ON)
-endif()
-
-if(WITH_LIBCEPHFS OR WITH_KRBD)
-  find_package(keyutils REQUIRED)
 endif()
 
 find_package(CURL REQUIRED)
