@@ -1220,13 +1220,11 @@ sub-directories, files')
                 max_bytes = to_bytes(str(args.max_bytes))
                 try:
                     cephfs.setxattr(args.path, 'ceph.quota.max_bytes',
-                                    max_bytes, len(max_bytes),
-                                    os.XATTR_CREATE)
+                                    max_bytes, os.XATTR_CREATE)
                     self.poutput('max_bytes set to %d' % args.max_bytes)
                 except libcephfs.Error:
                     cephfs.setxattr(args.path, 'ceph.quota.max_bytes',
-                                    max_bytes, len(max_bytes),
-                                    os.XATTR_REPLACE)
+                                    max_bytes, os.XATTR_REPLACE)
                     self.perror('max_bytes reset to %d' % args.max_bytes,
                                 end='\n', apply_style=True)
 
@@ -1234,13 +1232,11 @@ sub-directories, files')
                 max_files = to_bytes(str(args.max_files))
                 try:
                     cephfs.setxattr(args.path, 'ceph.quota.max_files',
-                                    max_files, len(max_files),
-                                    os.XATTR_CREATE)
+                                    max_files, os.XATTR_CREATE)
                     self.poutput('max_files set to %d' % args.max_files)
                 except libcephfs.Error:
                     cephfs.setxattr(args.path, 'ceph.quota.max_files',
-                                    max_files, len(max_files),
-                                    os.XATTR_REPLACE)
+                                    max_files, os.XATTR_REPLACE)
                     self.perror('max_files reset to %d' % args.max_files,
                                 end='\n', apply_style=True)
         elif args.op == 'get':
@@ -1249,7 +1245,7 @@ sub-directories, files')
             try:
                 max_bytes = cephfs.getxattr(args.path,
                                             'ceph.quota.max_bytes')
-                self.poutput('max_bytes: %s' % max_bytes)
+                self.poutput('max_bytes: {}'.format(max_bytes.decode('utf-8')))
             except libcephfs.Error:
                 self.perror('max_bytes is not set', end='\n', apply_style=True)
                 pass
@@ -1257,7 +1253,7 @@ sub-directories, files')
             try:
                 max_files = cephfs.getxattr(args.path,
                                             'ceph.quota.max_files')
-                self.poutput('max_files: %s' % max_files)
+                self.poutput('max_files: {}'.format(max_files.decode('utf-8')))
             except libcephfs.Error:
                 self.perror('max_files is not set', end='\n', apply_style=True)
                 pass
