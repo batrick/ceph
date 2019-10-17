@@ -82,7 +82,7 @@ void InoTable::apply_alloc_ids(interval_set<inodeno_t>& ids)
 }
 
 
-void InoTable::project_release_ids(interval_set<inodeno_t>& ids) 
+void InoTable::project_release_ids(const interval_set<inodeno_t>& ids) 
 {
   dout(10) << "project_release_ids " << ids << " to " << projected_free << "/" << free << dendl;
   projected_free.insert(ids);
