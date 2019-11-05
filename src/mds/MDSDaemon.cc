@@ -386,9 +386,6 @@ int MDSDaemon::init()
     return -ETIMEDOUT;
   }
 
-  mgrc.init();
-  messenger->add_dispatcher_head(&mgrc);
-
   mds_lock.lock();
   if (beacon.get_want_state() == CEPH_MDS_STATE_DNE) {
     dout(4) << __func__ << ": terminated already, dropping out" << dendl;
@@ -864,10 +861,24 @@ void MDSDaemon::_handle_mds_map(const MDSMap &mdsmap)
 {
   MDSMap::DaemonState new_state = mdsmap.get_state_gid(mds_gid_t(monc->get_global_id()));
 
-  // Normal rankless case, we're marked as standby
+  /* Note: STATE_BOOT is never an actual state in the FSMap. The Monitors
+   * always mark a booted MDS as STANDBY before ever assigning it to a rank.
+   * This means that we can do some startup here after we're certain the MDS
+   * is in the FSMap, like registering with the ceph-mgr.
+   */
   if (new_state == MDSMap::STATE_STANDBY) {
     beacon.set_want_state(mdsmap, new_state);
     dout(1) << "Map has assigned me to become a standby" << dendl;
+
+    /* the MDS has been added to the FSMap, now we can init the MgrClient */
+    mgrc.init();
+    messenger->add_dispatcher_head(&mgrc);
+
+    auto r = mgrc.service_daemon_register("mds", name, {});
+    if (r < 0) { 
+      derr << ": failed to register with manager for service status update" << dendl;
+      suicide();
+    }
 
     return;
   }
@@ -927,7 +938,8 @@ void MDSDaemon::suicide()
   }
   beacon.shutdown();
 
-  mgrc.shutdown();
+  if (mgrc.is_initialized())
+    mgrc.shutdown();
 
   if (mds_rank) {
     mds_rank->shutdown();
