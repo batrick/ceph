@@ -245,14 +245,14 @@ void Server::dispatch(const cref_t<Message> &m)
     handle_client_reconnect(ref_cast<MClientReconnect>(m));
     return;
   }
-
+  bool sessionclosed_isok = g_conf().get_val<bool>("mds_replay_unsafe_with_closed_session");
   // active?
   // handle_slave_request()/handle_client_session() will wait if necessary
   if (m->get_type() == CEPH_MSG_CLIENT_REQUEST && !mds->is_active()) {
     const auto &req = ref_cast<MClientRequest>(m);
     if (mds->is_reconnect() || mds->get_want_state() == CEPH_MDS_STATE_RECONNECT) {
       Session *session = mds->get_session(req);
-      if (!session || session->is_closed()) {
+      if (!session || (!session->is_open() && !sessionclosed_isok)) {
 	dout(5) << "session is closed, dropping " << req->get_reqid() << dendl;
 	return;
       }
@@ -456,7 +456,7 @@ void Server::handle_client_reclaim(const cref_t<MClientReclaim> &m)
   dout(3) << __func__ <<  " " << *m << " from " << m->get_source() << dendl;
   assert(m->get_source().is_client()); // should _not_ come from an mds!
 
-  if (!session) {
+  if (!session || !session->is_open()) {
     dout(0) << " ignoring sessionless msg " << *m << dendl;
     return;
   }
@@ -481,7 +481,7 @@ void Server::handle_client_session(const cref_t<MClientSession> &m)
   dout(3) << "handle_client_session " << *m << " from " << m->get_source() << dendl;
   ceph_assert(m->get_source().is_client()); // should _not_ come from an mds!
 
-  if (!session) {
+  if (!session || !session->is_open()) {
     dout(0) << " ignoring sessionless msg " << *m << dendl;
     auto reply = make_message<MClientSession>(CEPH_SESSION_REJECT);
     reply->metadata["error_string"] = "sessionless";
@@ -820,8 +820,9 @@ void Server::_session_logged(Session *session, uint64_t state_seq, bool open, ve
     } else if (session->is_killing()) {
       // destroy session, close connection
       if (session->get_connection()) {
-	session->get_connection()->mark_down();
-	session->get_connection()->set_priv(NULL);
+        session->get_connection()->mark_down();
+        mds->sessionmap.set_state(session, Session::STATE_CLOSED);
+        session->set_connection(nullptr);
       }
       mds->sessionmap.remove_session(session);
     } else {
@@ -1284,6 +1285,14 @@ void Server::handle_client_reconnect(const cref_t<MClientReconnect> &m)
     dout(0) << " ignoring sessionless msg " << *m << dendl;
     auto reply = make_message<MClientSession>(CEPH_SESSION_REJECT);
     reply->metadata["error_string"] = "sessionless";
+    mds->send_message(reply, m->get_connection());
+    return;
+  }
+
+  if (!session->is_open()) {
+    dout(0) << " ignoring msg from not-open session" << *m << dendl;
+    auto reply = make_message<MClientSession>(CEPH_SESSION_CLOSE);
+    reply->metadata["error_string"] = "session is not open";
     mds->send_message(reply, m->get_connection());
     return;
   }
@@ -2217,13 +2226,14 @@ void Server::handle_client_request(const cref_t<MClientRequest> &req)
     return;
   }
 
+  bool sessionclosed_isok = g_conf().get_val<bool>("mds_replay_unsafe_with_closed_session");
   // active session?
   Session *session = 0;
   if (req->get_source().is_client()) {
     session = mds->get_session(req);
     if (!session) {
       dout(5) << "no session for " << req->get_source() << ", dropping" << dendl;
-    } else if (session->is_closed() ||
+    } else if ((session->is_closed() && (!mds->is_clientreplay() || !sessionclosed_isok)) ||
 	       session->is_closing() ||
 	       session->is_killing()) {
       dout(5) << "session closed|closing|killing, dropping" << dendl;
@@ -2249,6 +2259,8 @@ void Server::handle_client_request(const cref_t<MClientRequest> &req)
     inodeno_t created;
     if (session->have_completed_request(req->get_reqid().tid, &created)) {
       has_completed = true;
+      if (!session->is_open())
+        return;
       // Don't send traceless reply if the completed request has created
       // new inode. Treat the request as lookup request instead.
       if (req->is_replay() ||
@@ -3215,7 +3227,7 @@ CInode* Server::prepare_new_inode(MDRequestRef& mdr, CDir *dir, inodeno_t useino
   // state. In that corner case, session's prealloc_inos are being freed.
   // To simplify the code, we disallow using/refilling session's prealloc_ino
   // while session is opening.
-  bool allow_prealloc_inos = !mdr->session->is_opening();
+  bool allow_prealloc_inos = mdr->session->is_open();
 
   // assign ino
   if (allow_prealloc_inos &&
@@ -3230,7 +3242,7 @@ CInode* Server::prepare_new_inode(MDRequestRef& mdr, CDir *dir, inodeno_t useino
 	     << dendl;
   } else {
     mdr->alloc_ino = 
-      in->inode.ino = mds->inotable->project_alloc_id();
+      in->inode.ino = mds->inotable->project_alloc_id(useino);
     dout(10) << "prepare_new_inode alloc " << mdr->alloc_ino << dendl;
   }
 
