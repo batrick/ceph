@@ -34,6 +34,9 @@ template<typename T, typename Map = std::map<T,T>>
 class interval_set {
  public:
   using value_type = T;
+  using map_reference = typename Map::reference;
+  using map_const_reference = typename Map::const_reference;
+  using size_type = typename Map::size_type;
 
   class const_iterator;
 
@@ -56,41 +59,42 @@ class interval_set {
         }
 
         // Dereference this iterator to get a pair.
-        std::pair < T, T > &operator*() {
-                return *_iter;
+        map_reference& operator*() const {
+          return *_iter;
         }
 
         // Return the interval start.
-        T get_start() const {
-                return _iter->first;
+        value_type get_start() const {
+          return _iter->first;
         }
 
         // Return the interval length.
-        T get_len() const {
-                return _iter->second;
+        value_type get_len() const {
+          return _iter->second;
         }
-        T get_end() const {
-                return _iter->first + _iter->second;
+
+        value_type get_end() const {
+          return _iter->first + _iter->second;
         }
 
         // Set the interval length.
-        void set_len(T len) {
-                _iter->second = len;
+        void set_len(const value_type& len) {
+          _iter->second = len;
         }
 
         // Preincrement
-        iterator &operator++()
+        iterator& operator++()
         {
-                ++_iter;
-                return *this;
+          ++_iter;
+          return *this;
         }
 
         // Postincrement
         iterator operator++(int)
         {
-                iterator prev(_iter);
-                ++_iter;
-                return prev;
+          iterator prev(_iter);
+          ++_iter;
+          return prev;
         }
 
     friend class interval_set<T,Map>::const_iterator;
@@ -123,84 +127,83 @@ class interval_set {
         }
 
         // Dereference this iterator to get a pair.
-        std::pair < T, T > operator*() const {
-                return *_iter;
+        map_const_reference& operator*() const {
+          return *_iter;
         }
 
         // Return the interval start.
-        T get_start() const {
-                return _iter->first;
+        value_type get_start() const {
+          return _iter->first;
         }
-        T get_end() const {
-                return _iter->first + _iter->second;
+        value_type get_end() const {
+          return _iter->first + _iter->second;
         }
 
         // Return the interval length.
-        T get_len() const {
-                return _iter->second;
+        value_type get_len() const {
+          return _iter->second;
         }
 
         // Preincrement
-        const_iterator &operator++()
+        const_iterator& operator++()
         {
-                ++_iter;
-                return *this;
+          ++_iter;
+          return *this;
         }
 
         // Postincrement
         const_iterator operator++(int)
         {
-                const_iterator prev(_iter);
-                ++_iter;
-                return prev;
+          const_iterator prev(_iter);
+          ++_iter;
+          return prev;
         }
 
     protected:
         typename Map::const_iterator _iter;
   };
 
-  interval_set() : _size(0) {}
+  interval_set() = default;
   interval_set(Map&& other) {
     m.swap(other);
-    _size = 0;
-    for (auto& i : m) {
+    for (const auto& i : m) {
       _size += i.second;
     }
   }
 
-  int num_intervals() const
+  size_type num_intervals() const
   {
     return m.size();
   }
 
-  typename interval_set<T,Map>::iterator begin() {
+  auto begin() {
     return typename interval_set<T,Map>::iterator(m.begin());
   }
 
-  typename interval_set<T,Map>::iterator lower_bound(T start) {
+  auto lower_bound(T start) {
     return typename interval_set<T,Map>::iterator(find_inc_m(start));
   }
 
-  typename interval_set<T,Map>::iterator end() {
+  auto end() {
     return typename interval_set<T,Map>::iterator(m.end());
   }
 
-  typename interval_set<T,Map>::const_iterator begin() const {
+  auto begin() const {
     return typename interval_set<T,Map>::const_iterator(m.begin());
   }
 
-  typename interval_set<T,Map>::const_iterator lower_bound(T start) const {
+  auto lower_bound(T start) const {
     return typename interval_set<T,Map>::const_iterator(find_inc(start));
   }
 
-  typename interval_set<T,Map>::const_iterator end() const {
+  auto end() const {
     return typename interval_set<T,Map>::const_iterator(m.end());
   }
 
   // helpers
  private:
-  typename Map::const_iterator find_inc(T start) const {
-    typename Map::const_iterator p = m.lower_bound(start);  // p->first >= start
+  auto find_inc(T start) const {
+    auto p = m.lower_bound(start);  // p->first >= start
     if (p != m.begin() &&
         (p == m.end() || p->first > start)) {
       p--;   // might overlap?
@@ -210,8 +213,8 @@ class interval_set {
     return p;
   }
   
-  typename Map::iterator find_inc_m(T start) {
-    typename Map::iterator p = m.lower_bound(start);
+  auto find_inc_m(T start) {
+    auto p = m.lower_bound(start);
     if (p != m.begin() &&
         (p == m.end() || p->first > start)) {
       p--;   // might overlap?
@@ -221,8 +224,8 @@ class interval_set {
     return p;
   }
   
-  typename Map::const_iterator find_adj(T start) const {
-    typename Map::const_iterator p = m.lower_bound(start);
+  auto find_adj(T start) const {
+    auto p = m.lower_bound(start);
     if (p != m.begin() &&
         (p == m.end() || p->first > start)) {
       p--;   // might touch?
@@ -232,8 +235,8 @@ class interval_set {
     return p;
   }
   
-  typename Map::iterator find_adj_m(T start) {
-    typename Map::iterator p = m.lower_bound(start);
+  auto find_adj_m(T start) {
+    auto p = m.lower_bound(start);
     if (p != m.begin() &&
         (p == m.end() || p->first > start)) {
       p--;   // might touch?
@@ -244,16 +247,16 @@ class interval_set {
   }
 
   void intersection_size_asym(const interval_set &s, const interval_set &l) {
-    typename decltype(m)::const_iterator ps = s.m.begin(), pl;
+    auto ps = s.m.begin();
     ceph_assert(ps != s.m.end());
-    T offset = ps->first;
+    auto offset = ps->first;
     bool first = true;
-    typename decltype(m)::iterator mi = m.begin();
+    auto mi = m.begin();
 
     while (1) {
       if (first)
         first = false;
-      pl = l.find_inc(offset);
+      auto pl = l.find_inc(offset);
       if (pl == l.m.end())
         break;
       while (ps != s.m.end() && ps->first + ps->second <= pl->first)
@@ -279,8 +282,8 @@ class interval_set {
         continue;
       }
 
-      T start = std::max<T>(ps->first, pl->first);
-      T en = std::min<T>(ps->first + ps->second, offset);
+      auto start = std::max<T>(ps->first, pl->first);
+      auto en = std::min<T>(ps->first + ps->second, offset);
       ceph_assert(en > start);
       typename decltype(m)::value_type i{start, en - start};
       mi = m.insert(mi, i);
@@ -331,7 +334,7 @@ class interval_set {
     return _size == other._size && m == other.m;
   }
 
-  uint64_t size() const {
+  auto size() const {
     return _size;
   }
 
@@ -373,7 +376,7 @@ class interval_set {
   }
 
   bool contains(T i, T *pstart=0, T *plen=0) const {
-    typename Map::const_iterator p = find_inc(i);
+    auto p = find_inc(i);
     if (p == m.end()) return false;
     if (p->first > i) return false;
     if (p->first+p->second <= i) return false;
@@ -385,7 +388,7 @@ class interval_set {
     return true;
   }
   bool contains(T start, T len) const {
-    typename Map::const_iterator p = find_inc(start);
+    auto p = find_inc(start);
     if (p == m.end()) return false;
     if (p->first > start) return false;
     if (p->first+p->second <= start) return false;
@@ -406,14 +409,14 @@ class interval_set {
   bool empty() const {
     return m.empty();
   }
-  T range_start() const {
+  auto range_start() const {
     ceph_assert(!empty());
-    typename Map::const_iterator p = m.begin();
+    auto p = m.begin();
     return p->first;
   }
-  T range_end() const {
+  auto range_end() const {
     ceph_assert(!empty());
-    typename Map::const_iterator p = m.end();
+    auto p = m.end();
     p--;
     return p->first+p->second;
   }
@@ -421,20 +424,20 @@ class interval_set {
   // interval start after p (where p not in set)
   bool starts_after(T i) const {
     ceph_assert(!contains(i));
-    typename Map::const_iterator p = find_inc(i);
+    auto p = find_inc(i);
     if (p == m.end()) return false;
     return true;
   }
-  T start_after(T i) const {
+  auto start_after(T i) const {
     ceph_assert(!contains(i));
-    typename Map::const_iterator p = find_inc(i);
+    auto p = find_inc(i);
     return p->first;
   }
 
   // interval end that contains start
-  T end_after(T start) const {
+  auto end_after(T start) const {
     ceph_assert(contains(start));
-    typename Map::const_iterator p = find_inc(start);
+    auto p = find_inc(start);
     return p->first+p->second;
   }
   
@@ -446,7 +449,7 @@ class interval_set {
     //cout << "insert " << start << "~" << len << endl;
     ceph_assert(len > 0);
     _size += len;
-    typename Map::iterator p = find_adj_m(start);
+    auto p = find_adj_m(start);
     if (p == m.end()) {
       m[start] = len;                  // new interval
       if (pstart)
@@ -463,7 +466,7 @@ class interval_set {
         
         p->second += len;               // append to end
         
-        typename Map::iterator n = p;
+        auto n = p;
         n++;
 	if (pstart)
 	  *pstart = p->first;
@@ -515,7 +518,7 @@ class interval_set {
 
   void erase(T start, T len, 
     std::function<bool(T, T)> claim = {}) {
-    typename Map::iterator p = find_inc_m(start);
+    auto p = find_inc_m(start);
 
     _size -= len;
     ceph_assert(_size >= 0);
@@ -546,17 +549,15 @@ class interval_set {
   }
 
   void subtract(const interval_set &a) {
-    for (typename Map::const_iterator p = a.m.begin();
-         p != a.m.end();
-         p++)
-      erase(p->first, p->second);
+    for (auto it = a.m.begin(); it != a.m.end(); ++it) {
+      erase(it->first, it->second);
+    }
   }
 
   void insert(const interval_set &a) {
-    for (typename Map::const_iterator p = a.m.begin();
-         p != a.m.end();
-         p++)
-      insert(p->first, p->second);
+    for (auto it = a.m.begin(); it != a.m.end(); ++it) {
+      insert(it->first, it->second);
+    }
   }
 
 
@@ -588,9 +589,9 @@ class interval_set {
       return;
     }
 
-    typename Map::const_iterator pa = a.m.begin();
-    typename Map::const_iterator pb = b.m.begin();
-    typename decltype(m)::iterator mi = m.begin();
+    auto pa = a.m.begin();
+    auto pb = b.m.begin();
+    auto mi = m.begin();
 
     while (pa != a.m.end() && pb != b.m.end()) {
       // passing?
@@ -674,10 +675,9 @@ class interval_set {
     if (big.size() / size() < 10)
       return subset_size_sym(big);
 
-    for (typename Map::const_iterator i = m.begin();
-         i != m.end();
-         i++) 
-      if (!big.contains(i->first, i->second)) return false;
+    for (auto it = m.begin(); it != m.end(); ++it) {
+      if (!big.contains(it->first, it->second)) return false;
+    }
     return true;
   }  
 
@@ -688,7 +688,7 @@ class interval_set {
    */
   void span_of(const interval_set &other, T start, T len) {
     clear();
-    typename Map::const_iterator p = other.find_inc(start);
+    auto p = other.find_inc(start);
     if (p == other.m.end())
       return;
     if (p->first < start) {
@@ -728,7 +728,7 @@ class interval_set {
 
 private:
   // data
-  uint64_t _size;
+  uint64_t _size = 0;
   Map m;   // map start -> len
 };
 
@@ -769,13 +769,11 @@ struct denc_traits<interval_set<T,Map>> {
 template<class T, typename Map>
 inline std::ostream& operator<<(std::ostream& out, const interval_set<T,Map> &s) {
   out << "[";
-  const char *prequel = "";
-  for (typename interval_set<T,Map>::const_iterator i = s.begin();
-       i != s.end();
-       ++i)
-  {
-    out << prequel << i.get_start() << "~" << i.get_len();
-    prequel = ",";
+  bool first = true;
+  for (const auto& [start, len] : s) {
+    if (!first) out << ",";
+    out << start << "~" << len;
+    first = false;
   }
   out << "]";
   return out;
