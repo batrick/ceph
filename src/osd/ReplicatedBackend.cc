@@ -261,7 +261,7 @@ int ReplicatedBackend::objects_readv_sync(
   uint32_t op_flags,
   bufferlist *bl)
 {
-  interval_set<uint64_t> im(m);
+  interval_set<uint64_t> im(std::move(m));
   auto r = store->readv(ch, ghobject_t(hoid), im, *bl, op_flags);
   if (r >= 0) {
     im.move_into(m);
@@ -2081,7 +2081,7 @@ int ReplicatedBackend::build_push_op(const ObjectRecoveryInfo &recovery_info,
       int r = store->fiemap(ch, ghobject_t(recovery_info.soid), 0,
                             copy_subset.range_end(), m);
       if (r >= 0)  {
-        interval_set<uint64_t> fiemap_included(m);
+        interval_set<uint64_t> fiemap_included(std::move(m));
         copy_subset.intersection_of(fiemap_included);
       } else {
         // intersection of copy_subset and empty interval_set would be empty anyway
