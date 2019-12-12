@@ -722,6 +722,8 @@ class interval_set {
    */
   void move_into(Map& other) {
     other = std::move(m);
+    m.clear();
+    _size = 0;
   }
 
 private:
