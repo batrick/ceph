@@ -431,6 +431,12 @@ void feature_bitset_t::decode(bufferlist::const_iterator &p) {
   }
 }
 
+void feature_bitset_t::dump(Formatter *f) const {
+  CachedStackStringStream css;
+  print(*css);
+  f->dump_string("feature_bits", css->strv());
+}
+
 void feature_bitset_t::print(ostream& out) const
 {
   std::ios_base::fmtflags f(out.flags());
@@ -462,7 +468,7 @@ void client_metadata_t::decode(bufferlist::const_iterator& p)
 
 void client_metadata_t::dump(Formatter *f) const
 {
-  f->dump_stream("features") << features;
+  f->dump_object("client_features", features);
   for (const auto& [name, val] : kv_map)
     f->dump_string(name.c_str(), val);
 }
