@@ -503,7 +503,7 @@ class Filesystem(MDSCluster):
         self.mon_manager.raw_cluster_cmd("fs", "fail", str(self.name))
 
     def set_var(self, var, *args):
-        a = map(str, args)
+        a = list(map(str, args))
         self.mon_manager.raw_cluster_cmd("fs", "set", self.name, var, *a)
 
     def set_down(self, down=True):
@@ -792,6 +792,28 @@ class Filesystem(MDSCluster):
         :return: list of strings like ['a', 'b'], sorted by rank
         """
         return self.get_daemon_names("up:active")
+
+    def get_crashed_names(self):
+        """
+        Return MDS daemon names of those daemons that are crashed/laggy
+
+        :return: list of strings like ['a', 'b'], sorted by rank
+        """
+        mdsmap = self.get_mds_map()
+        is_laggy = None
+        result = {}
+        for mds_status in sorted(mdsmap['info'].values(), lambda a, b: cmp(a['rank'], b['rank'])):
+            try:
+                is_laggy = mds_status['laggy_since']
+            except KeyError:
+                pass
+
+            if is_laggy is not None:
+                result.append(mds_status['name'])
+
+            is_laggy = None
+
+        return result
 
     def get_all_mds_rank(self, status=None):
         mdsmap = self.get_mds_map(status)
