@@ -18,6 +18,7 @@
 
 #include "msg/Message.h"
 #include "include/filepath.h"
+#include "messages/MMDSOp.h"
 
 #include <string>
 
@@ -63,7 +64,7 @@
  * 
  */
 
-class MDiscoverReply : public SafeMessage {
+class MDiscoverReply : public MMDSOp {
 private:
   static constexpr int HEAD_VERSION = 2;
   static constexpr int COMPAT_VERSION = 2;
@@ -110,9 +111,9 @@ private:
   void set_base_dir_frag(frag_t df) { base_dir_frag = df; }
 
 protected:
-  MDiscoverReply() : SafeMessage{MSG_MDS_DISCOVERREPLY, HEAD_VERSION, COMPAT_VERSION} { }
+  MDiscoverReply() : MMDSOp{MSG_MDS_DISCOVERREPLY, HEAD_VERSION, COMPAT_VERSION} { }
   MDiscoverReply(const MDiscover &dis) :
-    SafeMessage{MSG_MDS_DISCOVERREPLY, HEAD_VERSION, COMPAT_VERSION},
+    MMDSOp{MSG_MDS_DISCOVERREPLY, HEAD_VERSION, COMPAT_VERSION},
     base_ino(dis.get_base_ino()),
     base_dir_frag(dis.get_base_dir_frag()),
     wanted_base_dir(dis.wants_base_dir()),
@@ -127,7 +128,7 @@ protected:
     header.tid = dis.get_tid();
   }
   MDiscoverReply(dirfrag_t df) :
-    SafeMessage{MSG_MDS_DISCOVERREPLY, HEAD_VERSION, COMPAT_VERSION},
+    MMDSOp{MSG_MDS_DISCOVERREPLY, HEAD_VERSION, COMPAT_VERSION},
     base_ino(df.ino),
     base_dir_frag(df.frag),
     wanted_base_dir(false),

@@ -18,8 +18,9 @@
 
 #include "msg/Message.h"
 #include "mds/mds_table_types.h"
+#include "messages/MMDSOp.h"
 
-class MMDSTableRequest : public SafeMessage {
+class MMDSTableRequest : public MMDSOp {
 public:
   __u16 table = 0;
   __s16 op = 0;
@@ -27,9 +28,9 @@ public:
   bufferlist bl;
 
 protected:
-  MMDSTableRequest() : SafeMessage{MSG_MDS_TABLE_REQUEST} {}
+  MMDSTableRequest() : MMDSOp{MSG_MDS_TABLE_REQUEST} {}
   MMDSTableRequest(int tab, int o, uint64_t r, version_t v=0) : 
-    SafeMessage{MSG_MDS_TABLE_REQUEST},
+    MMDSOp{MSG_MDS_TABLE_REQUEST},
     table(tab), op(o), reqid(r) {
     set_tid(v);
   }
