@@ -234,9 +234,9 @@ class CephFSMount(object):
                 import time
 
                 f = open("{path}", 'w')
-                f.write('content')
+                f.write(b'content')
                 f.flush()
-                f.write('content2')
+                f.write(b'content2')
                 while True:
                     time.sleep(1)
                 """).format(path=path)
@@ -430,7 +430,7 @@ class CephFSMount(object):
             f = open(path, 'w')
             for i in range(0, {size}):
                 val = zlib.crc32("%s" % i) & 7
-                f.write(chr(val))
+                f.write(chr(val).encode('utf-8'))
             f.close()
         """.format(
             path=os.path.join(self.mountpoint, filename),
