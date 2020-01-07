@@ -192,6 +192,7 @@ public:
   size_t get_request_count() const;
 
   interval_set<inodeno_t> pending_prealloc_inos; // journaling prealloc, will be added to prealloc_inos
+  interval_set<inodeno_t> delegated_inos; // hand these out to client
 
   void notify_cap_release(size_t n_caps);
   uint64_t notify_recall_sent(size_t new_limit);
@@ -211,29 +212,62 @@ public:
     return session_cache_liveness.get();
   }
 
-  inodeno_t next_ino() const {
-    if (info.prealloc_inos.empty())
-      return 0;
-    return info.prealloc_inos.range_start();
-  }
   inodeno_t take_ino(inodeno_t ino = 0) {
-    ceph_assert(!info.prealloc_inos.empty());
-
     if (ino) {
-      if (info.prealloc_inos.contains(ino))
-	info.prealloc_inos.erase(ino);
-      else
-	ino = 0;
-    }
-    if (!ino) {
-      ino = info.prealloc_inos.range_start();
+      if (!info.prealloc_inos.contains(ino))
+	return 0;
       info.prealloc_inos.erase(ino);
+      if (delegated_inos.contains(ino))
+	delegated_inos.erase(ino);
+    } else {
+      /* Grab first prealloc_ino that isn't delegated */
+      for (const auto p: info.prealloc_inos) {
+	for (auto i = p.first ; i < p.first + p.second ; i += 1) {
+	  inodeno_t dstart, dlen;
+	  if (!delegated_inos.contains(i, &dstart, &dlen)) {
+	    ino = i;
+	    info.prealloc_inos.erase(ino);
+	    break;
+	  }
+	  /* skip to end of delegated interval */
+	  i = dstart + dlen - 1;
+	}
+	if (ino)
+	  break;
+      }
     }
-    info.used_inos.insert(ino, 1);
+    if (ino)
+      info.used_inos.insert(ino, 1);
     return ino;
   }
+  void delegate_inos(int want, interval_set<inodeno_t>& newinos) {
+    want -= (int)delegated_inos.size();
+    if (want <= 0)
+      return;
+
+    for (const auto p: info.prealloc_inos) {
+      for (auto i = p.first ; i < p.first + p.second ; i += 1) {
+	inodeno_t dstart, dlen;
+	if (!delegated_inos.contains(i, &dstart, &dlen)) {
+	  delegated_inos.insert(i);
+	  newinos.insert(i);
+	  if (--want == 0)
+	     return;
+	} else {
+	  /* skip to end of delegated interval */
+	  i = dstart + dlen - 1;
+	}
+      }
+    }
+  }
+
+  // sans any delegated ones
+  int get_num_prealloc_inos() const {
+    return info.prealloc_inos.size() - delegated_inos.size();
+  }
+
   int get_num_projected_prealloc_inos() const {
-    return info.prealloc_inos.size() + pending_prealloc_inos.size();
+    return get_num_prealloc_inos() + pending_prealloc_inos.size();
   }
 
   client_t get_client() const {
@@ -453,6 +487,7 @@ public:
 
   void clear() {
     pending_prealloc_inos.clear();
+    delegated_inos.clear();
     info.clear_meta();
 
     cap_push_seq = 0;
