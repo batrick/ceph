@@ -2384,6 +2384,14 @@ void MDSRankDispatcher::handle_mds_map(
   if (mdsmap->get_inline_data_enabled() && !oldmap.get_inline_data_enabled())
     dout(0) << "WARNING: inline_data support has been deprecated and will be removed in a future release" << dendl;
 
+  if (scrubstack->is_scrubbing()) {
+    unsigned active = mdsmap->get_num_mds(MDSMap::DaemonState::STATE_ACTIVE);
+    unsigned stopping = mdsmap->get_num_mds(MDSMap::DaemonState::STATE_STOPPING);
+    if (active + stopping > 1) {
+      C_MDSInternalNoop cond;
+      scrubstack->scrub_abort(&cond);
+    }
+  }
   mdcache->handle_mdsmap(*mdsmap);
 }
 
@@ -2518,6 +2526,19 @@ void MDSRankDispatcher::handle_asok_command(
     cmd_getval(g_ceph_context, cmdmap, "scrubops", scrubop_vec);
     cmd_getval(g_ceph_context, cmdmap, "path", path);
     cmd_getval(g_ceph_context, cmdmap, "tag", tag);
+    /* if there are more than one mds active and a recursive scrub is requested,
+     * dishonor the request
+     */
+    unsigned active = mdsmap->get_num_mds(MDSMap::DaemonState::STATE_ACTIVE);
+    unsigned stopping = mdsmap->get_num_mds(MDSMap::DaemonState::STATE_STOPPING);
+    bool is_recursive = std::find(scrubop_vec.begin(), scrubop_vec.end(), string("recursive")) != scrubop_vec.end();
+    // if (mdsmap->get_max_mds() > 1 &&
+    if ((active + stopping > 1) && is_recursive) {
+      ss << "There are more than one MDS active. Hence a recursive scrub "
+            "request cannot be started.";
+      r = -EINVAL;
+      goto out;
+    }
     finisher->queue(
       new LambdaContext(
 	[this, on_finish, f, path, tag, scrubop_vec](int r) {
