@@ -2402,6 +2402,12 @@ void MDSRankDispatcher::handle_mds_map(
     purge_queue.update_op_limit(*mdsmap);
   }
 
+  if (scrubstack->is_scrubbing()) {
+    if (mdsmap->get_max_mds() > 1) {
+      auto c = new C_MDSInternalNoop;
+      scrubstack->scrub_abort(c);
+    }
+  }
   mdcache->handle_mdsmap(*mdsmap);
 }
 
@@ -2504,6 +2510,17 @@ bool MDSRankDispatcher::handle_asok_command(std::string_view command,
     vector<string> scrubop_vec;
     cmd_getval(g_ceph_context, cmdmap, "scrubops", scrubop_vec);
     cmd_getval(g_ceph_context, cmdmap, "path", path);
+
+    /* if there are more than one mds active and a recursive scrub is requested,
+     * dishonor the request
+     */
+    bool is_recursive = std::find(scrubop_vec.begin(), scrubop_vec.end(), string("recursive")) != scrubop_vec.end();
+    if (mdsmap->get_max_mds() > 1 && is_recursive) {
+      ss << "There is more than one MDS active. Hence a recursive scrub "
+            "request cannot be started.";
+      r = -EINVAL;
+      goto out;
+    }
 
     C_SaferCond cond;
     command_scrub_start(f, path, "", scrubop_vec, &cond);
