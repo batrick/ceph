@@ -2511,13 +2511,9 @@ bool MDSRankDispatcher::handle_asok_command(std::string_view command,
     cmd_getval(g_ceph_context, cmdmap, "scrubops", scrubop_vec);
     cmd_getval(g_ceph_context, cmdmap, "path", path);
 
-    /* if there are more than one mds active and a recursive scrub is requested,
-     * dishonor the request
-     */
-    bool is_recursive = std::find(scrubop_vec.begin(), scrubop_vec.end(), string("recursive")) != scrubop_vec.end();
-    if (mdsmap->get_max_mds() > 1 && is_recursive) {
-      ss << "There is more than one MDS active. Hence a recursive scrub "
-            "request cannot be started.";
+    /* Multiple MDS scrub is not currently supported. See also: https://tracker.ceph.com/issues/12274 */
+    if (mdsmap->get_max_mds() > 1) {
+      ss << "Scrub is not currently supported for multiple active MDS. Please reduce max_mds to 1 and then scrub.";
       r = -EINVAL;
       goto out;
     }
