@@ -16,19 +16,19 @@
 #define CEPH_MMDSRESOLVEACK_H
 
 #include "msg/Message.h"
-
 #include "include/types.h"
+#include "messages/MMDSOp.h"
 
 
-class MMDSResolveAck : public SafeMessage {
-  static const int HEAD_VERSION = 1;
-  static const int COMPAT_VERSION = 1;
+class MMDSResolveAck : public MMDSOp {
+  static constexpr int HEAD_VERSION = 1;
+  static constexpr int COMPAT_VERSION = 1;
 public:
   map<metareqid_t, bufferlist> commit;
   vector<metareqid_t> abort;
 
 protected:
-  MMDSResolveAck() : SafeMessage{MSG_MDS_RESOLVEACK, HEAD_VERSION, COMPAT_VERSION} {}
+  MMDSResolveAck() : MMDSOp{MSG_MDS_RESOLVEACK, HEAD_VERSION, COMPAT_VERSION} {}
   ~MMDSResolveAck() override {}
 
 public:

@@ -16,8 +16,9 @@
 #define CEPH_MMDSFRAGMENTNOTIFYAck_H
 
 #include "msg/Message.h"
+#include "messages/MMDSOp.h"
 
-class MMDSFragmentNotifyAck : public SafeMessage {
+class MMDSFragmentNotifyAck : public MMDSOp {
 private:
   dirfrag_t base_dirfrag;
   int8_t bits = 0;
@@ -29,9 +30,9 @@ private:
   bufferlist basebl;
 
 protected:
-  MMDSFragmentNotifyAck() : SafeMessage{MSG_MDS_FRAGMENTNOTIFYACK} {}
+  MMDSFragmentNotifyAck() : MMDSOp{MSG_MDS_FRAGMENTNOTIFYACK} {}
   MMDSFragmentNotifyAck(dirfrag_t df, int b, uint64_t tid) :
-    SafeMessage{MSG_MDS_FRAGMENTNOTIFYACK},
+    MMDSOp{MSG_MDS_FRAGMENTNOTIFYACK},
     base_dirfrag(df), bits(b) {
     set_tid(tid);
   }
