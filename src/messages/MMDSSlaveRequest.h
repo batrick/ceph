@@ -18,8 +18,9 @@
 
 #include "msg/Message.h"
 #include "mds/mdstypes.h"
+#include "messages/MMDSOp.h"
 
-class MMDSSlaveRequest : public SafeMessage {
+class MMDSSlaveRequest : public MMDSOp {
   static constexpr int HEAD_VERSION = 1;
   static constexpr int COMPAT_VERSION = 1;
 public:
@@ -165,9 +166,9 @@ public:
   bufferlist& get_lock_data() { return inode_export; }
 
 protected:
-  MMDSSlaveRequest() : SafeMessage{MSG_MDS_SLAVE_REQUEST, HEAD_VERSION, COMPAT_VERSION} { }
+  MMDSSlaveRequest() : MMDSOp{MSG_MDS_SLAVE_REQUEST, HEAD_VERSION, COMPAT_VERSION} { }
   MMDSSlaveRequest(metareqid_t ri, __u32 att, int o) : 
-    SafeMessage{MSG_MDS_SLAVE_REQUEST, HEAD_VERSION, COMPAT_VERSION},
+    MMDSOp{MSG_MDS_SLAVE_REQUEST, HEAD_VERSION, COMPAT_VERSION},
     reqid(ri), attempt(att), op(o), flags(0), lock_type(0),
     inode_export_v(0), srcdn_auth(MDS_RANK_NONE) { }
   ~MMDSSlaveRequest() override {}

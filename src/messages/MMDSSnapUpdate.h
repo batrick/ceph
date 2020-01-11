@@ -16,8 +16,9 @@
 #define CEPH_MMDSSNAPUPDATE_H
 
 #include "msg/Message.h"
+#include "messages/MMDSOp.h"
 
-class MMDSSnapUpdate : public SafeMessage {
+class MMDSSnapUpdate : public MMDSOp {
 private:
   inodeno_t ino;
   __s16 snap_op;
@@ -29,9 +30,9 @@ public:
   bufferlist snap_blob;
 
 protected:
-  MMDSSnapUpdate() : SafeMessage{MSG_MDS_SNAPUPDATE} {}
+  MMDSSnapUpdate() : MMDSOp{MSG_MDS_SNAPUPDATE} {}
   MMDSSnapUpdate(inodeno_t i, version_t tid, int op) :
-    SafeMessage{MSG_MDS_SNAPUPDATE}, ino(i), snap_op(op) {
+    MMDSOp{MSG_MDS_SNAPUPDATE}, ino(i), snap_op(op) {
       set_tid(tid);
     }
   ~MMDSSnapUpdate() override {}
