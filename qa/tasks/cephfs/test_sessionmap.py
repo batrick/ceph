@@ -83,13 +83,7 @@ class TestSessionMap(CephFSTestCase):
         # Configure MDS to write one OMAP key at once
         self.set_conf('mds', 'mds_sessionmap_keys_per_op', 1)
         self.fs.mds_fail_restart()
-        self.fs.wait_for_daemons()
-
-        # I would like two MDSs, so that I can do an export dir later
-        self.fs.set_max_mds(2)
-        self.fs.wait_for_daemons()
-
-        status = self.fs.status()
+        status = self.fs.wait_for_daemons()
 
         # Bring the clients back
         self.mount_a.mount()
@@ -111,6 +105,9 @@ class TestSessionMap(CephFSTestCase):
         self.mount_a.run_shell(["mkdir", "bravo"])
         self.mount_a.run_shell(["touch", "bravo/file"])
         self.mount_b.run_shell(["ls", "-l", "bravo/file"])
+
+        self.fs.set_max_mds(2)
+        status = self.fs.wait_for_daemons()
 
         def get_omap_wrs():
             return self.fs.rank_asok(['perf', 'dump', 'objecter'], rank=1, status=status)['objecter']['omap_wr']
