@@ -15,7 +15,6 @@ from teuthology.exceptions import CommandFailedError
 from teuthology import misc
 from teuthology.nuke import clear_firewall
 from teuthology.parallel import parallel
-from tasks.ceph_manager import write_conf
 from tasks import ceph_manager
 
 
@@ -197,33 +196,6 @@ class CephCluster(object):
         self._ctx = ctx
         self.mon_manager = ceph_manager.CephManager(self.admin_remote, ctx=ctx, logger=log.getChild('ceph_manager'))
 
-    def set_config_opt(self, section, opt, val):
-        self.mon_manager.raw_cluster_cmd('config', 'set', section, opt, val)
-
-    def rm_config_opt(self, section, opt):
-        self.mon_manager.raw_cluster_cmd('config', 'rm', section)
-
-    def get_config(self, key, service_type=None):
-        """
-        Get config from mon by default, or a specific service if caller asks for it
-        """
-        if service_type is None:
-            service_type = 'mon'
-
-        service_id = sorted(misc.all_roles_of_type(self._ctx.cluster, service_type))[0]
-        return self.json_asok(['config', 'get', key], service_type, service_id)[key]
-
-    def set_ceph_conf(self, subsys, key, value):
-        if subsys not in self._ctx.ceph['ceph'].conf:
-            self._ctx.ceph['ceph'].conf[subsys] = {}
-        self._ctx.ceph['ceph'].conf[subsys][key] = value
-        write_conf(self._ctx)  # XXX because we don't have the ceph task's config object, if they
-                               # used a different config path this won't work.
-
-    def clear_ceph_conf(self, subsys, key):
-        del self._ctx.ceph['ceph'].conf[subsys][key]
-        write_conf(self._ctx)
-
     def json_asok(self, command, service_type, service_id, timeout=None):
         if timeout is None:
             timeout = 15*60
@@ -280,17 +252,6 @@ class MDSCluster(CephCluster):
                     cb(mds_id)
         else:
             cb(mds_id)
-
-    def get_config(self, key, service_type=None):
-        """
-        get_config specialization of service_type="mds"
-        """
-        if service_type != "mds":
-            return super(MDSCluster, self).get_config(key, service_type)
-
-        # Some tests stop MDS daemons, don't send commands to a dead one:
-        service_id = random.sample(filter(lambda i: self.mds_daemons[i].running(), self.mds_daemons), 1)[0]
-        return self.json_asok(['config', 'get', key], service_type, service_id)[key]
 
     def mds_stop(self, mds_id=None):
         """
@@ -526,24 +487,31 @@ class Filesystem(MDSCluster):
     def fail(self):
         self.mon_manager.raw_cluster_cmd("fs", "fail", str(self.name))
 
+    def set_flag(self, var, *args):
+        a = map(lambda x: str(x).lower(), args)
+        self.mon_manager.raw_cluster_cmd("fs", "flag", "set", var, *a)
+
+    def set_allow_multifs(self, yes=True):
+        self.set_flag("enable_multiple", yes)
+
     def set_var(self, var, *args):
-        a = map(str, args)
+        a = map(lambda x: str(x).lower(), args)
         self.mon_manager.raw_cluster_cmd("fs", "set", self.name, var, *a)
 
     def set_down(self, down=True):
         self.set_var("down", str(down).lower())
 
     def set_joinable(self, joinable=True):
-        self.set_var("joinable", str(joinable).lower())
+        self.set_var("joinable", joinable)
 
     def set_max_mds(self, max_mds):
         self.set_var("max_mds", "%d" % max_mds)
 
     def set_allow_standby_replay(self, yes):
-        self.set_var("allow_standby_replay", str(yes).lower())
+        self.set_var("allow_standby_replay", yes)
 
     def set_allow_new_snaps(self, yes):
-        self.set_var("allow_new_snaps", str(yes).lower(), '--yes-i-really-mean-it')
+        self.set_var("allow_new_snaps", yes, '--yes-i-really-mean-it')
 
     # In Octopus+, the PG count can be omitted to use the default. We keep the
     # hard-coded value for deployments of Mimic/Nautilus.
@@ -817,14 +785,14 @@ class Filesystem(MDSCluster):
 
         return result
 
-    def get_active_names(self):
+    def get_active_names(self, status=None):
         """
         Return MDS daemon names of those daemons holding ranks
         in state up:active
 
         :return: list of strings like ['a', 'b'], sorted by rank
         """
-        return self.get_daemon_names("up:active")
+        return self.get_daemon_names("up:active", status=status)
 
     def get_all_mds_rank(self, status=None):
         mdsmap = self.get_mds_map(status)
