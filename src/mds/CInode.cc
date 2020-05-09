@@ -4520,7 +4520,14 @@ void CInode::validate_disk_state(CInode::validated_data *results,
       dout(20) << "ondisk_read_retval: " << results->backtrace.ondisk_read_retval << dendl;
       if (results->backtrace.ondisk_read_retval != 0) {
         results->backtrace.error_str << "failed to read off disk; see retval";
-	goto next;
+        // we probably have a new unwritten file!
+        // so skip the backtrace scrub for this entry and say that all's well
+        if (in->is_dirty_parent()) {
+          results->backtrace.passed = true;
+          dout(20) << "we've probably hit a new unwritten entry" << dendl;
+        }
+
+        goto next;
       }
 
       // extract the backtrace, and compare it to a newly-constructed one
@@ -4545,8 +4552,13 @@ void CInode::validate_disk_state(CInode::validated_data *results,
 					      &equivalent, &divergent);
 
       if (divergent || memory_newer < 0) {
-	// we're divergent, or on-disk version is newer
-	results->backtrace.error_str << "On-disk backtrace is divergent or newer";
+        if (divergent && in->is_dirty_parent()) {
+          results->backtrace.passed = true;
+          dout(20) << "we've probably hit a new unwritten entry" << dendl;
+        } else {
+          // we're divergent, or on-disk version is newer
+          results->backtrace.error_str << "On-disk backtrace is divergent or newer";
+        }
       } else {
         results->backtrace.passed = true;
       }
