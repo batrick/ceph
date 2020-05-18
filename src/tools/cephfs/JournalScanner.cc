@@ -171,6 +171,7 @@ int JournalScanner::scan_events()
   bufferlist read_buf;
   bool gap = false;
   uint64_t gap_start = -1;
+  uint64_t gap_len = 0;
   for (uint64_t obj_offset = (read_offset / object_size); ; obj_offset++) {
     uint64_t offset_in_obj = 0;
     if (obj_offset * object_size < header->expire_pos) {
@@ -196,6 +197,7 @@ int JournalScanner::scan_events()
       objects_missing.push_back(obj_offset);
       gap = true;
       gap_start = read_offset;
+      gap_len += (object_size - offset_in_obj);
       continue;
     } else {
       dout(4) << "Read 0x" << std::hex << this_object.length() << std::dec
@@ -207,6 +209,8 @@ int JournalScanner::scan_events()
     if (gap) {
       // No valid data at the current read offset, scan forward until we find something valid looking
       // or have to drop out to load another object.
+      read_offset = gap_start + gap_len;
+      gap_len = 0;
       dout(4) << "Searching for sentinel from 0x" << std::hex << read_offset
               << ", 0x" << read_buf.length() << std::dec << " bytes available" << dendl;
 
