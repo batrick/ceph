@@ -314,3 +314,59 @@ class TestFragmentation(CephFSTestCase):
             lambda: _count_fragmented() > 0,
             timeout=30
         )
+
+class TestDirfragKillPoints(TestFragmentation):
+    # Two active MDS
+    MDSS_REQUIRED = 2
+
+    init = False
+
+    def setUp(self):
+        # Set Multi-MDS cluster
+        self.fs.set_max_mds(2)
+
+        self.fs.wait_for_daemons()
+
+        return True
+
+    def _run_dir_frag(self, killpointv):
+
+        status = self.fs.status()
+
+        rank_0 = self.fs.get_rank(status=status, rank = 0)
+        rank_1 = self.fs.get_rank(status=status, rank = 1)
+        rank_0_name = rank_0['name']
+        rank_1_name = rank_1['name']
+
+        self.fs.set_config("mds_kill_dirfag_at", str(killpointv), rank=0, status=status)
+
+        try:
+            self.test_oversize()
+        except Exception as e:
+            log.error(e.__str__())
+
+        status2 = self.fs.status()
+
+        rank_0_new = self.fs.get_rank(status=status2, rank = 0)
+        rank_1_new = self.fs.get_rank(status=status2, rank = 1)
+        rank_0_new_name = rank_0_new['name']
+        rank_1_new_name = rank_1_new['name']
+
+        if status2.hadfailover_rank(self.fs.id, status, 0):
+            self.fail(f"MDS {rank_0_name} crashed and active as MDS {rank_0_new_name} killpoint {killpointv}")
+        if status2.hadfailover_rank(self.fs.id, status, 1):
+            self.fail(f"MDS {rank_1_name} crashed and active as MDS {rank_1_new_name} killpoint {killpointv}")
+        
+        return True
+
+def make_test_killpoints(killpointv):
+    def test_export_killpoints(self):
+        self.init = False
+        self.setUp()
+        assert(self._run_dir_frag(killpointv))
+        log.info("Test passed for killpoint %d" %killpointv)
+    return test_export_killpoints
+
+for killpointv in range(0, 11):
+    test_export_killpoints = make_test_killpoints(killpointv)
+    setattr(TestDirfragKillPoints, "test_dirfrag_killpoints_%d" % (killpointv), test_export_killpoints)
