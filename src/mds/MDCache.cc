@@ -10795,7 +10795,7 @@ void MDCache::encode_replica_dentry(CDentry *dn, mds_rank_t to, bufferlist& bl)
 void MDCache::encode_replica_inode(CInode *in, mds_rank_t to, bufferlist& bl,
 			      uint64_t features)
 {
-  ENCODE_START(1, 1, bl);
+  ENCODE_START(2, 1, bl);
   ceph_assert(in->is_auth());
   encode(in->inode.ino, bl);  // bleh, minor assymetry here
   encode(in->last, bl);
@@ -10805,6 +10805,12 @@ void MDCache::encode_replica_inode(CInode *in, mds_rank_t to, bufferlist& bl,
 
   in->_encode_base(bl, features);
   in->_encode_locks_state_for_replica(bl, mds->get_state() < MDSMap::STATE_ACTIVE);
+
+  if (struct_v >= 2) {
+    __u32 state = in->state;
+    encode(state, bl);
+  }
+
   ENCODE_FINISH(bl);
 }
 
@@ -10901,7 +10907,7 @@ void MDCache::decode_replica_dentry(CDentry *&dn, bufferlist::const_iterator& p,
 
 void MDCache::decode_replica_inode(CInode *&in, bufferlist::const_iterator& p, CDentry *dn, MDSContext::vec& finished)
 {
-  DECODE_START(1, p);
+  DECODE_START(2, p);
   inodeno_t ino;
   snapid_t last;
   __u32 nonce;
@@ -10935,6 +10941,16 @@ void MDCache::decode_replica_inode(CInode *&in, bufferlist::const_iterator& p, C
     if (!dn->get_linkage()->is_primary() || dn->get_linkage()->get_inode() != in)
       dout(10) << __func__ << " different linkage in dentry " << *dn << dendl;
   }
+
+  if (struct_v >= 2) {
+    __u32 state;
+    decode(state, p);
+    state &= CInode::MASK_STATE_REPLICATED;
+    if (state & CInode::STATE_RANDEPHEMERALPIN) {
+      in->set_ephemeral_rand(true);
+    }
+  }
+
   DECODE_FINISH(p); 
 }
 
