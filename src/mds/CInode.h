@@ -337,6 +337,11 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
      STATE_QUEUEDEXPORTPIN|STATE_TRACKEDBYOFT|STATE_DELAYEDEXPORTPIN|
      STATE_DISTEPHEMERALPIN|STATE_RANDEPHEMERALPIN);
 
+  /* These are for "permanent" state markers that are passed around between
+   * MDS. Nothing protects/updates it like a typicl MDS lock.
+   */
+  static const int MASK_STATE_REPLICATED = STATE_RANDEPHEMERALPIN;
+
   // -- waiters --
   static const uint64_t WAIT_DIR         = (1<<0);
   static const uint64_t WAIT_FROZEN      = (1<<1);
