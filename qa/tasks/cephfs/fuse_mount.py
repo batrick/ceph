@@ -470,7 +470,7 @@ print(_find_admin_socket("{client_name}"))
                         timeout=(15*60))
                     break
                 except CommandFailedError:
-                    if "Connection refused" in stderr.getvalue():
+                    if "Connection refused" in p.stderr.getvalue():
                         pass
 
         return json.loads(p.stdout.getvalue().strip())
