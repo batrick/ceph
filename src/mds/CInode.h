@@ -337,6 +337,18 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
      STATE_QUEUEDEXPORTPIN|STATE_TRACKEDBYOFT|STATE_DELAYEDEXPORTPIN|
      STATE_DISTEPHEMERALPIN|STATE_RANDEPHEMERALPIN);
 
+  /* These are for "permanent" state markers that are passed around between
+   * MDS. Nothing protects/updates it like a typical MDS lock.
+   *
+   * Currently, we just use this for REPLICATED inodes. The reason we need to
+   * replicate the random epin state is because the directory inode is still
+   * under the authority of the parent subtree. So it's not exported normally
+   * and we can't pass around the state that way. The importer of the dirfrags
+   * still needs to know that the inode is random pinned though otherwise it
+   * doesn't know that the dirfrags are pinned.
+   */
+  static const int MASK_STATE_REPLICATED = STATE_RANDEPHEMERALPIN;
+
   // -- waiters --
   static const uint64_t WAIT_DIR         = (1<<0);
   static const uint64_t WAIT_FROZEN      = (1<<1);
