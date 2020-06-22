@@ -9192,6 +9192,7 @@ int Client::read(int fd, char *buf, loff_t size, loff_t offset)
   int r = _read(f, offset, size, &bl);
   ldout(cct, 3) << "read(" << fd << ", " << (void*)buf << ", " << size << ", " << offset << ") = " << r << dendl;
   if (r >= 0) {
+    client_lock.unlock();
     bl.begin().copy(bl.length(), buf);
     r = bl.length();
   }
