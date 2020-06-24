@@ -11585,8 +11585,12 @@ int Client::_do_setxattr(Inode *in, const char *name, const void *value,
 {
 
   int xattr_flags = 0;
-  if (!value)
-    xattr_flags |= CEPH_XATTR_REMOVE;
+  // If the size is set to 0, set the value to an empty string
+  if (size == 0) {
+    value = "";
+  } else if (value == NULL) {
+      return -EINVAL;
+  }
   if (flags & XATTR_CREATE)
     xattr_flags |= CEPH_XATTR_CREATE;
   if (flags & XATTR_REPLACE)
@@ -11641,7 +11645,6 @@ int Client::_setxattr(Inode *in, const char *name, const void *value,
 	if (ret < 0)
 	  return ret;
 	if (ret == 0) {
-	  value = NULL;
 	  size = 0;
 	}
 	if (new_mode != in->mode) {
@@ -11660,7 +11663,6 @@ int Client::_setxattr(Inode *in, const char *name, const void *value,
 	if (ret < 0)
 	  return -EINVAL;
 	if (ret == 0) {
-	  value = NULL;
 	  size = 0;
 	}
       }

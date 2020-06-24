@@ -454,7 +454,6 @@ int ceph_flags_sys2wire(int flags);
  */
 #define CEPH_XATTR_CREATE  (1 << 0)
 #define CEPH_XATTR_REPLACE (1 << 1)
-#define CEPH_XATTR_REMOVE  (1 << 31)
 
 /*
  * readdir request flags;
