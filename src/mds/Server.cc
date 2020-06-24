@@ -5840,16 +5840,12 @@ void Server::handle_client_setxattr(MDRequestRef& mdr)
   pi.inode.change_attr++;
   pi.inode.xattr_version++;
   auto &px = *pi.xattrs;
-  if ((flags & CEPH_XATTR_REMOVE)) {
-    px.erase(mempool::mds_co::string(name));
-  } else {
-    bufferptr b = buffer::create(len);
-    if (len)
-      req->get_data().begin().copy(len, b.c_str());
-    auto em = px.emplace(std::piecewise_construct, std::forward_as_tuple(mempool::mds_co::string(name)), std::forward_as_tuple(b));
-    if (!em.second)
-      em.first->second = b;
-  }
+  bufferptr b = buffer::create(len);
+  if (len)
+    req->get_data().begin().copy(len, b.c_str());
+  auto em = px.emplace(std::piecewise_construct, std::forward_as_tuple(mempool::mds_co::string(name)), std::forward_as_tuple(b));
+  if (!em.second)
+    em.first->second = b;
 
   // log + wait
   mdr->ls = mdlog->get_current_segment();
