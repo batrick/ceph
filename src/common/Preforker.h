@@ -45,6 +45,8 @@ public:
       return (errno = e, -1);
     }
 
+    signal(SIGHUP, SIG_IGN);
+
     forked = true;
 
     childpid = fork();
