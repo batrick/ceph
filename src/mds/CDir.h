@@ -646,7 +646,8 @@ protected:
       ceph::buffer::list &bl,
       int pos,
       const std::set<snapid_t> *snaps,
-      bool *force_dirty);
+      bool *force_dirty,
+      double rand_threshold);
 
   /**
    * Mark this fragment as BADFRAG (common part of go_bad and go_bad_dentry)
