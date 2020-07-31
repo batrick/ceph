@@ -100,3 +100,7 @@
 * Now when noscrub and/or nodeep-scrub flags are set globally or per pool,
   scheduled scrubs of the type disabled will be aborted. All user initiated
   scrubs are NOT interrupted.
+
+* fs: New FS names can only contain alphanumeric and ``-``, ``_`` and ``.``
+  characters. Some commands or CephX credentials may not work with old FSs
+  with non-conformant names.
