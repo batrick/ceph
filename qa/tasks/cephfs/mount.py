@@ -877,7 +877,7 @@ class CephFSMount(object):
 
             handles = []
             for i in range(0, n):
-                fname = "{{0}}_{{1}}".format(abs_path, i)
+                fname = "{{0}}/file_{{1}}".format(abs_path, i)
                 handles.append(open(fname, 'w'))
 
             while True:
