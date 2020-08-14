@@ -3574,7 +3574,7 @@ void Client::send_cap(Inode *in, MetaSession *session, Cap *cap,
 
   if (flush)
     follows = in->snaprealm->get_snap_context().seq;
-  
+
   auto m = make_message<MClientCaps>(op,
 				   in->ino,
 				   0,
@@ -3593,14 +3593,14 @@ void Client::send_cap(Inode *in, MetaSession *session, Cap *cap,
   m->head.uid = in->uid;
   m->head.gid = in->gid;
   m->head.mode = in->mode;
-  
+
   m->head.nlink = in->nlink;
-  
+
   if (flush & CEPH_CAP_XATTR_EXCL) {
     encode(in->xattrs, m->xattrbl);
     m->head.xattr_version = in->xattr_version;
   }
-  
+
   m->size = in->size;
   m->max_size = in->max_size;
   m->truncate_seq = in->truncate_seq;
@@ -3750,11 +3750,7 @@ void Client::check_caps(Inode *in, unsigned flags)
       used &= ~(CEPH_CAP_FILE_CACHE | CEPH_CAP_FILE_LAZYIO);
   }
 
-
-  for (auto &p : in->caps) {
-    mds_rank_t mds = p.first;
-    Cap &cap = p.second;
-
+  for (auto &[mds, cap] : in->caps) {
     MetaSession *session = &mds_sessions.at(mds);
 
     cap_used = used;
@@ -3762,7 +3758,7 @@ void Client::check_caps(Inode *in, unsigned flags)
       cap_used &= ~in->auth_cap->issued;
 
     revoking = cap.implemented & ~cap.issued;
-    
+
     ldout(cct, 10) << " cap mds." << mds
 	     << " issued " << ccap_string(cap.issued)
 	     << " implemented " << ccap_string(cap.implemented)
