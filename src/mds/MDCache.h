@@ -1310,6 +1310,8 @@ class MDCache {
   bool export_ephemeral_distributed_config;
   bool export_ephemeral_random_config;
 
+  int64_t kill_dirfrag_at;
+
   // File size recovery
   RecoveryQueue recovery_queue;
 
