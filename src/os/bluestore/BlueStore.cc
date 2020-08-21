@@ -4147,8 +4147,8 @@ static void discard_cb(void *priv, void *priv2)
 void BlueStore::handle_discard(interval_set<uint64_t>& to_release)
 {
   dout(10) << __func__ << dendl;
-  ceph_assert(alloc);
-  alloc->release(to_release);
+  ceph_assert(shared_alloc.a);
+  shared_alloc.a->release(to_release);
 }
 
 BlueStore::BlueStore(CephContext *cct, const string& path)
@@ -4916,7 +4916,6 @@ int BlueStore::_open_bdev(bool create)
 void BlueStore::_validate_bdev()
 {
   ceph_assert(bdev);
-  ceph_assert(min_alloc_size); // _get_odisk_reserved depends on that
   uint64_t dev_size = bdev->get_size();
   ceph_assert(dev_size > _get_ondisk_reserved());
 }
@@ -5058,7 +5057,7 @@ int BlueStore::_write_out_fm_meta(uint64_t target_size)
 
 int BlueStore::_open_alloc()
 {
-  ceph_assert(alloc == NULL);
+  ceph_assert(shared_alloc.a == NULL);
   ceph_assert(bdev->get_size());
 
   uint64_t alloc_size = min_alloc_size;
@@ -5091,11 +5090,11 @@ int BlueStore::_open_alloc()
     }
   }
 
-  alloc = Allocator::create(cct, cct->_conf->bluestore_allocator,
+  shared_alloc.set(Allocator::create(cct, cct->_conf->bluestore_allocator,
                             bdev->get_size(),
-                            alloc_size, "block");
+                            alloc_size, "block"));
 
-  if (!alloc) {
+  if (!shared_alloc.a) {
     lderr(cct) << __func__ << " Allocator::unknown alloc type "
                << cct->_conf->bluestore_allocator
                << dendl;
@@ -5103,7 +5102,7 @@ int BlueStore::_open_alloc()
   }
 
   if (bdev->is_smr()) {
-    alloc->set_zone_states(fm->get_zone_states(db));
+    shared_alloc.a->set_zone_states(fm->get_zone_states(db));
   }
 
   uint64_t num = 0, bytes = 0;
@@ -5113,7 +5112,7 @@ int BlueStore::_open_alloc()
   fm->enumerate_reset();
   uint64_t offset, length;
   while (fm->enumerate_next(db, &offset, &length)) {
-    alloc->init_add_free(offset, length);
+    shared_alloc.a->init_add_free(offset, length);
     ++num;
     bytes += length;
   }
@@ -5121,7 +5120,7 @@ int BlueStore::_open_alloc()
 
   dout(1) << __func__ << " loaded " << byte_u_t(bytes)
     << " in " << num << " extents"
-    << " available " << byte_u_t(alloc->get_free())
+    << " available " << byte_u_t(shared_alloc.a->get_free())
     << dendl;
 
   return 0;
@@ -5132,10 +5131,10 @@ void BlueStore::_close_alloc()
   ceph_assert(bdev);
   bdev->discard_drain();
 
-  ceph_assert(alloc);
-  alloc->shutdown();
-  delete alloc;
-  alloc = NULL;
+  ceph_assert(shared_alloc.a);
+  shared_alloc.a->shutdown();
+  delete shared_alloc.a;
+  shared_alloc.reset();
 }
 
 int BlueStore::_open_fsid(bool create)
@@ -5297,7 +5296,7 @@ bool BlueStore::test_mount_in_use()
 int BlueStore::_minimal_open_bluefs(bool create)
 {
   int r;
-  bluefs = new BlueFS(cct);
+  bluefs = new BlueFS(cct, &shared_alloc);
 
   string bfn;
   struct stat st;
@@ -5306,7 +5305,8 @@ int BlueStore::_minimal_open_bluefs(bool create)
   if (::stat(bfn.c_str(), &st) == 0) {
     r = bluefs->add_block_device(
       BlueFS::BDEV_DB, bfn,
-      create && cct->_conf->bdev_enable_discard);
+      create && cct->_conf->bdev_enable_discard,
+      SUPER_RESERVED);
     if (r < 0) {
       derr << __func__ << " add block device(" << bfn << ") returned: "
             << cpp_strerror(r) << dendl;
@@ -5324,13 +5324,6 @@ int BlueStore::_minimal_open_bluefs(bool create)
               << cpp_strerror(r) << dendl;
         goto free_bluefs;
       }
-    }
-    if (create) {
-      bluefs->add_block_extent(
-        create,
-	BlueFS::BDEV_DB,
-	SUPER_RESERVED,
-	bluefs->get_block_device_size(BlueFS::BDEV_DB) - SUPER_RESERVED);
     }
     bluefs_layout.shared_bdev = BlueFS::BDEV_SLOW;
     bluefs_layout.dedicated_db = true;
@@ -5350,27 +5343,19 @@ int BlueStore::_minimal_open_bluefs(bool create)
   bfn = path + "/block";
   // never trim here
   r = bluefs->add_block_device(bluefs_layout.shared_bdev, bfn, false,
-                               true,
-			       alloc);
+                               0, // no need to provide valid 'reserved' for shared dev
+                               true);
   if (r < 0) {
     derr << __func__ << " add block device(" << bfn << ") returned: "
 	  << cpp_strerror(r) << dendl;
     goto free_bluefs;
   }
-  if (create) {
-    auto reserved = _get_ondisk_reserved();
-
-    bluefs->add_block_extent(
-      create,
-      bluefs_layout.shared_bdev,
-      reserved,
-      p2align(bdev->get_size(), min_alloc_size) - reserved);
-  }
 
   bfn = path + "/block.wal";
   if (::stat(bfn.c_str(), &st) == 0) {
     r = bluefs->add_block_device(BlueFS::BDEV_WAL, bfn,
-				 create && cct->_conf->bdev_enable_discard);
+				 create && cct->_conf->bdev_enable_discard,
+                                 BDEV_LABEL_BLOCK_SIZE);
     if (r < 0) {
       derr << __func__ << " add block device(" << bfn << ") returned: "
 	    << cpp_strerror(r) << dendl;
@@ -5389,13 +5374,6 @@ int BlueStore::_minimal_open_bluefs(bool create)
       }
     }
 
-    if (create) {
-      bluefs->add_block_extent(
-        create,
-        BlueFS::BDEV_WAL, BDEV_LABEL_BLOCK_SIZE,
-	  bluefs->get_block_device_size(BlueFS::BDEV_WAL) -
-	  BDEV_LABEL_BLOCK_SIZE);
-    }
     bluefs_layout.dedicated_wal = true;
   } else {
     r = 0;
@@ -5415,7 +5393,7 @@ free_bluefs:
   return r;
 }
 
-int BlueStore::_open_bluefs(bool create)
+int BlueStore::_open_bluefs(bool create, bool read_only)
 {
   int r = _minimal_open_bluefs(create);
   if (r < 0) {
@@ -5509,6 +5487,7 @@ int BlueStore::_open_db_and_around(bool read_only)
   if (do_bluefs) {
     // open in read-only first to read FM list and init allocator
     // as they might be needed for some BlueFS procedures
+
     r = _open_db(false, false, true);
     if (r < 0)
       return r;
@@ -5684,7 +5663,7 @@ int BlueStore::_prepare_db_environment(bool create, bool read_only,
       return -EINVAL;
     }
 
-    r = _open_bluefs(create);
+    r = _open_bluefs(create, read_only);
     if (r < 0) {
       return r;
     }
@@ -5855,7 +5834,7 @@ void BlueStore::_dump_alloc_on_failure()
     cct->_conf->bluestore_bluefs_alloc_failure_dump_interval;
   if (dump_interval > 0 &&
     next_dump_on_bluefs_alloc_failure <= ceph_clock_now()) {
-    alloc->dump();
+    shared_alloc.a->dump();
     next_dump_on_bluefs_alloc_failure = ceph_clock_now();
     next_dump_on_bluefs_alloc_failure += dump_interval;
   }
@@ -6194,15 +6173,15 @@ int BlueStore::mkfs()
     goto out_close_bdev;
   }
 
-  alloc = Allocator::create(cct, cct->_conf->bluestore_allocator,
+  shared_alloc.set(Allocator::create(cct, cct->_conf->bluestore_allocator,
     bdev->get_size(),
-    min_alloc_size, "block");
-  if (!alloc) {
+    min_alloc_size, "block"));
+  if (!shared_alloc.a) {
     r = -EINVAL;
     goto out_close_bdev;
   }
   reserved = _get_ondisk_reserved();
-  alloc->init_add_free(reserved,
+  shared_alloc.a->init_add_free(reserved,
     p2align(bdev->get_size(), min_alloc_size) - reserved);
 
   r = _open_db(true);
@@ -6257,8 +6236,8 @@ int BlueStore::mkfs()
  out_close_db:
   _close_db(false);
  out_close_bdev:
-  delete alloc;
-  alloc = nullptr;
+  delete shared_alloc.a;
+  shared_alloc.reset();
   _close_bdev();
  out_close_fsid:
   _close_fsid();
@@ -6332,7 +6311,6 @@ int BlueStore::add_new_bluefs_device(int id, const string& dev_path)
 
   r = _mount_for_bluefs();
 
-  int reserved = 0;
   if (id == BlueFS::BDEV_NEWWAL) {
     string p = path + "/block.wal";
     r = _setup_block_symlink_or_file("block.wal", dev_path,
@@ -6341,7 +6319,8 @@ int BlueStore::add_new_bluefs_device(int id, const string& dev_path)
     ceph_assert(r == 0);
 
     r = bluefs->add_block_device(BlueFS::BDEV_NEWWAL, p,
-				 cct->_conf->bdev_enable_discard);
+				 cct->_conf->bdev_enable_discard,
+                                 BDEV_LABEL_BLOCK_SIZE);
     ceph_assert(r == 0);
 
     if (bluefs->bdev_support_label(BlueFS::BDEV_NEWWAL)) {
@@ -6353,7 +6332,6 @@ int BlueStore::add_new_bluefs_device(int id, const string& dev_path)
       ceph_assert(r == 0);
     }
 
-    reserved = BDEV_LABEL_BLOCK_SIZE;
     bluefs_layout.dedicated_wal = true;
   } else if (id == BlueFS::BDEV_NEWDB) {
     string p = path + "/block.db";
@@ -6363,7 +6341,8 @@ int BlueStore::add_new_bluefs_device(int id, const string& dev_path)
     ceph_assert(r == 0);
 
     r = bluefs->add_block_device(BlueFS::BDEV_NEWDB, p,
-				 cct->_conf->bdev_enable_discard);
+				 cct->_conf->bdev_enable_discard,
+                                 SUPER_RESERVED);
     ceph_assert(r == 0);
 
     if (bluefs->bdev_support_label(BlueFS::BDEV_NEWDB)) {
@@ -6374,19 +6353,12 @@ int BlueStore::add_new_bluefs_device(int id, const string& dev_path)
 	true);
       ceph_assert(r == 0);
     }
-    reserved = SUPER_RESERVED;
     bluefs_layout.shared_bdev = BlueFS::BDEV_SLOW;
     bluefs_layout.dedicated_db = true;
   }
 
   bluefs->umount();
   bluefs->mount();
-
-  bluefs->add_block_extent(
-    false,
-    id,
-    reserved,
-    bluefs->get_block_device_size(id) - reserved, true);
 
   r = bluefs->prepare_new_device(id, bluefs_layout);
   ceph_assert(r == 0);
@@ -6473,7 +6445,6 @@ int BlueStore::migrate_to_new_bluefs_device(const set<int>& devs_source,
 
   r = _mount_for_bluefs();
 
-  int reserved = 0;
   string link_db;
   string link_wal;
   if (devs_source.count(BlueFS::BDEV_DB) &&
@@ -6495,7 +6466,8 @@ int BlueStore::migrate_to_new_bluefs_device(const set<int>& devs_source,
     bluefs_layout.dedicated_wal = true;
 
     r = bluefs->add_block_device(BlueFS::BDEV_NEWWAL, dev_path,
-				 cct->_conf->bdev_enable_discard);
+				 cct->_conf->bdev_enable_discard,
+                                 BDEV_LABEL_BLOCK_SIZE);
     ceph_assert(r == 0);
 
     if (bluefs->bdev_support_label(BlueFS::BDEV_NEWWAL)) {
@@ -6506,7 +6478,6 @@ int BlueStore::migrate_to_new_bluefs_device(const set<int>& devs_source,
 	true);
       ceph_assert(r == 0);
     }
-    reserved = BDEV_LABEL_BLOCK_SIZE;
   } else if (id == BlueFS::BDEV_NEWDB) {
     target_name = "block.db";
     target_size = cct->_conf->bluestore_block_db_size;
@@ -6514,7 +6485,8 @@ int BlueStore::migrate_to_new_bluefs_device(const set<int>& devs_source,
     bluefs_layout.dedicated_db = true;
 
     r = bluefs->add_block_device(BlueFS::BDEV_NEWDB, dev_path,
-				 cct->_conf->bdev_enable_discard);
+				 cct->_conf->bdev_enable_discard,
+                                 SUPER_RESERVED);
     ceph_assert(r == 0);
 
     if (bluefs->bdev_support_label(BlueFS::BDEV_NEWDB)) {
@@ -6525,15 +6497,10 @@ int BlueStore::migrate_to_new_bluefs_device(const set<int>& devs_source,
 	true);
       ceph_assert(r == 0);
     }
-    reserved = SUPER_RESERVED;
   }
 
   bluefs->umount();
   bluefs->mount();
-
-  bluefs->add_block_extent(
-    false,
-    id, reserved, bluefs->get_block_device_size(id) - reserved);
 
   r = bluefs->device_migrate_to_new(cct, devs_source, id, bluefs_layout);
 
@@ -6620,28 +6587,20 @@ int BlueStore::expand_devices(ostream& out)
       continue;
     }
 
-    interval_set<uint64_t> before;
-    bluefs->get_block_extents(devid, &before);
-    ceph_assert(!before.empty());
-    uint64_t end = before.range_end();
-    if (end < size) {
-      out << devid
-	  <<" : expanding " << " from 0x" << std::hex
-	  << end << " to 0x" << size << std::dec << std::endl;
-      bluefs->add_block_extent(false, devid, end, size-end);
-      string p = get_device_path(devid);
-      const char* path = p.c_str();
-      if (path == nullptr) {
-	derr << devid
-	      <<": can't find device path " << dendl;
-	continue;
-      }
-      if (bluefs->bdev_support_label(devid)) {
-        if (_set_bdev_label_size(p, size) >= 0) {
-          out << devid
-            << " : size label updated to " << size
-            << std::endl;
-        }
+    out << devid
+	<<" : expanding " << " to 0x" << size << std::dec << std::endl;
+    string p = get_device_path(devid);
+    const char* path = p.c_str();
+    if (path == nullptr) {
+      derr << devid
+	    <<": can't find device path " << dendl;
+      continue;
+    }
+    if (bluefs->bdev_support_label(devid)) {
+      if (_set_bdev_label_size(p, size) >= 0) {
+        out << devid
+          << " : size label updated to " << size
+          << std::endl;
       }
     }
   }
@@ -6651,8 +6610,6 @@ int BlueStore::expand_devices(ostream& out)
     out << bluefs_layout.shared_bdev
       << " : expanding " << " from 0x" << std::hex
       << size0 << " to 0x" << size << std::dec << std::endl;
-    bluefs->add_block_extent(false,
-      bluefs_layout.shared_bdev, size0, size - size0);
     _write_out_fm_meta(size);
     if (bdev->supported_bdev_label()) {
       if (_set_bdev_label_size(path, size) >= 0) {
@@ -8294,17 +8251,18 @@ int BlueStore::_fsck_on_open(BlueStore::FSCKDepth depth, bool repair)
 	      continue;
 	    }
 	    PExtentVector exts;
-	    int64_t alloc_len = alloc->allocate(e->length, min_alloc_size,
-						0, 0, &exts);
+	    int64_t alloc_len =
+              shared_alloc.a->allocate(e->length, min_alloc_size,
+				       0, 0, &exts);
 	    if (alloc_len < 0 || alloc_len < (int64_t)e->length) {
 	      derr << __func__
 	           << " failed to allocate 0x" << std::hex << e->length
 		   << " allocated 0x " << (alloc_len < 0 ? 0 : alloc_len)
 		   << " min_alloc_size 0x" << min_alloc_size
-		   << " available 0x " << alloc->get_free()
+		   << " available 0x " << shared_alloc.a->get_free()
 		   << std::dec << dendl;
 	      if (alloc_len > 0) {
-		alloc->release(exts);
+                shared_alloc.a->release(exts);
 	      }
 	      bypass_rest = true;
 	      break;
@@ -8384,7 +8342,7 @@ int BlueStore::_fsck_on_open(BlueStore::FSCKDepth depth, bool repair)
 		 << "~" << it.get_len() << std::dec << dendl;
 	fm->release(it.get_start(), it.get_len(), txn);
       }
-      alloc->release(to_release);
+      shared_alloc.a->release(to_release);
       to_release.clear();
     } // if (it) {
   } //if (repair && repairer.preprocess_misreference()) {
@@ -8646,7 +8604,7 @@ void BlueStore::inject_leaked(uint64_t len)
   txn = db->get_transaction();
 
   PExtentVector exts;
-  int64_t alloc_len = alloc->allocate(len, min_alloc_size,
+  int64_t alloc_len = shared_alloc.a->allocate(len, min_alloc_size,
 					   min_alloc_size * 256, 0, &exts);
   ceph_assert(alloc_len >= (int64_t)len);
   for (auto& p : exts) {
@@ -8924,7 +8882,7 @@ void BlueStore::_get_statfs_overall(struct store_statfs_t *buf)
     db->estimate_prefix_size(PREFIX_OMAP, string()) +
     db->estimate_prefix_size(PREFIX_PERPOOL_OMAP, string());
 
-  uint64_t bfree = alloc->get_free();
+  uint64_t bfree = shared_alloc.a->get_free();
 
   if (bluefs) {
     buf->internally_reserved = 0;
@@ -10619,6 +10577,7 @@ ObjectMap::ObjectMapIterator BlueStore::get_omap_iterator(
 // write helpers
 
 uint64_t BlueStore::_get_ondisk_reserved() const {
+  ceph_assert(min_alloc_size);
   return round_up_to(
     std::max<uint64_t>(SUPER_RESERVED, min_alloc_size), min_alloc_size);
 }
@@ -11387,7 +11346,7 @@ void BlueStore::_txc_release_alloc(TransContext *txc)
     }
     dout(10) << __func__ << "(sync) " << txc << " " << std::hex
              << txc->released << std::dec << dendl;
-    alloc->release(txc->released);
+    shared_alloc.a->release(txc->released);
   }
 
 out:
@@ -11894,7 +11853,7 @@ void BlueStore::_kv_finalize_thread()
       _reap_collections();
 
       logger->set(l_bluestore_fragmentation,
-	  (uint64_t)(alloc->get_fragmentation() * 1000));
+	  (uint64_t)(shared_alloc.a->get_fragmentation() * 1000));
 
       log_latency("kv_final",
 	l_bluestore_kv_final_lat,
@@ -13550,17 +13509,17 @@ int BlueStore::_do_alloc_write(
   PExtentVector prealloc;
   prealloc.reserve(2 * wctx->writes.size());;
   int64_t prealloc_left = 0;
-  prealloc_left = alloc->allocate(
+  prealloc_left = shared_alloc.a->allocate(
     need, min_alloc_size, need,
     0, &prealloc);
   if (prealloc_left < 0 || prealloc_left < (int64_t)need) {
     derr << __func__ << " failed to allocate 0x" << std::hex << need
          << " allocated 0x " << (prealloc_left < 0 ? 0 : prealloc_left)
          << " min_alloc_size 0x" << min_alloc_size
-         << " available 0x " << alloc->get_free()
+         << " available 0x " << shared_alloc.a->get_free()
          << std::dec << dendl;
     if (prealloc.size()) {
-      alloc->release(prealloc);
+      shared_alloc.a->release(prealloc);
     }
     return -ENOSPC;
   }
