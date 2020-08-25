@@ -431,6 +431,36 @@ class TestVolumes(CephFSTestCase):
         else:
             raise RuntimeError("expected the 'fs volume rm' command to fail.")
 
+    def test_subvolume_marked(self):
+        """
+        ensure a subvolume is marked with the ceph.dir.subvolume xattr
+        """
+        subvolume = self._generate_random_subvolume_name()
+
+        # create subvolume
+        self._fs_cmd("subvolume", "create", self.volname, subvolume)
+
+        # getpath
+        subvolpath = self._get_subvolume_path(self.volname, subvolume)
+
+        # subdirectory of a subvolume cannot be moved outside the subvolume once marked with
+        # the xattr ceph.dir.subvolume, hence test by attempting to rename subvol path (incarnation)
+        # outside the subvolume
+        dstpath = os.path.join(self.mount_a.mountpoint, 'volumes', '_nogroup', 'new_subvol_location')
+        srcpath = os.path.join(self.mount_a.mountpoint, subvolpath)
+        try:
+            os.rename(srcpath, dstpath)
+        except OSError as ose:
+            self.assertEqual(ose.errno, errno.EXDEV, "invalid error code on renaming subvolume incarnation out of subvolume directory")
+        else:
+            self.fail("expected renaming subvolume incarnation out of subvolume directory to fail")
+
+        # remove subvolume
+        self._fs_cmd("subvolume", "rm", self.volname, subvolume)
+
+        # verify trash dir is clean
+        self._wait_for_trash_empty()
+
     def test_volume_rm_arbitrary_pool_removal(self):
         """
         That the arbitrary pool added to the volume out of band is removed
