@@ -91,12 +91,8 @@ List subvolume groups using::
 
     $ ceph fs subvolumegroup ls <vol_name>
 
-Create a snapshot (see :doc:`/cephfs/experimental-features`) of a
-subvolume group using::
-
-    $ ceph fs subvolumegroup snapshot create <vol_name> <group_name> <snap_name>
-
-This implicitly snapshots all the subvolumes under the subvolume group.
+.. note:: Subvolume group snapshot feature is no longer supported in mainline CephFS (existing group
+          snapshots can still be listed and deleted)
 
 Remove a snapshot of a subvolume group using::
 
@@ -147,6 +143,9 @@ empty for all operations not involving the retained snapshots.
 .. note:: Snapshot retained subvolumes can be recreated using 'ceph fs subvolume create'
 
 .. note:: Retained snapshots can be used as a clone source to recreate the subvolume, or clone to a newer subvolume.
+
+.. warning:: Subvolume snapshots, of subvolumes that have been recreated post being retained with snapshots,
+             may occupy more space in the snapshot, if the asynchronous purge of older content is still in progress.
 
 Resize a subvolume using::
 
