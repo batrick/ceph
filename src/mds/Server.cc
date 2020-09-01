@@ -3878,11 +3878,6 @@ void Server::handle_client_lookup_ino(MDRequestRef& mdr,
     return;
   }
 
-  if (mdr && in->snaprealm && !in->snaprealm->have_past_parents_open() &&
-      !in->snaprealm->open_parents(new C_MDS_RetryRequest(mdcache, mdr))) {
-    return;
-  }
-
   // check for nothing (not read or write); this still applies the
   // path check.
   if (!check_access(mdr, in, 0))
@@ -7404,7 +7399,6 @@ void Server::_logged_peer_rmdir(MDRequestRef& mdr, CDentry *dn, CDentry *straydn
     new_realm = !in->snaprealm;
     in->decode_snap_blob(mdr->peer_request->desti_snapbl);
     ceph_assert(in->snaprealm);
-    ceph_assert(in->snaprealm->have_past_parents_open());
   } else {
     new_realm = false;
   }
@@ -8647,7 +8641,6 @@ void Server::_rename_apply(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, C
 	  new_oldin_snaprealm = !oldin->snaprealm;
 	  oldin->decode_snap_blob(mdr->peer_request->desti_snapbl);
 	  ceph_assert(oldin->snaprealm);
-	  ceph_assert(oldin->snaprealm->have_past_parents_open());
 	}
       }
 
@@ -8696,7 +8689,6 @@ void Server::_rename_apply(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, C
 	new_in_snaprealm = !in->snaprealm;
 	in->decode_snap_blob(mdr->peer_request->srci_snapbl);
 	ceph_assert(in->snaprealm);
-	ceph_assert(in->snaprealm->have_past_parents_open());
       }
     }
   }
@@ -10205,8 +10197,7 @@ void Server::_rmsnap_finish(MDRequestRef& mdr, CInode *diri, snapid_t snapid)
   respond_to_request(mdr, 0);
 
   // purge snapshot data
-  if (diri->snaprealm->have_past_parents_open())
-    diri->purge_stale_snap_data(diri->snaprealm->get_snaps());
+  diri->purge_stale_snap_data(diri->snaprealm->get_snaps());
 }
 
 struct C_MDS_renamesnap_finish : public ServerLogContext {
