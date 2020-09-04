@@ -191,10 +191,12 @@ public:
   void unregister_client(std::string_view name, const entity_addrvec_t& addrs)
   {
     auto itp = clients.equal_range(std::string(name));
-    for (auto it = itp.first; it != itp.second; ++it) {
+    for (auto it = itp.first; it != itp.second;) {
       if (it->second == addrs) {
         it = clients.erase(it);
+        continue;
       }
+      ++it;
     }
   }
 
