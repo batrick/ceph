@@ -139,7 +139,8 @@ void MDSDaemon::asok_command(
 
   int r = -ENOSYS;
   bufferlist outbl;
-  stringstream ss;
+  CachedStackStringStream css;
+  auto& ss = *css;
   if (command == "status") {
     dump_status(f);
     r = 0;
@@ -595,7 +596,8 @@ void MDSDaemon::handle_command(const cref_t<MCommand> &m)
 
   int r = 0;
   cmdmap_t cmdmap;
-  std::stringstream ss;
+  CachedStackStringStream css;
+  auto& ss = *css;
   std::string outs;
   bufferlist outbl;
 

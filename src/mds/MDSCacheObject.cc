@@ -37,9 +37,9 @@ void MDSCacheObject::dump(ceph::Formatter *f) const
   {
     f->open_object_section("replicas");
     for (const auto &it : get_replicas()) {
-      std::ostringstream rank_str;
-      rank_str << it.first;
-      f->dump_int(rank_str.str().c_str(), it.second);
+      CachedStackStringStream css;
+      *css << it.first;
+      f->dump_int(css->strv().data(), it.second);
     }
     f->close_section();
   }
