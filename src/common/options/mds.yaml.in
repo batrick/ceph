@@ -589,7 +589,8 @@ options:
   default: true
   services:
   - mds
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_export_ephemeral_random
   type: bool
   level: advanced
@@ -646,7 +647,8 @@ options:
   default: 3
   services:
   - mds
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_bal_replicate_threshold
   type: float
   level: advanced
@@ -656,7 +658,8 @@ options:
   default: 8000
   services:
   - mds
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_bal_unreplicate_threshold
   type: float
   level: advanced
@@ -666,7 +669,8 @@ options:
   default: 0
   services:
   - mds
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_bal_split_size
   type: int
   level: advanced
@@ -676,7 +680,8 @@ options:
   default: 10000
   services:
   - mds
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_bal_split_rd
   type: float
   level: advanced
@@ -686,7 +691,8 @@ options:
   default: 25000
   services:
   - mds
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_bal_split_wr
   type: float
   level: advanced
@@ -696,7 +702,8 @@ options:
   default: 10000
   services:
   - mds
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_bal_split_bits
   type: int
   level: advanced
@@ -705,9 +712,10 @@ options:
   default: 3
   services:
   - mds
+  flags:
+  - runtime
   min: 1
   max: 24
-  with_legacy: true
 - name: mds_bal_merge_size
   type: int
   level: advanced
@@ -717,7 +725,8 @@ options:
   default: 50
   services:
   - mds
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_bal_interval
   type: int
   level: advanced
@@ -726,6 +735,8 @@ options:
   default: 10
   services:
   - mds
+  flags:
+  - runtime
 - name: mds_bal_fragment_interval
   type: int
   level: advanced
@@ -735,6 +746,8 @@ options:
   default: 5
   services:
   - mds
+  flags:
+  - runtime
 # order of magnitude higher than split size
 - name: mds_bal_fragment_size_max
   type: int
@@ -756,7 +769,8 @@ options:
   default: 1.5
   services:
   - mds
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_bal_fragment_dirs
   type: bool
   level: advanced
@@ -769,6 +783,8 @@ options:
   default: true
   services:
   - mds
+  flags:
+  - runtime
 - name: mds_bal_idle_threshold
   type: float
   level: advanced
@@ -778,7 +794,8 @@ options:
   default: 0
   services:
   - mds
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_bal_max
   type: int
   level: dev
@@ -787,7 +804,8 @@ options:
   - mds
   fmt_desc: The number of iterations to run balancer before Ceph stops.
     (used for testing purposes only)
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_bal_max_until
   type: int
   level: dev
@@ -796,7 +814,8 @@ options:
   - mds
   fmt_desc: The number of seconds to run balancer before Ceph stops.
     (used for testing purposes only)
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_bal_mode
   type: int
   level: dev
@@ -809,7 +828,8 @@ options:
       - ``0`` = Hybrid.
       - ``1`` = Request rate and latency.
       - ``2`` = CPU load.
-  with_legacy: true
+  flags:
+  - runtime
 # must be this much above average before we export anything
 - name: mds_bal_min_rebalance
   type: float
@@ -819,7 +839,8 @@ options:
   default: 0.1
   services:
   - mds
-  with_legacy: true
+  flags:
+  - runtime
 # if we need less than this, we don't do anything
 - name: mds_bal_min_start
   type: float
@@ -828,7 +849,8 @@ options:
   services:
   - mds
   fmt_desc: The minimum subtree temperature before Ceph searches a subtree.
-  with_legacy: true
+  flags:
+  - runtime
 # take within this range of what we need
 - name: mds_bal_need_min
   type: float
@@ -837,7 +859,8 @@ options:
   services:
   - mds
   fmt_desc: The minimum fraction of target subtree size to accept.
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_bal_need_max
   type: float
   level: dev
@@ -845,7 +868,8 @@ options:
   services:
   - mds
   fmt_desc: The maximum fraction of target subtree size to accept.
-  with_legacy: true
+  flags:
+  - runtime
 # any sub bigger than this taken in full
 - name: mds_bal_midchunk
   type: float
@@ -855,7 +879,8 @@ options:
   - mds
   fmt_desc: Ceph will migrate any subtree that is larger than this fraction
     of the target subtree size.
-  with_legacy: true
+  flags:
+  - runtime
 # never take anything smaller than this
 - name: mds_bal_minchunk
   type: float
@@ -865,7 +890,8 @@ options:
   - mds
   fmt_desc: Ceph will ignore any subtree that is smaller than this fraction
     of the target subtree size.
-  with_legacy: true
+  flags:
+  - runtime
 # target decay half-life in MDSMap (2x larger is approx. 2x slower)
 - name: mds_bal_target_decay
   type: float
@@ -874,7 +900,8 @@ options:
   default: 10
   services:
   - mds
-  with_legacy: true
+  flags:
+  - runtime
 - name: mds_oft_prefetch_dirfrags
   type: bool
   level: advanced
