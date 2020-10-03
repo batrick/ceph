@@ -167,11 +167,6 @@ enum {
 
 // config obs ----------------------------
 
-static const char *config_keys[] = {
-  "crush_location",
-  NULL
-};
-
 class Objecter::RequestStateHook : public AdminSocketHook {
   Objecter *m_objecter;
 public:
@@ -232,6 +227,12 @@ Objecter::OSDSession::unique_completion_lock Objecter::OSDSession::get_lock(
 
 const char** Objecter::get_tracked_conf_keys() const
 {
+  static const char *config_keys[] = {
+    "crush_location",
+    "osdc_mon_timeout",
+    "osdc_osd_timeout",
+    NULL
+  };
   return config_keys;
 }
 
@@ -241,6 +242,16 @@ void Objecter::handle_conf_change(const ConfigProxy& conf,
 {
   if (changed.count("crush_location")) {
     update_crush_location();
+  }
+  if (changed.count("osdc_mon_timeout")) {
+    if (!mon_timeout_configured) {
+      mon_timeout = conf.get_val<std::chrono::seconds>("osdc_mon_timeout");
+    }
+  }
+  if (changed.count("osdc_osd_timeout")) {
+    if (!osd_timeout_configured) {
+      osd_timeout = conf.get_val<std::chrono::seconds>("osdc_osd_timeout");
+    }
   }
 }
 
@@ -4975,7 +4986,18 @@ Objecter::Objecter(CephContext *cct_, Messenger *m, MonClient *mc,
 		    cct->_conf->objecter_inflight_op_bytes),
   op_throttle_ops(cct, "objecter_ops", cct->_conf->objecter_inflight_ops),
   retry_writes_after_first_reply(cct->_conf->objecter_retry_writes_after_first_reply)
-{}
+{
+  ceph_assert(mon_timeout_ >= 0.0);
+  if (mon_timeout_ > 0.0) {
+    mon_timeout = g_conf().get_val<std::chrono::seconds>("osdc_mon_timeout");
+    mon_timeout_configured = true;
+  }
+  ceph_assert(osd_timeout_ >= 0.0);
+  if (osd_timeout_ > 0.0) {
+    osd_timeout = g_conf().get_val<std::chrono::seconds>("osdc_osd_timeout");
+    osd_timeout_configured = true;
+  }
+}
 
 Objecter::~Objecter()
 {
