@@ -54,8 +54,11 @@ class FuseMount(CephFSMount):
         log.info('Mounting ceph-fuse client.{id} at {remote} {mnt}...'.format(
             id=self.client_id, remote=self.client_remote, mnt=self.mountpoint))
 
-        self.client_remote.run(args=['mkdir', '-p', self.mountpoint],
-                               timeout=(15*60), cwd=self.test_dir)
+        # Use 0000 mode to prevent undesired modifications to the mountpoint on
+        # the local file system.
+        script = f'mkdir -m 0000 -p -v {self.hostfs_mntpt}'
+        self.client_remote.run_shell_payload(script, timeout=(15*60),
+            cwd=self.test_dir)
 
         run_cmd = [
             'sudo',
@@ -409,12 +412,8 @@ class FuseMount(CephFSMount):
                 pass
 
         # Indiscriminate, unlike the touchier cleanup()
-        self.client_remote.run(
-            args=[
-                'rm',
-                '-rf',
-                self.mountpoint,
-            ],
+        p = self.client_remote.run(
+            args=['rmdir', self.mountpoint],
             cwd=self.test_dir,
             timeout=(60*5)
         )
