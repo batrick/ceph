@@ -1176,6 +1176,7 @@ void Objecter::handle_osd_map(MOSDMap *m)
 		  << m->get_first() << "," << m->get_last()
 		  << "] > " << osdmap->get_epoch() << dendl;
 
+    mempool::osdmap::map<int64_t, snap_interval_set_t> removed_snaps;
     if (osdmap->get_epoch()) {
       bool skipped_map = false;
       // we want incrementals
@@ -1225,9 +1226,10 @@ void Objecter::handle_osd_map(MOSDMap *m)
 	update_pool_full_map(pool_full_map);
 
 	// check all outstanding requests on every epoch
-	for (auto& i : need_resend) {
-	  _prune_snapc(osdmap->get_new_removed_snaps(), i.second);
+	for (auto& i : osdmap->get_new_removed_snaps()) {
+	  removed_snaps[i.first].insert(i.second);
 	}
+
 	_scan_requests(homeless_session, skipped_map, cluster_full,
 		       &pool_full_map, need_resend,
 		       need_resend_linger, need_resend_command, sul);
@@ -1249,6 +1251,9 @@ void Objecter::handle_osd_map(MOSDMap *m)
 	ceph_assert(e == osdmap->get_epoch());
       }
 
+      for (auto& i : need_resend) {
+	_prune_snapc(removed_snaps, i.second);
+      }
     } else {
       // first map.  we want the full thing.
       if (m->maps.count(m->get_last())) {
