@@ -972,35 +972,19 @@ class LocalFilesystem(Filesystem, LocalMDSCluster):
         # Deliberately skip calling parent constructor
         self._ctx = ctx
 
-        self.id = None
         self.name = name
+        self.ec_profile = fs_config.get('cephfs_ec_profile')
+        self.id = None
         self.metadata_pool_name = None
         self.metadata_overlay = False
         self.data_pool_name = None
         self.data_pools = None
         self.fs_config = fs_config
-        self.ec_profile = fs_config.get('cephfs_ec_profile')
 
-        # Hack: cheeky inspection of ceph.conf to see what MDSs exist
-        self.mds_ids = set()
-        for line in open("ceph.conf").readlines():
-            match = re.match("^\[mds\.(.+)\]$", line)
-            if match:
-                self.mds_ids.add(match.group(1))
-
-        if not self.mds_ids:
-            raise RuntimeError("No MDSs found in ceph.conf!")
-
-        self.mds_ids = list(self.mds_ids)
-
+        self.mds_ids = list(ctx.daemons.daemons['ceph.mds'].keys())
         log.info("Discovered MDS IDs: {0}".format(self.mds_ids))
-
         self.mon_manager = LocalCephManager()
-
-        self.mds_daemons = dict([(id_, LocalDaemon("mds", id_)) for id_ in self.mds_ids])
-
         self.client_remote = LocalRemote()
-
         self._conf = defaultdict(dict)
 
         if name is not None:
@@ -1018,6 +1002,7 @@ class LocalFilesystem(Filesystem, LocalMDSCluster):
         # poke our methods.
         if not hasattr(self._ctx, "filesystem"):
             self._ctx.filesystem = self
+        self.mds_daemons = dict([(id_, LocalDaemon("mds", id_)) for id_ in self.mds_ids])
 
     @property
     def _prefix(self):
