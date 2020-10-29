@@ -15,9 +15,6 @@ class TestCapFlush(CephFSTestCase):
         creates inode hasn't been replayed.
         """
 
-        if not isinstance(self.mount_a, FuseMount):
-            self.skipTest("Require FUSE client to inject client release failure")
-
         dir_path = os.path.join(self.mount_a.mountpoint, "testdir")
         py_script = dedent("""
             import os
