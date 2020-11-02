@@ -9446,6 +9446,7 @@ int Client::read(int fd, char *buf, loff_t size, loff_t offset)
     lock.unlock();
     bl.begin().copy(bl.length(), buf);
     r = bl.length();
+    ldout(cct, 3) << "adjust read rc to " << r << dendl;
   }
   return r;
 }
