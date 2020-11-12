@@ -3131,6 +3131,9 @@ void CInode::close_snaprealm(bool nojoin)
 
 SnapRealm *CInode::find_snaprealm() const
 {
+  if (!mdcache->is_subtrees_connected())
+    return nullptr;
+
   const CInode *cur = this;
   while (!cur->snaprealm) {
     const CDentry *pdn = cur->get_oldest_parent_dn();
