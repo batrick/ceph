@@ -4162,6 +4162,8 @@ void Client::add_update_cap(Inode *in, MetaSession *mds_session, uint64_t cap_id
       issued |= cap.issued;
       flags |= CEPH_CAP_FLAG_AUTH;
     }
+  } else {
+    inc_pinned_icaps();
   }
 
   check_cap_issue(in, issued);
@@ -4227,7 +4229,10 @@ void Client::remove_cap(Cap *cap, bool queue_release)
       cap->issue_seq,
       cap->mseq,
       cap_epoch_barrier);
+  } else {
+    dec_pinned_icaps();
   }
+
 
   if (in.auth_cap == cap) {
     if (in.flushing_cap_item.is_on_list()) {
@@ -6405,6 +6410,8 @@ void Client::abort_conn()
 
 void Client::flush_cap_releases()
 {
+  uint64_t nr_caps = 0;
+
   // send any cap releases
   for (auto &p : mds_sessions) {
     auto &session = p.second;
@@ -6415,8 +6422,13 @@ void Client::flush_cap_releases()
       } else {
         session.con->send_message2(std::move(session.release));
       }
+      nr_caps += session.release->caps.size();
       session.release.reset();
     }
+  }
+
+  if (nr_caps > 0) {
+    dec_pinned_icaps(nr_caps);
   }
 }
 
@@ -6546,6 +6558,27 @@ void Client::collect_and_send_global_metrics() {
   // dentry lease hit ratio
   auto [dlease_hits, dlease_misses, nr] = get_dlease_hit_rates();
   metric = ClientMetricMessage(DentryLeasePayload(dlease_hits, dlease_misses, nr));
+  message.push_back(metric);
+
+  // opened files
+  {
+    auto [opened_files, total_inodes] = get_opened_files_rates();
+    metric = ClientMetricMessage(OpenedFilesPayload(opened_files, total_inodes));
+  }
+  message.push_back(metric);
+
+  // pinned i_caps
+  {
+    auto [pinned_icaps, total_inodes] = get_pinned_icaps_rates();
+    metric = ClientMetricMessage(PinnedIcapsPayload(pinned_icaps, total_inodes));
+  }
+  message.push_back(metric);
+
+  // opened inodes
+  {
+    auto [opened_inodes, total_inodes] = get_opened_inodes_rates();
+    metric = ClientMetricMessage(OpenedInodesPayload(opened_inodes, total_inodes));
+  }
   message.push_back(metric);
 
   session->con->send_message2(make_message<MClientMetrics>(std::move(message)));
