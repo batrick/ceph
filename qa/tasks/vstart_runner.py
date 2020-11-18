@@ -159,6 +159,20 @@ def rm_nonascii_chars(var):
     var = var.replace(b'\xe2\x80\x99', b'\'')
     return var
 
+
+def safe_kill(pid):
+    """
+    os.kill annoyingly raises exception if process already dead.  Ignore it.
+    """
+    try:
+        return os.kill(pid, signal.SIGKILL)
+    except OSError as e:
+        if e.errno == errno.ESRCH:
+            # Raced with process termination
+            pass
+        else:
+            raise
+
 class LocalRemoteProcess(object):
     def __init__(self, args, subproc, check_status, stdout, stderr):
         self.args = args
@@ -579,30 +593,6 @@ class LocalDaemon(object):
             log.info("Sent signal {0} to {1}.{2}".format(sig, self.daemon_type, self.daemon_id))
 
 
-def safe_kill(pid):
-    """
-    os.kill annoyingly raises exception if process already dead.  Ignore it.
-    """
-    try:
-        return os.kill(pid, signal.SIGKILL)
-    except OSError as e:
-        if e.errno == errno.ESRCH:
-            # Raced with process termination
-            pass
-        else:
-            raise
-
-def mon_in_localhost(config_path="./ceph.conf"):
-    """
-    If the ceph cluster is using the localhost IP as mon host, will must disable ns unsharing
-    """
-    with open(config_path) as f:
-        for line in f:
-            local = re.match(r'^\s*mon host\s*=\s*\[((v1|v2):127\.0\.0\.1:\d+,?)+\]', line)
-            if local:
-                return True
-    return False
-
 class LocalCephFSMount():
     @property
     def config_path(self):
@@ -1007,6 +997,18 @@ class LocalContext(object):
 # stuff necessary for launching tests...
 #
 #########################################
+
+
+def mon_in_localhost(config_path="./ceph.conf"):
+    """
+    If the ceph cluster is using the localhost IP as mon host, will must disable ns unsharing
+    """
+    with open(config_path) as f:
+        for line in f:
+            local = re.match(r'^\s*mon host\s*=\s*\[((v1|v2):127\.0\.0\.1:\d+,?)+\]', line)
+            if local:
+                return True
+    return False
 
 
 def enumerate_methods(s):
