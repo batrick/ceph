@@ -1436,7 +1436,9 @@ class CephManager:
         kwargs['check_status'] = False
         return self.run_cluster_cmd(**kwargs).exitstatus
 
-    def run_ceph_w(self, watch_channel=None):
+    # XXX: For reason behind setting "shell" to False, see
+    # https://tracker.ceph.com/issues/49644.
+    def run_ceph_w(self, watch_channel=None, shell=False):
         """
         Execute "ceph -w" in the background with stdout connected to a BytesIO,
         and return the RemoteProcess.
@@ -1455,7 +1457,8 @@ class CephManager:
         if watch_channel is not None:
             args.append("--watch-channel")
             args.append(watch_channel)
-        return self.controller.run(args=args, wait=False, stdout=StringIO(), stdin=run.PIPE)
+        return self.controller.run(args=args, wait=False, stdout=StringIO(),
+                                   stdin=run.PIPE, shell=shell)
 
     def get_mon_socks(self):
         """
