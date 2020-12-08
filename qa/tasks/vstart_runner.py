@@ -47,11 +47,10 @@ from IPy import IP
 import unittest
 import platform
 import logging
-import shlex
 
 from unittest import suite, loader
 
-from teuthology.orchestra.run import Raw, quote
+from teuthology.orchestra.run import Raw, quote, PIPE
 from teuthology.orchestra.daemon import DaemonGroup
 from teuthology.orchestra.remote import Remote
 from teuthology.config import config as teuth_config
@@ -455,6 +454,8 @@ class LocalRemote(object):
             # as long as the input buffer is "small"
             if isinstance(stdin, str):
                 subproc.stdin.write(stdin.encode())
+            elif stdin == subprocess.PIPE or stdin == PIPE:
+                pass
             else:
                 subproc.stdin.write(stdin)
 
@@ -774,59 +775,20 @@ class LocalCephManager(CephManager):
         # methods to work though.
         self.pools = {}
 
+        self.testdir = None
+
+        # NOTE: These variables are being overriden here so that parent class
+        # can pick it up.
+        self.cephadm = False
+        self.run_cluster_cmd_prefix = self.run_ceph_w_prefix = \
+            [os.path.join(BIN_PREFIX, "ceph")]
+
     def find_remote(self, daemon_type, daemon_id):
         """
         daemon_type like 'mds', 'osd'
         daemon_id like 'a', '0'
         """
         return LocalRemote()
-
-    # XXX: For reason behind setting "shell" to False, see
-    # https://tracker.ceph.com/issues/49644.
-    def run_ceph_w(self, watch_channel=None, shell=False):
-        """
-        :param watch_channel: Specifies the channel to be watched.
-                              This can be 'cluster', 'audit', ...
-        :type watch_channel: str
-        """
-        args = [CEPH_CMD, "-w"]
-        if watch_channel is not None:
-            args.append("--watch-channel")
-            args.append(watch_channel)
-        proc = self.controller.run(args=args, wait=False, stdout=StringIO(),
-                                   shell=shell)
-        return proc
-
-    def run_cluster_cmd(self, **kwargs):
-        """
-        Run a Ceph command and the object representing the process for the
-        command.
-
-        Accepts arguments same as teuthology.orchestra.remote.run().
-        """
-        if isinstance(kwargs['args'], str):
-            kwargs['args'] = shlex.split(kwargs['args'])
-        kwargs['args'] = [CEPH_CMD] + list(kwargs['args'])
-        return self.controller.run(**kwargs)
-
-    def raw_cluster_cmd(self, *args, **kwargs) -> str:
-        """
-        args like ["osd", "dump"}
-        return stdout string
-        """
-        if kwargs.get('args') is None and args:
-            kwargs['args'] = args
-        kwargs['stdout'] = kwargs.pop('stdout', StringIO())
-        return self.run_cluster_cmd(**kwargs).stdout.getvalue()
-
-    def raw_cluster_cmd_result(self, *args, **kwargs):
-        """
-        like raw_cluster_cmd but don't check status, just return rc
-        """
-        if kwargs.get('args') is None and args:
-            kwargs['args'] = args
-        kwargs['check_status'] = False
-        return self.run_cluster_cmd(**kwargs).exitstatus
 
     def admin_socket(self, daemon_type, daemon_id, command, check_status=True,
                      timeout=None, stdout=None):
