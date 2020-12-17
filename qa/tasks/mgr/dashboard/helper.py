@@ -382,8 +382,7 @@ class DashboardTestCase(MgrTestCase):
         res_task = None
         while retries > 0 and not res_task:
             retries -= 1
-            log.debug("task (%s, %s) is still executing", task_name,
-                     task_metadata)
+            log.debug("task (%s, %s) is still executing", task_name, task_metadata)
             time.sleep(1)
             _res = cls._get('/api/task?name={}'.format(task_name), version=version)
             cls._assertEq(cls._resp.status_code, 200)
