@@ -1,3 +1,7 @@
+overrides:
+  check-counter:
+    counters:
+      mds: null
 tasks:
 - workunit:
     clients:
