@@ -3318,6 +3318,11 @@ void Client::put_cap_ref(Inode *in, int cap)
       if (last & CEPH_CAP_FILE_BUFFER) {
 	for (auto &p : in->cap_snaps)
 	  p.second.dirty_data = 0;
+	if (!in->cap_snaps.empty() &&
+	    in->cap_snaps.rbegin()->second.writing) {
+	  ldout(cct, 10) << __func__ << " finishing pending FILE_BUFFER cap_snap on " << *in << dendl;
+	  finish_cap_snap(in, in->cap_snaps.rbegin()->second, get_caps_used(in));
+	}
 	signal_cond_list(in->waitfor_commit);
 	ldout(cct, 5) << __func__ << " dropped last FILE_BUFFER ref on " << *in << dendl;
 	++put_nref;
@@ -3835,6 +3840,7 @@ void Client::finish_cap_snap(Inode *in, CapSnap &capsnap, int used)
   }
 
   if (used & CEPH_CAP_FILE_BUFFER) {
+    capsnap.writing = 1;
     ldout(cct, 10) << __func__ << " " << *in << " cap_snap " << &capsnap << " used " << used
 	     << " WRBUFFER, delaying" << dendl;
   } else {
