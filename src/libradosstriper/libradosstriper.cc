@@ -270,7 +270,7 @@ int libradosstriper::RadosStriper::read(const std::string& soid,
     if (bl.length() > len)
       return -ERANGE;
     if (!bl.is_provided_buffer(buf))
-      bl.copy(0, bl.length(), buf);
+      bl.begin().copy(bl.length(), buf);
     ret = bl.length();    // hrm :/
   }
   return ret;
