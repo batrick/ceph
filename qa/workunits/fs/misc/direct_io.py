@@ -6,12 +6,8 @@ import os
 import subprocess
 
 
-def get_data_pool():
-    cmd = ['ceph', 'fs', 'ls', '--format=json-pretty']
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    out = proc.communicate()[0]
-    return json.loads(out)[0]['data_pools'][0]
-
+def get_data_pool(f):
+    return os.getxattr(f, "ceph.file.layout.pool")
 
 def main():
     fd = os.open("testfile", os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_DIRECT, 0o644)
