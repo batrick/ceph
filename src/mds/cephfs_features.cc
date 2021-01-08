@@ -2,7 +2,7 @@
 // vim: ts=8 sw=2 smarttab
 
 #include <array>
-#include <sstream>
+#include <ostream>
 #include "cephfs_features.h"
 #include "mdstypes.h"
 
