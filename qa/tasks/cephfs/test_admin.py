@@ -540,3 +540,24 @@ class TestSubCmdFsAuthorize(CapsHelper):
         mounts = (self.mount_a, )
 
         return filepaths, filedata, mounts, keyring
+
+class TestAdminCommandIdempotency(CephFSTestCase):
+    """
+    Tests for administration command idempotency.
+    """
+
+    CLIENTS_REQUIRED = 0
+    MDSS_REQUIRED = 1
+
+    def test_rm_idempotency(self):
+        """
+        That a removing a fs twice is idempotent.
+        """
+
+        data_pools = self.fs.get_data_pool_names(refresh=True)
+        self.fs.fail()
+        p = self.fs.rm(stderr=StringIO())
+        self.assertEqual("", p.stderr.getvalue())
+        p = self.fs.rm(stderr=StringIO())
+        self.assertIn("does not exist", p.stderr.getvalue())
+        self.fs.remove_pools(data_pools)
