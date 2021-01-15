@@ -1239,6 +1239,9 @@ void Server::handle_conf_change(const std::set<std::string>& changed) {
   if (changed.count("mds_cap_acquisition_throttle_retry_request_timeout")) {
     caps_throttle_retry_request_timeout = g_conf().get_val<double>("mds_cap_acquisition_throttle_retry_request_timeout");
   }
+  if (changed.count("mds_alternate_name_max")) {
+    alternate_name_max  = g_conf().get_val<Option::size_t>("mds_alternate_name_max");
+  }
 }
 
 /*
@@ -4326,6 +4329,13 @@ void Server::handle_client_openc(MDRequestRef& mdr)
 
   ceph_assert(dnl->is_null());
 
+  if (req->get_alternate_name().size() > alternate_name_max) {
+    dout(10) << " alternate_name longer than " << alternate_name_max << dendl;
+    respond_to_request(mdr, -ENAMETOOLONG);
+    return;
+  }
+  dn->set_alternate_name(req->get_alternate_name());
+
   // set layout
   file_layout_t layout;
   if (mdr->dir_layout != file_layout_t())
@@ -4389,8 +4399,6 @@ void Server::handle_client_openc(MDRequestRef& mdr)
   CInode *newi = prepare_new_inode(mdr, dn->get_dir(), inodeno_t(req->head.ino),
 				   req->head.args.open.mode | S_IFREG, &layout);
   ceph_assert(newi);
-
-  dn->set_alternate_name(req->get_alternate_name());
 
   // it's a file.
   dn->push_projected_linkage(newi);
@@ -6261,6 +6269,14 @@ void Server::handle_client_mknod(MDRequestRef& mdr)
   if (!check_fragment_space(mdr, dn->get_dir()))
     return;
 
+  ceph_assert(dn->get_projected_linkage()->is_null());
+  if (req->get_alternate_name().size() > alternate_name_max) {
+    dout(10) << " alternate_name longer than " << alternate_name_max << dendl;
+    respond_to_request(mdr, -ENAMETOOLONG);
+    return;
+  }
+  dn->set_alternate_name(req->get_alternate_name());
+
   // set layout
   file_layout_t layout;
   if (mdr->dir_layout != file_layout_t())
@@ -6271,7 +6287,6 @@ void Server::handle_client_mknod(MDRequestRef& mdr)
   CInode *newi = prepare_new_inode(mdr, dn->get_dir(), inodeno_t(req->head.ino), mode, &layout);
   ceph_assert(newi);
 
-  dn->set_alternate_name(req->get_alternate_name());
   dn->push_projected_linkage(newi);
 
   auto _inode = newi->_get_inode();
@@ -6353,14 +6368,20 @@ void Server::handle_client_mkdir(MDRequestRef& mdr)
   if (!check_fragment_space(mdr, dir))
     return;
 
+  ceph_assert(dn->get_projected_linkage()->is_null());
+  if (req->get_alternate_name().size() > alternate_name_max) {
+    dout(10) << " alternate_name longer than " << alternate_name_max << dendl;
+    respond_to_request(mdr, -ENAMETOOLONG);
+    return;
+  }
+  dn->set_alternate_name(req->get_alternate_name());
+
   // new inode
   unsigned mode = req->head.args.mkdir.mode;
   mode &= ~S_IFMT;
   mode |= S_IFDIR;
   CInode *newi = prepare_new_inode(mdr, dir, inodeno_t(req->head.ino), mode);
   ceph_assert(newi);
-
-  dn->set_alternate_name(req->get_alternate_name());
 
   // it's a directory.
   dn->push_projected_linkage(newi);
@@ -6423,6 +6444,8 @@ void Server::handle_client_mkdir(MDRequestRef& mdr)
 
 void Server::handle_client_symlink(MDRequestRef& mdr)
 {
+  const auto& req = mdr->client_request;
+
   mdr->disable_lock_cache();
   CDentry *dn = rdlock_path_xlock_dentry(mdr, true);
   if (!dn)
@@ -6436,8 +6459,11 @@ void Server::handle_client_symlink(MDRequestRef& mdr)
   if (!check_fragment_space(mdr, dir))
     return;
 
-  const cref_t<MClientRequest> &req = mdr->client_request;
-
+  ceph_assert(dn->get_projected_linkage()->is_null());
+  if (req->get_alternate_name().size() > alternate_name_max) {
+    dout(10) << " alternate_name longer than " << alternate_name_max << dendl;
+    respond_to_request(mdr, -ENAMETOOLONG);
+  }
   dn->set_alternate_name(req->get_alternate_name());
 
   unsigned mode = S_IFLNK | 0777;
@@ -6514,7 +6540,6 @@ void Server::handle_client_link(MDRequestRef& mdr)
     destdn = rdlock_path_xlock_dentry(mdr, false);
     if (!destdn)
       return;
-
   } else {
     auto ret = rdlock_two_paths_xlock_destdn(mdr, false);
     destdn = ret.first;
@@ -6526,10 +6551,16 @@ void Server::handle_client_link(MDRequestRef& mdr)
       return;
     }
 
-    destdn->set_alternate_name(req->get_alternate_name());
-
     targeti = ret.second->get_projected_linkage()->get_inode();
   }
+
+  ceph_assert(destdn->get_projected_linkage()->is_null());
+  if (req->get_alternate_name().size() > alternate_name_max) {
+    dout(10) << " alternate_name longer than " << alternate_name_max << dendl;
+    respond_to_request(mdr, -ENAMETOOLONG);
+    return;
+  }
+  destdn->set_alternate_name(req->get_alternate_name());
 
   if (targeti->is_dir()) {
     dout(7) << "target is a dir, failing..." << dendl;
@@ -7915,13 +7946,19 @@ public:
  */
 void Server::handle_client_rename(MDRequestRef& mdr)
 {
-  const cref_t<MClientRequest> &req = mdr->client_request;
+  const auto& req = mdr->client_request;
   dout(7) << "handle_client_rename " << *req << dendl;
 
   filepath destpath = req->get_filepath();
   filepath srcpath = req->get_filepath2();
   if (srcpath.is_last_dot_or_dotdot() || destpath.is_last_dot_or_dotdot()) {
     respond_to_request(mdr, -EBUSY);
+    return;
+  }
+
+  if (req->get_alternate_name().size() > alternate_name_max) {
+    dout(10) << " alternate_name longer than " << alternate_name_max << dendl;
+    respond_to_request(mdr, -ENAMETOOLONG);
     return;
   }
 
@@ -7954,8 +7991,6 @@ void Server::handle_client_rename(MDRequestRef& mdr)
     respond_to_request(mdr, -EINVAL);
     return;
   }
-
-  destdn->set_alternate_name(req->get_alternate_name());
 
   // is this a stray migration, reintegration or merge? (sanity checks!)
   if (mdr->reqid.name.is_mds() &&
@@ -7991,6 +8026,11 @@ void Server::handle_client_rename(MDRequestRef& mdr)
     }
     if (srci == oldin && !srcdir->inode->is_stray()) {
       respond_to_request(mdr, 0);  // no-op.  POSIX makes no sense.
+      return;
+    }
+    if (destdn->get_alternate_name() != req->get_alternate_name()) {
+      /* the dentry exists but the alternate_names do not match, fail... */
+      respond_to_request(mdr, -EINVAL);
       return;
     }
   }
@@ -8509,6 +8549,7 @@ void Server::_rename_prepare(MDRequestRef& mdr,
   if (straydn)
     dout(10) << " straydn " << *straydn << dendl;
 
+  const auto& req = mdr->client_request;
   CDentry::linkage_t *srcdnl = srcdn->get_projected_linkage();
   CDentry::linkage_t *destdnl = destdn->get_projected_linkage();
   CInode *srci = srcdnl->get_inode();
@@ -8579,6 +8620,10 @@ void Server::_rename_prepare(MDRequestRef& mdr,
   }
 
   // dest
+  if (destdnl->is_null()) {
+    /* handle_client_rename checks that alternate_name matches for existing destdn */
+    destdn->set_alternate_name(req->get_alternate_name());
+  }
   if (srcdnl->is_remote()) {
     if (!linkmerge) {
       // destdn

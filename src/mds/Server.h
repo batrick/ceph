@@ -467,6 +467,8 @@ private:
   uint64_t cap_acquisition_throttle;
   double max_caps_throttle_ratio;
   double caps_throttle_retry_request_timeout;
+
+  size_t alternate_name_max = g_conf().get_val<Option::size_t>("mds_alternate_name_max");
 };
 
 static inline constexpr auto operator|(Server::RecallFlags a, Server::RecallFlags b) {
