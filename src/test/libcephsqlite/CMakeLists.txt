@@ -1,0 +1,15 @@
+if(WITH_LIBCEPHSQLITE)
+  add_executable(unittest_libcephsqlite
+    unittest_libcephsqlite.cc
+  )
+  add_ceph_unittest(unittest_libcephsqlite)
+  target_link_libraries(unittest_libcephsqlite
+    cephsqlite
+    librados
+    ceph-common
+    SQLite3::SQLite3
+    ${UNITTEST_LIBS}
+    ${EXTRALIBS}
+    ${CMAKE_DL_LIBS}
+    )
+endif(WITH_LIBCEPHSQLITE)
