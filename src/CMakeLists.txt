@@ -801,10 +801,10 @@ if(WITH_LIBCEPHFS)
 endif(WITH_LIBCEPHFS)
 
 if(WITH_LIBCEPHSQLITE)
-  set(libcephsqlite_srcs libcephsqlite.cc)
-  add_library(cephsqlite ${CEPH_SHARED} ${libcephsqlite_srcs})
+  set(cephsqlite_srcs libcephsqlite.cc SimpleRADOSStriper.cc)
+  add_library(cephsqlite ${CEPH_SHARED} ${cephsqlite_srcs})
   set_target_properties(cephsqlite PROPERTIES COMPILE_FLAGS "-I${SQLITE3_INCLUDE_DIRS}")
-  target_link_libraries(cephsqlite radosstriper librados ${SQLITE3_LIBRARIES} ${EXTRALIBS})
+  target_link_libraries(cephsqlite PRIVATE ${SQLITE3_LIBRARIES} librados ceph-common ${EXTRALIBS})
   if(ENABLE_SHARED)
     set_target_properties(cephsqlite PROPERTIES
       OUTPUT_NAME cephsqlite
