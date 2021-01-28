@@ -34,7 +34,9 @@ if(WITH_MGR)
   add_executable(ceph-mgr ${mgr_srcs})
   target_link_libraries(ceph-mgr
     osdc client heap_profiler
+    cephsqlite
     global-static ceph-common
+    ${SQLITE3_LIBRARIES}
     Boost::python${MGR_PYTHON_VERSION_MAJOR}${MGR_PYTHON_VERSION_MINOR}
     Python3::Python ${CMAKE_DL_LIBS} ${GSSAPI_LIBRARIES})
   set_target_properties(ceph-mgr PROPERTIES
