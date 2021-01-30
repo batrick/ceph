@@ -733,6 +733,40 @@ Description: RADOS distributed object store client C++ library (development file
  This package contains development files needed for building C++ applications that
  link against librados.
 
+Package: libcephsqlite1
+Architecture: linux-any
+Section: libs
+Depends: librados2 (= ${binary:Version}),
+         libsqlite3-0,
+         ${misc:Depends},
+         ${shlibs:Depends},
+Description: Ceph SQLite VFS
+ A SQLite VFS for storing and manipulating databases stored on RADOS.
+
+Package: libcephsqlite1-dbg
+Architecture: linux-any
+Section: debug
+Priority: extra
+Depends: libcephsqlite1 (= ${binary:Version}),
+         libsqlite3-0-dbgsym
+         ${misc:Depends},
+Description: debugging symbols for libcephsqlite
+ A SQLite VFS for storing and manipulating databases stored on RADOS.
+ .
+ This package contains debugging symbols for libcephsqlite.
+
+Package: libcephsqlite-dev
+Architecture: linux-any
+Section: libdevel
+Depends: libcephsqlite1 (= ${binary:Version}),
+         libsqlite3-dev,
+         ${misc:Depends},
+Description: Ceph SQLite VFS (development files)
+ A SQLite VFS for storing and manipulating databases stored on RADOS.
+ .
+ This package contains development files needed for building applications that
+ link against libcephsqlite.
+
 Package: libradosstriper1
 Architecture: linux-any
 Section: libs

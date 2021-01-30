@@ -279,7 +279,7 @@ find_package(SQLite3)
 if(SQLITE3_FOUND)
   option(WITH_LIBCEPHSQLITE "libcephsqlite client library" ON)
 else()
-  message(FATAL_ERROR "disabling WITH_LIBCEPHSQLITE, which depends on SQLite3")
+  message(FATAL_ERROR "Missing SQLite dependency")
 endif()
 
 # key-value store
