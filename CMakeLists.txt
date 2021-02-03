@@ -275,6 +275,13 @@ endif(WITH_QATZIP)
 # needs mds and? XXX
 option(WITH_LIBCEPHFS "libcephfs client library" ON)
 
+find_package(SQLite3)
+if(SQLITE3_FOUND)
+  option(WITH_LIBCEPHSQLITE "libcephsqlite client library" ON)
+else()
+  message(FATAL_ERROR "Missing SQLite dependency")
+endif()
+
 # key-value store
 option(WITH_KVS "Key value store is here" ON)
 
