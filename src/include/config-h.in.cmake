@@ -360,6 +360,9 @@
 /* Define if unit tests are built. */
 #cmakedefine UNIT_TESTS_BUILT
 
+/* Define if libcephsqlite is enabled */
+#cmakedefine WITH_LIBCEPHSQLITE
+
 /* Define if RWL is enabled */
 #cmakedefine WITH_RBD_RWL
 
