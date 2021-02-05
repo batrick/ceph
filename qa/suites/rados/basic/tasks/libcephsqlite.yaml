@@ -1,0 +1,8 @@
+tasks:
+- exec:
+   client.0:
+   - ceph_test_libcephsqlite
+- workunit:
+   clients:
+     client.0:
+     - rados/test_libcephsqlite.sh
