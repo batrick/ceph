@@ -1,0 +1,12 @@
+overrides:
+  ceph:
+    log-ignorelist:
+    - POOL_APP_NOT_ENABLED
+tasks:
+- exec:
+   client.0:
+   - ceph_test_libcephsqlite
+- workunit:
+   clients:
+     client.0:
+     - rados/test_libcephsqlite.sh
