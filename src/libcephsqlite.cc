@@ -37,12 +37,14 @@ SQLITE_EXTENSION_INIT1
 #include "include/rados/librados.hpp"
 
 #include "common/Clock.h"
+#include "common/Formatter.h"
 #include "common/ceph_argparse.h"
 #include "common/ceph_mutex.h"
 #include "common/common_init.h"
 #include "common/config.h"
 #include "common/debug.h"
 #include "common/errno.h"
+#include "common/perf_counters.h"
 #include "common/version.h"
 
 #include "include/libcephsqlite.h"
@@ -55,8 +57,84 @@ SQLITE_EXTENSION_INIT1
 #define dv(lvl) d(vfs,(lvl))
 #define df(lvl) d(f->vfs,(lvl)) << f->loc << " "
 
+enum {
+  P_FIRST = 0xf0000,
+  P_OP_OPEN,
+  P_OP_DELETE,
+  P_OP_ACCESS,
+  P_OP_FULLPATHNAME,
+  P_OP_CURRENTTIME,
+  P_OPF_CLOSE,
+  P_OPF_READ,
+  P_OPF_WRITE,
+  P_OPF_TRUNCATE,
+  P_OPF_SYNC,
+  P_OPF_FILESIZE,
+  P_OPF_LOCK,
+  P_OPF_UNLOCK,
+  P_OPF_CHECKRESERVEDLOCK,
+  P_OPF_FILECONTROL,
+  P_OPF_SECTORSIZE,
+  P_OPF_DEVICECHARACTERISTICS,
+  P_LAST,
+};
+
 struct cephsqlite_appdata {
+  ~cephsqlite_appdata() {
+    if (logger) {
+      cct->get_perfcounters_collection()->remove(logger.get());
+    }
+    if (striper_logger) {
+      cct->get_perfcounters_collection()->remove(striper_logger.get());
+    }
+  }
+  int setup_perf() {
+    ceph_assert(cct);
+    PerfCountersBuilder plb(cct.get(), "libcephsqlite_vfs", P_FIRST, P_LAST);
+    plb.add_time_avg(P_OP_OPEN, "op_open", "Time average of Open operations");
+    plb.add_time_avg(P_OP_DELETE, "op_delete", "Time average of Delete operations");
+    plb.add_time_avg(P_OP_ACCESS, "op_access", "Time average of Access operations");
+    plb.add_time_avg(P_OP_FULLPATHNAME, "op_fullpathname", "Time average of FullPathname operations");
+    plb.add_time_avg(P_OP_CURRENTTIME, "op_currenttime", "Time average of Currenttime operations");
+    plb.add_time_avg(P_OPF_CLOSE, "opf_close", "Time average of Close file operations");
+    plb.add_time_avg(P_OPF_READ, "opf_read", "Time average of Read file operations");
+    plb.add_time_avg(P_OPF_WRITE, "opf_write", "Time average of Write file operations");
+    plb.add_time_avg(P_OPF_TRUNCATE, "opf_truncate", "Time average of Truncate file operations");
+    plb.add_time_avg(P_OPF_SYNC, "opf_sync", "Time average of Sync file operations");
+    plb.add_time_avg(P_OPF_FILESIZE, "opf_filesize", "Time average of FileSize file operations");
+    plb.add_time_avg(P_OPF_LOCK, "opf_lock", "Time average of Lock file operations");
+    plb.add_time_avg(P_OPF_UNLOCK, "opf_unlock", "Time average of Unlock file operations");
+    plb.add_time_avg(P_OPF_CHECKRESERVEDLOCK, "opf_checkreservedlock", "Time average of CheckReservedLock file operations");
+    plb.add_time_avg(P_OPF_FILECONTROL, "opf_filecontrol", "Time average of FileControl file operations");
+    plb.add_time_avg(P_OPF_SECTORSIZE, "opf_sectorsize", "Time average of SectorSize file operations");
+    plb.add_time_avg(P_OPF_DEVICECHARACTERISTICS, "opf_devicecharacteristics", "Time average of DeviceCharacteristics file operations");
+    logger.reset(plb.create_perf_counters());
+    if (int rc = SimpleRADOSStriper::config_logger(cct.get(), "libcephsqlite_striper", &striper_logger); rc < 0) {
+      return rc;
+    }
+    cct->get_perfcounters_collection()->add(logger.get());
+    cct->get_perfcounters_collection()->add(striper_logger.get());
+    return 0;
+  }
+  int init_cluster() {
+    ceph_assert(cct);
+    ldout(cct, 5) << "initializing RADOS handle as " << cct->_conf->name << dendl;
+    if (int rc = cluster.init_with_context(cct.get()); rc < 0) {
+      lderr(cct) << "cannot initialize RADOS: " << cpp_strerror(rc) << dendl;
+      return rc;
+    }
+    if (int rc = cluster.connect(); rc < 0) {
+      lderr(cct) << "cannot connect: " << cpp_strerror(rc) << dendl;
+      return rc;
+    }
+    auto s = cluster.get_addrs();
+    ldout(cct, 5) << "completed connection to RADOS with address " << s << dendl;
+    return 0;
+  }
+
   boost::intrusive_ptr<CephContext> cct;
+  std::unique_ptr<PerfCounters> logger;
+  std::shared_ptr<PerfCounters> striper_logger;
   librados::Rados cluster;
   struct sqlite3_vfs vfs{};
 };
@@ -97,25 +175,6 @@ struct cephsqlite_file {
 
 #define getdata(vfs) (*((cephsqlite_appdata*)((vfs)->pAppData)))
 
-static int initcluster(cephsqlite_appdata& appd)
-{
-  auto& cct = appd.cct;
-  auto& cluster = appd.cluster;
-
-  ldout(cct, 5) << "initializing RADOS handle as " << cct->_conf->name << dendl;
-  if (int rc = cluster.init_with_context(cct.get()); rc < 0) {
-    lderr(cct) << "cannot initialize RADOS: " << cpp_strerror(rc) << dendl;
-    return rc;
-  }
-  if (int rc = cluster.connect(); rc < 0) {
-    lderr(cct) << "cannot connect: " << cpp_strerror(rc) << dendl;
-    return rc;
-  }
-  auto s = appd.cluster.get_addrs();
-  ldout(cct, 5) << "completed connection to RADOS with address " << s << dendl;
-  return 0;
-}
-
 static CephContext* getcct(sqlite3_vfs* vfs)
 {
   auto&& appd = getdata(vfs);
@@ -135,8 +194,12 @@ static CephContext* getcct(sqlite3_vfs* vfs)
   cct->_conf.apply_changes(nullptr);
   common_init_finish(cct.get());
 
-  if (int rc = initcluster(appd); rc < 0) {
-    ceph_abort(0);
+  if (int rc = appd.setup_perf(); rc < 0) {
+    ceph_abort("cannot setup perf counters");
+  }
+
+  if (int rc = appd.init_cluster(); rc < 0) {
+    ceph_abort("cannot setup RADOS cluster handle");
   }
 
   return cct.get();
@@ -145,6 +208,7 @@ static CephContext* getcct(sqlite3_vfs* vfs)
 static int Lock(sqlite3_file *pFile, int eLock)
 {
   auto f = (cephsqlite_file*)pFile;
+  auto start = ceph::coarse_mono_clock::now();
   df(5) << std::hex << eLock << dendl;
 
   auto& lock = f->lock;
@@ -158,12 +222,15 @@ static int Lock(sqlite3_file *pFile, int eLock)
   }
 
   lock = eLock;
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(f->vfs).logger->tinc(P_OPF_LOCK, end-start);
   return SQLITE_OK;
 }
 
 static int Unlock(sqlite3_file *pFile, int eLock)
 {
   auto f = (cephsqlite_file*)pFile;
+  auto start = ceph::coarse_mono_clock::now();
   df(5) << std::hex << eLock << dendl;
 
   auto& lock = f->lock;
@@ -177,12 +244,15 @@ static int Unlock(sqlite3_file *pFile, int eLock)
   }
 
   lock = eLock;
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(f->vfs).logger->tinc(P_OPF_UNLOCK, end-start);
   return SQLITE_OK;
 }
 
 static int CheckReservedLock(sqlite3_file *pFile, int *pResOut)
 {
   auto f = (cephsqlite_file*)pFile;
+  auto start = ceph::coarse_mono_clock::now();
   df(5) << dendl;
 
   auto& lock = f->lock;
@@ -195,20 +265,26 @@ static int CheckReservedLock(sqlite3_file *pFile, int *pResOut)
   *_dout << dendl;
 
   *pResOut = 0;
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(f->vfs).logger->tinc(P_OPF_CHECKRESERVEDLOCK, end-start);
   return SQLITE_OK;
 }
 
 static int Close(sqlite3_file *pFile)
 {
   auto f = (cephsqlite_file*)pFile;
+  auto start = ceph::coarse_mono_clock::now();
   df(5) << dendl;
   f->~cephsqlite_file();
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(f->vfs).logger->tinc(P_OPF_CLOSE, end-start);
   return SQLITE_OK;
 }
 
 static int Read(sqlite3_file *pFile, void *zBuf, int iAmt, sqlite_int64 iOfst)
 {
   auto f = (cephsqlite_file*)pFile;
+  auto start = ceph::coarse_mono_clock::now();
   df(5) << zBuf << " " << iOfst << "~" << iAmt << dendl;
 
   if (int rc = f->io.rs.read(zBuf, iAmt, iOfst); rc < 0) {
@@ -216,6 +292,8 @@ static int Read(sqlite3_file *pFile, void *zBuf, int iAmt, sqlite_int64 iOfst)
     return SQLITE_IOERR_READ;
   } else {
     df(5) << "= " << rc << dendl;
+    auto end = ceph::coarse_mono_clock::now();
+    getdata(f->vfs).logger->tinc(P_OPF_READ, end-start);
     if (rc < iAmt) {
       memset(zBuf, 0, iAmt-rc);
       return SQLITE_IOERR_SHORT_READ;
@@ -228,6 +306,7 @@ static int Read(sqlite3_file *pFile, void *zBuf, int iAmt, sqlite_int64 iOfst)
 static int Write(sqlite3_file *pFile, const void *zBuf, int iAmt, sqlite_int64 iOfst)
 {
   auto f = (cephsqlite_file*)pFile;
+  auto start = ceph::coarse_mono_clock::now();
   df(5) << iOfst << "~" << iAmt << dendl;
 
   if (int rc = f->io.rs.write(zBuf, iAmt, iOfst); rc < 0) {
@@ -235,6 +314,8 @@ static int Write(sqlite3_file *pFile, const void *zBuf, int iAmt, sqlite_int64 i
     return SQLITE_IOERR_WRITE;
   } else {
     df(5) << "= " << rc << dendl;
+    auto end = ceph::coarse_mono_clock::now();
+    getdata(f->vfs).logger->tinc(P_OPF_WRITE, end-start);
     return SQLITE_OK;
   }
 
@@ -243,6 +324,7 @@ static int Write(sqlite3_file *pFile, const void *zBuf, int iAmt, sqlite_int64 i
 static int Truncate(sqlite3_file *pFile, sqlite_int64 size)
 {
   auto f = (cephsqlite_file*)pFile;
+  auto start = ceph::coarse_mono_clock::now();
   df(5) << size << dendl;
 
   if (int rc = f->io.rs.truncate(size); rc < 0) {
@@ -250,12 +332,15 @@ static int Truncate(sqlite3_file *pFile, sqlite_int64 size)
     return SQLITE_IOERR;
   }
 
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(f->vfs).logger->tinc(P_OPF_TRUNCATE, end-start);
   return SQLITE_OK;
 }
 
 static int Sync(sqlite3_file *pFile, int flags)
 {
   auto f = (cephsqlite_file*)pFile;
+  auto start = ceph::coarse_mono_clock::now();
   df(5) << flags << dendl;
 
   if (int rc = f->io.rs.flush(); rc < 0) {
@@ -265,6 +350,8 @@ static int Sync(sqlite3_file *pFile, int flags)
 
   df(5) << " = 0" << dendl;
 
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(f->vfs).logger->tinc(P_OPF_SYNC, end-start);
   return SQLITE_OK;
 }
 
@@ -272,6 +359,7 @@ static int Sync(sqlite3_file *pFile, int flags)
 static int FileSize(sqlite3_file *pFile, sqlite_int64 *pSize)
 {
   auto f = (cephsqlite_file*)pFile;
+  auto start = ceph::coarse_mono_clock::now();
   df(5) << dendl;
 
   uint64_t size = 0;
@@ -284,6 +372,8 @@ static int FileSize(sqlite3_file *pFile, sqlite_int64 *pSize)
 
   df(5) << "= " << size << dendl;
 
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(f->vfs).logger->tinc(P_OPF_FILESIZE, end-start);
   return SQLITE_OK;
 }
 
@@ -308,7 +398,8 @@ static bool parsepath(std::string_view path, struct cephsqlite_fileloc* fileloc)
 
 static int makestriper(sqlite3_vfs* vfs, const cephsqlite_fileloc& loc, cephsqlite_fileio* io)
 {
-  auto& cluster = getdata(vfs).cluster;
+  auto&& appd = getdata(vfs);
+  auto& cluster = appd.cluster;
   bool gotmap = false;
 
   dv(10) << loc << dendl;
@@ -343,6 +434,7 @@ enoent_retry:
     io->ioctx.set_namespace(loc.radosns);
 
   io->rs = SimpleRADOSStriper(io->ioctx, loc.name);
+  io->rs.set_logger(appd.striper_logger);
 
   return 0;
 }
@@ -350,21 +442,28 @@ enoent_retry:
 static int SectorSize(sqlite3_file* sf)
 {
   static const int size = 65536;
+  auto start = ceph::coarse_mono_clock::now();
   auto f = (cephsqlite_file*)sf;
   df(5) << " = " << size << dendl;
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(f->vfs).logger->tinc(P_OPF_SECTORSIZE, end-start);
   return size;
 }
 
 static int FileControl(sqlite3_file* sf, int op, void *pArg)
 {
   auto f = (cephsqlite_file*)sf;
+  auto start = ceph::coarse_mono_clock::now();
   df(5) << op << ", " << pArg << dendl;
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(f->vfs).logger->tinc(P_OPF_FILECONTROL, end-start);
   return SQLITE_NOTFOUND;
 }
 
 static int DeviceCharacteristics(sqlite3_file* sf)
 {
   auto f = (cephsqlite_file*)sf;
+  auto start = ceph::coarse_mono_clock::now();
   df(5) << dendl;
   static const int c = 0
       |SQLITE_IOCAP_ATOMIC
@@ -372,6 +471,8 @@ static int DeviceCharacteristics(sqlite3_file* sf)
       |SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN
       |SQLITE_IOCAP_SAFE_APPEND
       ;
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(f->vfs).logger->tinc(P_OPF_DEVICECHARACTERISTICS, end-start);
   return c;
 }
 
@@ -399,6 +500,7 @@ static int Open(
     DeviceCharacteristics     /* xDeviceCharacteristics */
   };
 
+  auto start = ceph::coarse_mono_clock::now();
   bool gotmap = false;
   auto& cluster = getdata(vfs).cluster;
 
@@ -463,6 +565,8 @@ enoent_retry:
     *pOutFlags = flags;
   }
   f->base.pMethods = &io;
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(vfs).logger->tinc(P_OP_OPEN, end-start);
   return SQLITE_OK;
 }
 
@@ -473,6 +577,7 @@ enoent_retry:
 */
 static int Delete(sqlite3_vfs* vfs, const char* zPath, int dirSync)
 {
+  auto start = ceph::coarse_mono_clock::now();
   dv(5) << "'" << zPath << "', " << dirSync << dendl;
 
   cephsqlite_fileloc fileloc;
@@ -498,6 +603,8 @@ static int Delete(sqlite3_vfs* vfs, const char* zPath, int dirSync)
 
   /* No need to unlock */
   dv(5) << "= 0" << dendl;
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(vfs).logger->tinc(P_OP_DELETE, end-start);
 
   return SQLITE_OK;
 }
@@ -508,6 +615,7 @@ static int Delete(sqlite3_vfs* vfs, const char* zPath, int dirSync)
 */
 static int Access(sqlite3_vfs* vfs, const char* zPath, int flags, int* pResOut)
 {
+  auto start = ceph::coarse_mono_clock::now();
   dv(5) << zPath << " " << std::hex << flags << dendl;
 
   cephsqlite_fileloc fileloc;
@@ -542,6 +650,8 @@ static int Access(sqlite3_vfs* vfs, const char* zPath, int flags, int* pResOut)
     *pResOut = 1;
   }
 
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(vfs).logger->tinc(P_OP_ACCESS, end-start);
   return SQLITE_OK;
 }
 
@@ -550,6 +660,7 @@ static int Access(sqlite3_vfs* vfs, const char* zPath, int flags, int* pResOut)
  */
 static int FullPathname(sqlite3_vfs* vfs, const char* zPath, int nPathOut, char* zPathOut)
 {
+  auto start = ceph::coarse_mono_clock::now();
   auto path = std::string_view(zPath);
 
   dv(5) << "1: " <<  path << dendl;
@@ -569,15 +680,21 @@ static int FullPathname(sqlite3_vfs* vfs, const char* zPath, int nPathOut, char*
   strcpy(zPathOut, p.c_str());
   dv(5) << " output " << p << dendl;
 
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(vfs).logger->tinc(P_OP_FULLPATHNAME, end-start);
   return SQLITE_OK;
 }
 
 static int CurrentTime(sqlite3_vfs* vfs, sqlite3_int64* pTime)
 {
+  auto start = ceph::coarse_mono_clock::now();
   dv(5) << pTime << dendl;
 
   auto t = ceph_clock_now();
   *pTime = t.to_msec() + 2440587.5;
+
+  auto end = ceph::coarse_mono_clock::now();
+  getdata(vfs).logger->tinc(P_OP_CURRENTTIME, end-start);
   return SQLITE_OK;
 }
 
@@ -596,9 +713,13 @@ LIBCEPHSQLITE_API int cephsqlite_setcct(CephContext* cct, char** ident)
     return -EINVAL;
   }
 
-  auto &appd = getdata(vfs);
+  auto& appd = getdata(vfs);
   appd.cct = cct;
-  if (int rc = initcluster(appd); rc < 0) {
+  if (int rc = appd.setup_perf(); rc < 0) {
+    appd.cct = nullptr;
+    return rc;
+  }
+  if (int rc = appd.init_cluster(); rc < 0) {
     appd.cct = nullptr;
     return rc;
   }
@@ -613,30 +734,67 @@ LIBCEPHSQLITE_API int cephsqlite_setcct(CephContext* cct, char** ident)
   return 0;
 }
 
+static void perf(sqlite3_context* ctx, int argc, sqlite3_value** argv)
+{
+  auto vfs = (sqlite3_vfs*)sqlite3_user_data(ctx);
+  dv(10) << dendl;
+  auto&& appd = getdata(vfs);
+  JSONFormatter f(false);
+  f.open_object_section("ceph_perf");
+  appd.logger->dump_formatted(&f, false);
+  appd.striper_logger->dump_formatted(&f, false);
+  f.close_section();
+  {
+    CachedStackStringStream css;
+    f.flush(*css);
+    auto sv = css->strv();
+    dv(20) << " = " << sv << dendl;
+    sqlite3_result_text(ctx, sv.data(), sv.size(), SQLITE_TRANSIENT);
+  }
+}
+
+static int autoreg(sqlite3* db, char** pzErrMsg, const struct sqlite3_api_routines* pThunk)
+{
+  auto vfs = sqlite3_vfs_find("ceph");
+  if (!vfs) {
+    ceph_abort("ceph vfs not found");
+  }
+
+  if (int rc = sqlite3_create_function(db, "ceph_perf", 0, SQLITE_UTF8, vfs, perf, nullptr, nullptr); rc) {
+    return rc;
+  }
+
+  return SQLITE_OK;
+}
+
 LIBCEPHSQLITE_API int sqlite3_cephsqlite_init(sqlite3* db, char** err, const sqlite3_api_routines* api)
 {
   SQLITE_EXTENSION_INIT2(api);
 
-  if (sqlite3_vfs_find("ceph")) {
-    return SQLITE_OK_LOAD_PERMANENTLY;
+  auto vfs = sqlite3_vfs_find("ceph");
+  if (!vfs) {
+    auto appd = new cephsqlite_appdata;
+    vfs = &appd->vfs;
+    vfs->iVersion = 2;
+    vfs->szOsFile = sizeof(struct cephsqlite_file);
+    vfs->mxPathname = 4096;
+    vfs->zName = "ceph";
+    vfs->pAppData = appd;
+    vfs->xOpen = Open;
+    vfs->xDelete = Delete;
+    vfs->xAccess = Access;
+    vfs->xFullPathname = FullPathname;
+    vfs->xCurrentTimeInt64 = CurrentTime;
+    appd->cct = nullptr;
+    sqlite3_vfs_register(vfs, 0);
   }
 
-  auto appd = new cephsqlite_appdata;
-
-  auto vfs = &appd->vfs;
-  vfs->iVersion = 2;
-  vfs->szOsFile = sizeof(struct cephsqlite_file);
-  vfs->mxPathname = 4096;
-  vfs->zName = "ceph";
-  vfs->pAppData = appd;
-  vfs->xOpen = Open;
-  vfs->xDelete = Delete;
-  vfs->xAccess = Access;
-  vfs->xFullPathname = FullPathname;
-  vfs->xCurrentTimeInt64 = CurrentTime;
-
-  appd->cct = nullptr;
-  sqlite3_vfs_register(vfs, 0);
+  if (int rc = sqlite3_auto_extension((void(*)(void))autoreg); rc) {
+    return rc;
+  }
+  if (int rc = autoreg(db, err, api); rc) {
+    return rc;
+  }
 
   return SQLITE_OK_LOAD_PERMANENTLY;
 }

@@ -12,11 +12,14 @@
  *
  */
 
+#include <string_view>
 
 #include "include/buffer.h"
 #include "include/rados/librados.hpp"
 #include "include/uuid.h"
 #include "include/types.h"
+
+#include "common/perf_counters.h"
 
 class SimpleRADOSStriper
 {
@@ -39,6 +42,8 @@ public:
   static inline const char XATTR_LAYOUT_OBJECT_SIZE[] = "striper.layout.object_size";
   static inline const std::string biglock = "striper.lock";
   static inline const std::string lockdesc = "SimpleRADOSStriper";
+
+  static int config_logger(CephContext* cct, std::string_view name, std::shared_ptr<PerfCounters>* l);
 
   SimpleRADOSStriper() = default;
   SimpleRADOSStriper(librados::IoCtx ioctx, std::string oid)
@@ -67,6 +72,9 @@ public:
     return locked;
   }
   int printlockers(std::ostream& out);
+  void set_logger(std::shared_ptr<PerfCounters> l) {
+    logger = std::move(l);
+  }
 
 protected:
   ceph::bufferlist uint2bl(uint64_t v);
@@ -81,6 +89,7 @@ protected:
 
 private:
   librados::IoCtx ioctx;
+  std::shared_ptr<PerfCounters> logger;
   std::string oid;
   version_t version = 0;
   uint64_t size = 0;
