@@ -49,6 +49,34 @@ using ceph::bufferlist;
 #define dout_prefix *_dout << "client." << ioctx.get_instance_id() << ": SimpleRADOSStriper: " << __func__ << ": " << oid << ": "
 #define d(lvl) ldout((CephContext*)ioctx.cct(), (lvl))
 
+enum {
+  P_FIRST = 0xe0000,
+  P_UPDATE_METADATA,
+  P_UPDATE_ALLOCATED,
+  P_UPDATE_SIZE,
+  P_UPDATE_VERSION,
+  P_SHRINK,
+  P_SHRINK_BYTES,
+  P_LOCK,
+  P_UNLOCK,
+  P_LAST,
+};
+
+int SimpleRADOSStriper::config_logger(CephContext* cct, std::string_view name, std::shared_ptr<PerfCounters>* l)
+{
+  PerfCountersBuilder plb(cct, name.data(), P_FIRST, P_LAST);
+  plb.add_u64_counter(P_UPDATE_METADATA, "update_metadata", "Number of metadata updates");
+  plb.add_u64_counter(P_UPDATE_ALLOCATED, "update_allocated", "Number of allocated updates");
+  plb.add_u64_counter(P_UPDATE_SIZE, "update_size", "Number of size updates");
+  plb.add_u64_counter(P_UPDATE_VERSION, "update_version", "Number of version updates");
+  plb.add_u64_counter(P_SHRINK, "shrink", "Number of allocation shrinks");
+  plb.add_u64_counter(P_SHRINK_BYTES, "shrink_bytes", "Bytes shrunk");
+  plb.add_u64_counter(P_LOCK, "lock", "Number of locks");
+  plb.add_u64_counter(P_UNLOCK, "unlock", "Number of unlocks");
+  l->reset(plb.create_perf_counters());
+  return 0;
+}
+
 SimpleRADOSStriper::~SimpleRADOSStriper()
 {
   if (ioctx.is_valid()) {
@@ -216,6 +244,7 @@ int SimpleRADOSStriper::allocshrink(uint64_t a)
   ceph_assert(a <= allocated);
   uint64_t prune = std::max<uint64_t>(a, (1<<object_size)); /* never delete first extent here */
   uint64_t n = allocated-prune;
+  const uint64_t bytes_removed = n;
   uint64_t o = prune;
   while (n > 0) {
     auto ext = getnextextent(n, o);
@@ -253,6 +282,14 @@ int SimpleRADOSStriper::allocshrink(uint64_t a)
     d(1) << " update failure: " << cpp_strerror(rc) << dendl;
     return rc;
   }
+  if (logger) {
+    logger->inc(P_UPDATE_METADATA);
+    logger->inc(P_UPDATE_ALLOCATED);
+    logger->inc(P_UPDATE_VERSION);
+    logger->inc(P_SHRINK);
+    logger->inc(P_SHRINK_BYTES, bytes_removed);
+  }
+
   version += 1;
   allocated = a;
   return 0;
@@ -308,14 +345,18 @@ int SimpleRADOSStriper::setmeta(uint64_t new_size, bool update_size)
     new_allocated = min_growth + ((size + mask) & ~mask); /* round up base 2 */
     op.setxattr(XATTR_ALLOCATED, uint2bl(new_allocated));
     do_op = true;
+    if (logger) logger->inc(P_UPDATE_ALLOCATED);
     d(15) << " updating allocated to " << new_allocated << dendl;
   }
   if (update_size) {
     op.setxattr(XATTR_SIZE, uint2bl(new_size));
     do_op = true;
+    if (logger) logger->inc(P_UPDATE_SIZE);
     d(15) << " updating size to " << new_size << dendl;
   }
   if (do_op) {
+    if (logger) logger->inc(P_UPDATE_METADATA);
+    if (logger) logger->inc(P_UPDATE_VERSION);
     op.setxattr(XATTR_VERSION, uint2bl(version+1));
     d(15) << " updating version to " << (version+1) << dendl;
     auto aiocp = aiocompletionptr(librados::Rados::aio_create_completion());
@@ -469,6 +510,9 @@ int SimpleRADOSStriper::lock(uint64_t timeoutms)
   }
 
   d(5) << " = 0" << dendl;
+  if (logger) {
+    logger->inc(P_LOCK);
+  }
 
   return 0;
 }
@@ -492,6 +536,9 @@ int SimpleRADOSStriper::unlock()
   locked = false;
 
   d(5) << " = 0" << dendl;
+  if (logger) {
+    logger->inc(P_UNLOCK);
+  }
 
   return 0;
 }
