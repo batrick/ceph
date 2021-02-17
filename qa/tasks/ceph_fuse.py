@@ -108,9 +108,7 @@ def task(ctx, config):
         if client_config is None:
             client_config = {}
         # top level overrides
-        for k, v in top_overrides.items():
-            if v is not None:
-                client_config[k] = v
+        teuthology.deep_merge(client_config, top_overrides)
         # mount specific overrides
         client_config_overrides = overrides.get(entity)
         teuthology.deep_merge(client_config, client_config_overrides)
