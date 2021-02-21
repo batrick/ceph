@@ -5575,6 +5575,24 @@ std::vector<Option> get_global_options() {
     .set_description("Size of thread pool for ASIO completions")
     .add_tag("osd"),
 
+    Option("cephsqlite_lock_renewal_interval", Option::TYPE_MILLISECS, Option::LEVEL_ADVANCED)
+    .add_see_also("cephsqlite_lock_renewal_timeout")
+    .add_tag("client")
+    .set_default(2000)
+    .set_description("number of milliseconds before lock is renewed")
+    .set_min(100)
+    ,
+
+    Option("cephsqlite_lock_renewal_timeout", Option::TYPE_MILLISECS, Option::LEVEL_ADVANCED)
+    .add_see_also("cephsqlite_lock_renewal_interval")
+    .add_tag("client")
+    .set_default(30000)
+    .set_description("number of milliseconds before transaction lock times out")
+    .set_long_description("The amount of time before a running libcephsqlite VFS connection has to renew a lock on the database before the lock is automatically lost. If the lock is lost, the VFS will abort the process to prevent database corruption.")
+    .set_min(100)
+    ,
+
+
     // ----------------------------
     // Crimson specific options
 
