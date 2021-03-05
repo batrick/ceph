@@ -222,6 +222,19 @@ class CephFSTestCase(CephTestCase):
 
         return super(CephFSTestCase, self).tearDown()
 
+    def is_addr_blocklisted(self, addr=None):
+        if addr is None:
+            log.warn("Couldn't get the client address, so the blocklisted status undetermined")
+            return False
+
+        blocklist = json.loads(self.mds_cluster.mon_manager.run_cluster_cmd(
+            args=["osd", "blocklist", "ls", "--format=json"],
+            stdout=StringIO()).stdout.getvalue())
+        for b in blocklist:
+            if addr == b["addr"]:
+                return True
+        return False
+
     def set_conf(self, subsys, key, value):
         self.configs_set.add((subsys, key))
         self.mds_cluster.set_ceph_conf(subsys, key, value)

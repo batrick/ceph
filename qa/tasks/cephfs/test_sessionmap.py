@@ -213,7 +213,8 @@ class TestSessionMap(CephFSTestCase):
         mount_a_client_id = self.mount_a.get_global_id()
         self.fs.mds_asok(['session', 'evict', "%s" % mount_a_client_id],
                          mds_id=self.fs.get_rank(rank=0, status=status)['name'])
-        self.wait_until_true(lambda: self.mount_a.is_blocklisted(), timeout=30)
+        self.wait_until_true(lambda: self.is_addr_blocklisted(
+            self.mount_a.get_global_addr()), timeout=30)
 
         # 10 seconds should be enough for evicting client
         time.sleep(10)
