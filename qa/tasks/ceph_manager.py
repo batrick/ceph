@@ -1545,10 +1545,13 @@ class CephManager:
     def flush_all_pg_stats(self):
         self.flush_pg_stats(range(len(self.get_osd_dump())))
 
-    def do_rados(self, remote, cmd, check_status=True):
+    def do_rados(self, cmd, pool=None, ns=None, remote=None, **kwargs):
         """
         Execute a remote rados command.
         """
+        if remote is None:
+            remote = self.controller
+
         testdir = teuthology.get_testdir(self.ctx)
         pre = [
             'adjust-ulimits',
@@ -1558,11 +1561,15 @@ class CephManager:
             '--cluster',
             self.cluster,
             ]
+        if pool is not None:
+            pre += ['--pool', pool]
+        if ns is not None:
+            pre += ['--namespace', ns]
         pre.extend(cmd)
         proc = remote.run(
             args=pre,
             wait=True,
-            check_status=check_status
+            **kwargs
             )
         return proc
 
@@ -1573,7 +1580,6 @@ class CephManager:
         Threads not used yet.
         """
         args = [
-            '-p', pool,
             '--num-objects', num_objects,
             '-b', size,
             'bench', timelimit,
@@ -1581,59 +1587,42 @@ class CephManager:
             ]
         if not cleanup:
             args.append('--no-cleanup')
-        return self.do_rados(self.controller, map(str, args))
+        return self.do_rados(map(str, args), pool=pool)
 
     def do_put(self, pool, obj, fname, namespace=None):
         """
         Implement rados put operation
         """
-        args = ['-p', pool]
-        if namespace is not None:
-            args += ['-N', namespace]
-        args += [
-            'put',
-            obj,
-            fname
-        ]
+        args = ['put', obj, fname]
         return self.do_rados(
-            self.controller,
             args,
-            check_status=False
+            check_status=False,
+            pool=pool,
+            namespace=namespace
         ).exitstatus
 
     def do_get(self, pool, obj, fname='/dev/null', namespace=None):
         """
         Implement rados get operation
         """
-        args = ['-p', pool]
-        if namespace is not None:
-            args += ['-N', namespace]
-        args += [
-            'get',
-            obj,
-            fname
-        ]
+        args = ['get', obj, fname]
         return self.do_rados(
-            self.controller,
             args,
-            check_status=False
+            check_status=False,
+            pool=pool,
+            namespace=namespace,
         ).exitstatus
 
     def do_rm(self, pool, obj, namespace=None):
         """
         Implement rados rm operation
         """
-        args = ['-p', pool]
-        if namespace is not None:
-            args += ['-N', namespace]
-        args += [
-            'rm',
-            obj
-        ]
+        args = ['rm', obj]
         return self.do_rados(
-            self.controller,
             args,
-            check_status=False
+            check_status=False,
+            pool=pool,
+            namespace=namespace
         ).exitstatus
 
     def osd_admin_socket(self, osd_id, command, check_status=True, timeout=0, stdout=None):
