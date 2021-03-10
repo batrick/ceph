@@ -912,8 +912,17 @@ class LocalCephCluster(CephCluster):
 class LocalMDSCluster(LocalCephCluster, MDSCluster):
     def __init__(self, ctx):
         super(LocalMDSCluster, self).__init__(ctx)
-        self.mds_ids = ctx.daemons.daemons['ceph.mds'].keys()
-        self.mds_daemons = dict([(id_, LocalDaemon("mds", id_)) for id_ in self.mds_ids])
+        self._mds_ids = ctx.daemons.daemons['ceph.mds'].keys()
+        log.debug("Discovered MDS IDs: {0}".format(self._mds_ids))
+        self._mds_daemons = dict([(id_, LocalDaemon("mds", id_)) for id_ in self.mds_ids])
+
+    @property
+    def mds_ids(self):
+        return self._mds_ids
+
+    @property
+    def mds_daemons(self):
+        return self._mds_daemons
 
     def clear_firewall(self):
         # FIXME: unimplemented
@@ -952,23 +961,7 @@ class LocalFilesystem(Filesystem, LocalMDSCluster):
         self.fs_config = fs_config
         self.ec_profile = fs_config.get('ec_profile')
 
-        # Hack: cheeky inspection of ceph.conf to see what MDSs exist
-        self.mds_ids = set()
-        for line in open("ceph.conf").readlines():
-            match = re.match("^\[mds\.(.+)\]$", line)
-            if match:
-                self.mds_ids.add(match.group(1))
-
-        if not self.mds_ids:
-            raise RuntimeError("No MDSs found in ceph.conf!")
-
-        self.mds_ids = list(self.mds_ids)
-
-        log.debug("Discovered MDS IDs: {0}".format(self.mds_ids))
-
         self.mon_manager = LocalCephManager()
-
-        self.mds_daemons = dict([(id_, LocalDaemon("mds", id_)) for id_ in self.mds_ids])
 
         self.client_remote = LocalRemote()
 
