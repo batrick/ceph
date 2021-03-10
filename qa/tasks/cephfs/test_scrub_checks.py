@@ -291,7 +291,7 @@ class TestScrubChecks(CephFSTestCase):
 
         # Missing parent xattr
         self.assertFalse(_check_and_clear_damage(ino, "backtrace"));
-        self.fs.rados(["rmxattr", rados_obj_name, "parent"], pool=self.fs.get_data_pool_name())
+        self.fs.mon_manager.do_rados(["rmxattr", rados_obj_name, "parent"], pool=self.fs.get_data_pool_name())
         self.tell_command(mds_rank, command, success_validator)
         self.fs.wait_until_scrub_complete(sleep=5, timeout=30)
         self.assertTrue(_check_and_clear_damage(ino, "backtrace"));
@@ -314,8 +314,7 @@ class TestScrubChecks(CephFSTestCase):
         self.fs.mds_stop()
 
         # remove the dentry from dirfrag, cause incorrect fragstat/rstat
-        self.fs.rados(["rmomapkey", dir_objname, "file_head"],
-                      pool=self.fs.get_metadata_pool_name())
+        self.fs.radosm(["rmomapkey", dir_objname, "file_head"])
 
         self.fs.mds_fail_restart()
         self.fs.wait_for_daemons()

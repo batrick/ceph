@@ -32,8 +32,8 @@ class TestForwardScrub(CephFSTestCase):
         """
         Read a ceph-encoded string from a rados xattr
         """
-        output = self.fs.rados(["getxattr", obj, attr], pool=pool,
-                               stdout_data=BytesIO())
+        output = self.fs.mon_manager.do_rados(["getxattr", obj, attr], pool=pool,
+                               stdout=BytesIO()).stdout.getvalue()
         strlen = struct.unpack('i', output[0:4])[0]
         return output[4:(4 + strlen)].decode(encoding='ascii')
 
@@ -150,7 +150,7 @@ class TestForwardScrub(CephFSTestCase):
         self.fs.set_ceph_conf('mds', 'mds verify scatter', False)
         self.fs.set_ceph_conf('mds', 'mds debug scatterstat', False)
         frag_obj_id = "{0:x}.00000000".format(inos["./parent/flushed"])
-        self.fs.rados(["rmomapkey", frag_obj_id, "bravo_head"])
+        self.fs.radosm(["rmomapkey", frag_obj_id, "bravo_head"])
 
         self.fs.set_joinable()
         self.fs.wait_for_daemons()
