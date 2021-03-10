@@ -912,8 +912,16 @@ class LocalCephCluster(CephCluster):
 class LocalMDSCluster(LocalCephCluster, MDSCluster):
     def __init__(self, ctx):
         super(LocalMDSCluster, self).__init__(ctx)
-        self.mds_ids = ctx.daemons.daemons['ceph.mds'].keys()
-        self.mds_daemons = dict([(id_, LocalDaemon("mds", id_)) for id_ in self.mds_ids])
+        self._mds_ids = ctx.daemons.daemons['ceph.mds'].keys()
+        self._mds_daemons = dict([(id_, LocalDaemon("mds", id_)) for id_ in self.mds_ids])
+
+    @property
+    def mds_ids(self):
+        return self._mds_ids
+
+    @property
+    def mds_daemons(self):
+        return self._mds_daemons
 
     def clear_firewall(self):
         # FIXME: unimplemented
