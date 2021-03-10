@@ -83,9 +83,7 @@ class TestMisc(CephFSTestCase):
                                             self.fs.metadata_pool_name,
                                             self.fs.pgs_per_fs_pool.__str__())
 
-        dummyfile = '/etc/fstab'
-
-        self.fs.put_metadata_object_raw("key", dummyfile)
+        self.fs.put_metadata_object_raw("key", "blob")
 
         def get_pool_df(fs, name):
             try:
