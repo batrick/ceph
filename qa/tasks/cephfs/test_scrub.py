@@ -94,13 +94,13 @@ class DupInodeWorkload(Workload):
         temp_bin_path = "/tmp/10000000000.00000000_omap.bin"
         self._mount.umount_wait()
         self._filesystem.mds_asok(["flush", "journal"])
-        self._filesystem.mds_stop()
+        self._filesystem.fail()
         self._filesystem.rados(["getomapval", "10000000000.00000000",
                                 "parentfile_head", temp_bin_path])
         self._filesystem.rados(["setomapval", "10000000000.00000000",
                                 "shadow_head"], stdin_file=temp_bin_path)
         self._filesystem.set_ceph_conf('mds', 'mds hack allow loading invalid metadata', True)
-        self._filesystem.mds_restart()
+        self._filesystem.set_joinable()
         self._filesystem.wait_for_daemons()
 
     def validate(self):
