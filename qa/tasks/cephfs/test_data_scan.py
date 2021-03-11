@@ -329,7 +329,7 @@ class TestDataScan(CephFSTestCase):
 
         # Stop the MDS
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
 
         # After recovery, we need the MDS to not be strict about stats (in production these options
         # are off by default, but in QA we need to explicitly disable them)
@@ -416,7 +416,7 @@ class TestDataScan(CephFSTestCase):
         self._rebuild_metadata(StripedStashedLayout(self.fs, self.mount_a))
 
     def _dirfrag_keys(self, object_id):
-        keys_str = self.fs.rados(["listomapkeys", object_id])
+        keys_str = self.fs.radosmo(["listomapkeys", object_id])
         if keys_str:
             return keys_str.split("\n")
         else:
@@ -460,7 +460,7 @@ class TestDataScan(CephFSTestCase):
         self.mount_a.umount_wait()
         self.fs.mds_asok(["flush", "journal"], mds_id)
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
 
         # Pick a dentry and wipe out its key
         # Because I did a 1 bit split, I know one frag will be named <inode>.01000000
@@ -469,7 +469,7 @@ class TestDataScan(CephFSTestCase):
         victim_key = keys[7]  # arbitrary choice
         log.info("victim_key={0}".format(victim_key))
         victim_dentry = victim_key.split("_head")[0]
-        self.fs.rados(["rmomapkey", frag_obj_id, victim_key])
+        self.fs.radosm(["rmomapkey", frag_obj_id, victim_key])
 
         # Start filesystem back up, observe that the file appears to be gone in an `ls`
         self.fs.mds_restart()
@@ -481,7 +481,7 @@ class TestDataScan(CephFSTestCase):
         # Stop the filesystem
         self.mount_a.umount_wait()
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
 
         # Run data-scan, observe that it inserts our dentry back into the correct fragment
         # by checking the omap now has the dentry's key again
@@ -579,15 +579,14 @@ class TestDataScan(CephFSTestCase):
         # introduce duplicated primary link
         file1_key = "file1_head"
         self.assertIn(file1_key, dirfrag1_keys)
-        file1_omap_data = self.fs.rados(["getomapval", dirfrag1_oid, file1_key, '-'],
-                                        stdout_data=BytesIO())
-        self.fs.rados(["setomapval", dirfrag2_oid, file1_key], stdin_data=file1_omap_data)
+        file1_omap_data = self.fs.radosmo(["getomapval", dirfrag1_oid, file1_key, '-'])
+        self.fs.radosm(["setomapval", dirfrag2_oid, file1_key], stdin=BytesIO(file1_omap_data))
         self.assertIn(file1_key, self._dirfrag_keys(dirfrag2_oid))
 
         # remove a remote link, make inode link count incorrect
         link1_key = 'link1_head'
         self.assertIn(link1_key, dirfrag1_keys)
-        self.fs.rados(["rmomapkey", dirfrag1_oid, link1_key])
+        self.fs.radosm(["rmomapkey", dirfrag1_oid, link1_key])
 
         # increase good primary link's version
         self.mount_a.run_shell(["touch", "testdir1/file1"])
@@ -595,7 +594,7 @@ class TestDataScan(CephFSTestCase):
 
         self.fs.mds_asok(["flush", "journal"], mds_id)
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
 
         # repair linkage errors
         self.fs.data_scan(["scan_links"])
@@ -644,8 +643,8 @@ class TestDataScan(CephFSTestCase):
         self.fs.mds_asok(["flush", "journal"], mds1_id)
         self.mds_cluster.mds_stop()
 
-        self.fs.rados(["rm", "mds0_inotable"])
-        self.fs.rados(["rm", "mds1_inotable"])
+        self.fs.radosm(["rm", "mds0_inotable"])
+        self.fs.radosm(["rm", "mds1_inotable"])
 
         self.fs.data_scan(["scan_links", "--filesystem", self.fs.name])
 
@@ -681,7 +680,7 @@ class TestDataScan(CephFSTestCase):
         for item in old_snaptable['snapserver']['snaps']:
             del item['stamp']
 
-        self.fs.rados(["rm", "mds_snaptable"])
+        self.fs.radosm(["rm", "mds_snaptable"])
         self.fs.data_scan(["scan_links", "--filesystem", self.fs.name])
 
         new_snaptable = json.loads(self.fs.table_tool([self.fs.name + ":0", "show", "snap"]))
