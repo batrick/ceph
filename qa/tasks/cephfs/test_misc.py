@@ -70,8 +70,7 @@ class TestMisc(CephFSTestCase):
 
         data_pool_name = self.fs.get_data_pool_name()
 
-        self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.fail()
 
         self.fs.mon_manager.raw_cluster_cmd('fs', 'rm', self.fs.name,
                                             '--yes-i-really-mean-it')
