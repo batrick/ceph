@@ -223,7 +223,7 @@ class TestFragmentation(CephFSTestCase):
         )
         # Check that the metadata pool objects for all the myriad
         # child fragments are gone
-        metadata_objs = self.fs.rados(["ls"])
+        metadata_objs = self.fs.radosmo(["ls"])
         frag_objs = []
         for o in metadata_objs:
             if o.startswith("{0:x}.".format(dir_inode_no)):

@@ -1,6 +1,8 @@
 """
 Test CephFS scrub (distinct from OSD scrub) functionality
 """
+
+from io import BytesIO
 import logging
 from collections import namedtuple
 
@@ -43,9 +45,7 @@ class Workload(CephFSTestCase):
         default just wipe everything in the metadata pool
         """
         # Delete every object in the metadata pool
-        objects = self._filesystem.rados(["ls"]).split("\n")
-        for o in objects:
-            self._filesystem.rados(["rm", o])
+        self._filesystem.mon_manager.do_rados(["purge", self._orig_fs.get_metadata_pool_name(), '--yes-i-really-really-mean-it'])
 
     def flush(self):
         """
@@ -91,14 +91,11 @@ class DupInodeWorkload(Workload):
         self._mount.write_n_mb("parent/child/childfile", 6)
 
     def damage(self):
-        temp_bin_path = "/tmp/10000000000.00000000_omap.bin"
         self._mount.umount_wait()
         self._filesystem.mds_asok(["flush", "journal"])
         self._filesystem.mds_stop()
-        self._filesystem.rados(["getomapval", "10000000000.00000000",
-                                "parentfile_head", temp_bin_path])
-        self._filesystem.rados(["setomapval", "10000000000.00000000",
-                                "shadow_head"], stdin_file=temp_bin_path)
+        d = self._filesystem.radosmo(["getomapval", "10000000000.00000000", "parentfile_head"])
+        self._filesystem.radosm(["setomapval", "10000000000.00000000", "shadow_head"], stdin=BytesIO(d))
         self._filesystem.set_ceph_conf('mds', 'mds hack allow loading invalid metadata', True)
         self._filesystem.mds_restart()
         self._filesystem.wait_for_daemons()

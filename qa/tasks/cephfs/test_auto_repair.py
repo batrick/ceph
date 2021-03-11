@@ -41,7 +41,7 @@ class TestMDSAutoRepair(CephFSTestCase):
         self.fs.wait_for_daemons()
 
         # remove testdir1's backtrace
-        self.fs.rados(["rmxattr", dir_objname, "parent"])
+        self.fs.radosm(["rmxattr", dir_objname, "parent"])
 
         # readdir (fetch dirfrag) should fix testdir1's backtrace
         self.mount_a.mount_wait()
@@ -51,7 +51,7 @@ class TestMDSAutoRepair(CephFSTestCase):
         self.fs.mds_asok(['flush', 'journal'])
 
         # check if backtrace exists
-        self.fs.rados(["getxattr", dir_objname, "parent"])
+        self.fs.radosm(["getxattr", dir_objname, "parent"])
 
     def test_mds_readonly(self):
         """
