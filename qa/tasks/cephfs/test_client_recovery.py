@@ -136,7 +136,7 @@ class TestClientRecovery(CephFSTestCase):
         # Check that if I stop an MDS and a client goes away, the MDS waits
         # for the reconnect period
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
 
         mount_a_client_id = self.mount_a.get_global_id()
         self.mount_a.umount_wait(force=True)
@@ -179,7 +179,7 @@ class TestClientRecovery(CephFSTestCase):
         mount_a_client_id = self.mount_a.get_global_id()
 
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
 
         # The mount goes away while the MDS is offline
         self.mount_a.kill()
@@ -469,7 +469,7 @@ class TestClientRecovery(CephFSTestCase):
 
         # Immediately kill the MDS and then client A
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
         self.mount_a.kill()
         self.mount_a.kill_cleanup()
 

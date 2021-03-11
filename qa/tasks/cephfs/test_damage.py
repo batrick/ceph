@@ -52,7 +52,7 @@ class TestDamage(CephFSTestCase):
             self.fs.mds_asok(["flush", "journal"], mds_name)
 
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
 
         self.fs.rados(['export', '/tmp/metadata.bin'])
 
@@ -243,7 +243,7 @@ class TestDamage(CephFSTestCase):
             # Reset MDS state
             self.mount_a.umount_wait(force=True)
             self.fs.mds_stop()
-            self.fs.mds_fail()
+            self.fs.rank_fail()
             self.fs.mon_manager.raw_cluster_cmd('mds', 'repaired', '0')
 
             # Reset RADOS pool state
@@ -389,7 +389,7 @@ class TestDamage(CephFSTestCase):
             self.fs.mds_asok(["flush", "journal"], mds_name)
 
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
 
         # Corrupt a dentry
         junk = "deadbeef" * 10
