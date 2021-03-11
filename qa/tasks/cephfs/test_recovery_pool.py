@@ -122,7 +122,7 @@ class TestRecoveryPool(CephFSTestCase):
 
         # Stop the MDS
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
 
         # After recovery, we need the MDS to not be strict about stats (in production these options
         # are off by default, but in QA we need to explicitly disable them)

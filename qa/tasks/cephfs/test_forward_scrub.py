@@ -147,7 +147,7 @@ class TestForwardScrub(CephFSTestCase):
         # Our victim will be.... bravo.
         self.mount_a.umount_wait()
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
         self.fs.set_ceph_conf('mds', 'mds verify scatter', False)
         self.fs.set_ceph_conf('mds', 'mds debug scatterstat', False)
         frag_obj_id = "{0:x}.00000000".format(inos["./parent/flushed"])
@@ -178,7 +178,7 @@ class TestForwardScrub(CephFSTestCase):
 
         # Run cephfs-data-scan targeting only orphans
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
         self.fs.data_scan(["scan_extents", self.fs.get_data_pool_name()])
         self.fs.data_scan([
             "scan_inodes",
@@ -240,7 +240,7 @@ class TestForwardScrub(CephFSTestCase):
             self.assertEqual(self.fs.wait_until_scrub_complete(tag=out_json["scrub_tag"]), True)
 
         self.mds_cluster.mds_stop()
-        self.mds_cluster.mds_fail()
+        self.mds_cluster.rank_fail()
 
         # Truncate the journal (to ensure the inotable on disk
         # is all that will be in the InoTable in memory)
