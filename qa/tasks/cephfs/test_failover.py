@@ -365,7 +365,7 @@ class TestFailover(CephFSTestCase):
         self.mounts[0].umount_wait()
 
         # Stop the daemon processes
-        self.fs.mds_stop()
+        self.fs.fail()
 
         # Wait for everyone to go laggy
         def laggy():
