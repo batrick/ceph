@@ -71,7 +71,7 @@ class TestMisc(CephFSTestCase):
         data_pool_name = self.fs.get_data_pool_name()
 
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
 
         self.fs.mon_manager.raw_cluster_cmd('fs', 'rm', self.fs.name,
                                             '--yes-i-really-mean-it')
@@ -84,9 +84,7 @@ class TestMisc(CephFSTestCase):
                                             self.fs.metadata_pool_name,
                                             self.fs.pgs_per_fs_pool.__str__())
 
-        dummyfile = '/etc/fstab'
-
-        self.fs.put_metadata_object_raw("key", dummyfile)
+        self.fs.put_metadata_object_raw("key", "blob")
 
         def get_pool_df(fs, name):
             try:
@@ -205,14 +203,11 @@ class TestCacheDrop(CephFSTestCase):
 
     def _run_drop_cache_cmd(self, timeout=None):
         result = None
-        mds_id = self.fs.get_lone_mds_id()
         if timeout is not None:
-            result = self.fs.mon_manager.raw_cluster_cmd("tell", "mds.{0}".format(mds_id),
-                                                    "cache", "drop", str(timeout))
+            result = self.fs.rank_tell(["cache", "drop", str(timeout)])
         else:
-            result = self.fs.mon_manager.raw_cluster_cmd("tell", "mds.{0}".format(mds_id),
-                                                    "cache", "drop")
-        return json.loads(result)
+            result = self.fs.rank_tell(["cache", "drop"])
+        return result
 
     def _setup(self, max_caps=20, threshold=400):
         # create some files

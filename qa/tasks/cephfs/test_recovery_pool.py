@@ -56,10 +56,8 @@ class OverlayWorkload(object):
         Damage the filesystem pools in ways that will be interesting to recover from.  By
         default just wipe everything in the metadata pool
         """
-        # Delete every object in the metadata pool
-        objects = self._orig_fs.rados(["ls"]).split("\n")
-        for o in objects:
-            self._orig_fs.rados(["rm", o])
+
+        self._orig_fs.mon_manager.do_rados(["purge", self._orig_fs.get_metadata_pool_name(), '--yes-i-really-really-mean-it'])
 
     def flush(self):
         """
@@ -122,7 +120,7 @@ class TestRecoveryPool(CephFSTestCase):
 
         # Stop the MDS
         self.fs.mds_stop()
-        self.fs.mds_fail()
+        self.fs.rank_fail()
 
         # After recovery, we need the MDS to not be strict about stats (in production these options
         # are off by default, but in QA we need to explicitly disable them)
