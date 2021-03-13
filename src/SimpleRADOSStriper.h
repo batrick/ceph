@@ -15,6 +15,7 @@
 #ifndef _SIMPLERADOSSTRIPER_H
 #define _SIMPLERADOSSTRIPER_H
 
+#include <queue>
 #include <string_view>
 #include <thread>
 
@@ -101,7 +102,7 @@ protected:
   int setmeta(uint64_t new_size, bool update_size);
   int allocshrink(uint64_t a);
   int maybeallocshrink();
-  int wait_for_updates();
+  int wait_for_aios(bool block);
   int recover_lock();
   extent getnextextent(size_t len, uint64_t off) const;
   extent getfirstextent() const {
@@ -130,7 +131,8 @@ private:
   bool locked = false;
   bool size_dirty = false;
   bool blocklist_the_dead = true;
-  std::vector<aiocompletionptr> updates;
+  std::queue<aiocompletionptr> aios;
+  int aios_failure = 0;
   std::string myaddrs;
 };
 
