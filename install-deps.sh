@@ -175,34 +175,34 @@ function install_pkg_on_ubuntu {
 
 function install_boost_on_ubuntu {
     local codename=$1
-    if apt -qq list ceph-libboost1.72-dev 2>/dev/null | grep -q installed; then
-	$SUDO env DEBIAN_FRONTEND=noninteractive apt-get -y remove 'ceph-libboost.*1.72.*'
-	$SUDO rm -f /etc/apt/sources.list.d/ceph-libboost1.72.list
+    if apt -qq list ceph-libboost1.73-dev 2>/dev/null | grep -q installed; then
+        $SUDO env DEBIAN_FRONTEND=noninteractive apt-get -y remove 'ceph-libboost.*1.73.*'
+        $SUDO rm -f /etc/apt/sources.list.d/ceph-libboost1.73.list
     fi
     local project=libboost
-    local ver=1.73
+    local ver=1.75
     local sha1=7aba8a1882670522ee1d1ee1bba0ea170b292dec
     install_pkg_on_ubuntu \
-	$project \
-	$sha1 \
-	$codename \
-	check \
-	ceph-libboost-atomic$ver-dev \
-	ceph-libboost-chrono$ver-dev \
-	ceph-libboost-container$ver-dev \
-	ceph-libboost-context$ver-dev \
-	ceph-libboost-coroutine$ver-dev \
-	ceph-libboost-date-time$ver-dev \
-	ceph-libboost-filesystem$ver-dev \
-	ceph-libboost-iostreams$ver-dev \
-	ceph-libboost-program-options$ver-dev \
-	ceph-libboost-python$ver-dev \
-	ceph-libboost-random$ver-dev \
-	ceph-libboost-regex$ver-dev \
-	ceph-libboost-system$ver-dev \
-	ceph-libboost-test$ver-dev \
-	ceph-libboost-thread$ver-dev \
-	ceph-libboost-timer$ver-dev
+        $project \
+        $sha1 \
+        $codename \
+        check \
+        ceph-libboost-atomic$ver-dev \
+        ceph-libboost-chrono$ver-dev \
+        ceph-libboost-container$ver-dev \
+        ceph-libboost-context$ver-dev \
+        ceph-libboost-coroutine$ver-dev \
+        ceph-libboost-date-time$ver-dev \
+        ceph-libboost-filesystem$ver-dev \
+        ceph-libboost-iostreams$ver-dev \
+        ceph-libboost-program-options$ver-dev \
+        ceph-libboost-python$ver-dev \
+        ceph-libboost-random$ver-dev \
+        ceph-libboost-regex$ver-dev \
+        ceph-libboost-system$ver-dev \
+        ceph-libboost-test$ver-dev \
+        ceph-libboost-thread$ver-dev \
+        ceph-libboost-timer$ver-dev
 }
 
 function install_libzbd_on_ubuntu {
@@ -296,9 +296,6 @@ else
     case "$ID" in
     debian|ubuntu|devuan|elementary)
         echo "Using apt-get to install dependencies"
-        $SUDO apt install -y docker.io
-        $SUDO systemctl start docker
-        $SUDO systemctl enable docker
         $SUDO apt-get install -y devscripts equivs
         $SUDO apt-get install -y dpkg-dev
         ensure_python3_sphinx_on_ubuntu
@@ -307,6 +304,10 @@ else
                 ensure_decent_gcc_on_ubuntu 9 bionic
                 [ ! $NO_BOOST_PKGS ] && install_boost_on_ubuntu bionic
                 $with_zbd && install_libzbd_on_ubuntu bionic
+                ;;
+            *Focal*)
+                [ ! $NO_BOOST_PKGS ] && install_boost_on_ubuntu focal
+                $with_zbd && install_libzbd_on_ubuntu focal
                 ;;
             *)
                 $SUDO apt-get install -y gcc
@@ -339,9 +340,6 @@ else
         case "$ID" in
             fedora)
                 $SUDO dnf install -y dnf-utils
-                $SUDO dnf install -y docker-ce docker-ce-cli containerd.io
-                $SUDO systemctl start docker
-                $SUDO systemctl enable docker
                 ;;
             centos|rhel|ol|virtuozzo)
                 MAJOR_VERSION="$(echo $VERSION_ID | cut -d. -f1)"
@@ -436,7 +434,6 @@ function preload_wheels_for_tox() {
         mv $wip_wheelhouse wheelhouse
         md5sum $require_files $constraint_files > $md5
     fi
-
     popd > /dev/null
 }
 
