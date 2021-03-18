@@ -590,7 +590,32 @@ add_ceph_test(run-cli-tests ${CMAKE_CURRENT_SOURCE_DIR}/run-cli-tests)
 
 add_ceph_test(smoke.sh ${CMAKE_CURRENT_SOURCE_DIR}/smoke.sh)
 
-add_ceph_test(run-promtool-unittests.sh ${CMAKE_CURRENT_SOURCE_DIR}/run-promtool-unittests.sh)
+find_program(PROMTOOL_EXECUTABLE promtool)
+if(PROMTOOL_EXECUTABLE)
+  execute_process(
+    COMMAND ${PROMTOOL_EXECUTABLE} test rules /dev/null
+    RESULT_VARIABLE rc
+    OUTPUT_QUIET)
+  if(NOT rc)
+    add_ceph_test(run-promtool-unittests
+      ${PROMTOOL_EXECUTABLE} test rules ${CMAKE_SOURCE_DIR}/monitoring/prometheus/alerts/test_alerts.yml)
+  else()
+    message(WARNING "'${PROMTOOL_EXECUTABLE} test rules' does not work, "
+      "please use a newer prometheus")
+  endif()
+else()
+  find_program(PODMAN_EXECUTABLE podman)
+  if(PODMAN_EXECUTABLE)
+    add_ceph_test(run-promtool-unittests
+      {CMAKE_CURRENT_SOURCE_DIR}/run-promtool-unittests.sh "${PODMAN_EXECUTABLE}")
+  else()
+    find_program(DOCKER_EXECUTABLE docker)
+    if(DOCKER_EXECUTABLE)
+      add_ceph_test(run-promtool-unittests
+        {CMAKE_CURRENT_SOURCE_DIR}/run-promtool-unittests.sh "${DOCKER_EXECUTABLE}")
+    endif()
+  endif()
+endif()
 
 set_property(
   TEST ${tox_tests}

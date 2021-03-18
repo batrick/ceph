@@ -5,7 +5,11 @@ set -ex
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 : ${CEPH_ROOT:=$SCRIPTPATH/../../}
 
-sudo docker run --rm \
+
+podman_or_docker=$1
+shift
+
+sudo ${podman_or_docker} run --rm \
          -v "$CEPH_ROOT":/ceph \
          --name=promtool \
          --network=host \

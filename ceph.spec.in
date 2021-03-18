@@ -356,6 +356,7 @@ BuildRequires:	lz4-devel >= 1.7
 %if 0%{?fedora} || 0%{?rhel}
 BuildRequires:	libtool-ltdl-devel
 BuildRequires:	ninja-build
+BuildRequires:	podman
 BuildRequires:	xmlsec1
 BuildRequires:	xmlsec1-devel
 %ifarch x86_64
