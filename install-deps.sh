@@ -305,6 +305,9 @@ else
                 [ ! $NO_BOOST_PKGS ] && install_boost_on_ubuntu bionic
                 $with_zbd && install_libzbd_on_ubuntu bionic
                 ;;
+            *Focal*)
+                $with_zbd && install_libzbd_on_ubuntu focal
+                ;;
             *)
                 $SUDO apt-get install -y gcc
                 ;;
