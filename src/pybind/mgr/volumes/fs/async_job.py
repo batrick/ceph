@@ -4,6 +4,7 @@ import logging
 import threading
 import traceback
 from collections import deque
+from mgr_util import lock_timeout_log
 
 from .exception import NotImplementedException
 
@@ -126,7 +127,8 @@ class AsyncJobs(threading.Thread):
         self.start()
 
     def run(self):
-        with self.lock:
+        log.debug("tick thread {} starting".format(self.name))
+        with lock_timeout_log(self.lock):
             while not self.stopping.isSet():
                 c = len(self.threads)
                 if c > self.nr_concurrent_jobs:
@@ -209,7 +211,7 @@ class AsyncJobs(threading.Thread):
         queue a volume for asynchronous job execution.
         """
         log.info("queuing job for volume '{0}'".format(volname))
-        with self.lock:
+        with lock_timeout_log(self.lock):
             if not volname in self.q:
                 self.q.append(volname)
                 self.jobs[volname] = []
@@ -261,21 +263,21 @@ class AsyncJobs(threading.Thread):
         return canceled
 
     def cancel_job(self, volname, job):
-        with self.lock:
+        with lock_timeout_log(self.lock):
             return self._cancel_job(volname, job)
 
     def cancel_jobs(self, volname):
         """
         cancel all executing jobs for a given volume.
         """
-        with self.lock:
+        with lock_timeout_log(self.lock):
             self._cancel_jobs(volname)
 
     def cancel_all_jobs(self):
         """
         call all executing jobs for all volumes.
         """
-        with self.lock:
+        with lock_timeout_log(self.lock):
             for volname in list(self.q):
                 self._cancel_jobs(volname)
 
