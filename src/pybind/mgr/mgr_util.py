@@ -73,6 +73,22 @@ class RTimer(Timer):
             logger.error("task exception: %s", e)
             raise
 
+@contextlib.contextmanager
+def lock_timeout_log(lock: threading.Lock, timeout: int = 5): -> bool
+    start = time.time()
+    warned = False
+    while True:
+        logger.debug("locking {} with {} timeout".format(lock, timeout))
+        locked = lock.acquire(timeout=timeout)
+        if locked:
+            logger.debug("locked {}".format(lock))
+            yield locked
+            return lock.release()
+        now = time.time()
+        if (now-start) > 30:
+            logger.info("possible deadlock acquiring {}".format(lock))
+            warned = True
+
 class CephfsConnectionPool(object):
     class Connection(object):
         def __init__(self, mgr: Module_T, fs_name: str):
