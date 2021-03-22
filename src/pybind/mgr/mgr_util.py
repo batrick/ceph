@@ -12,7 +12,7 @@ import time
 import logging
 import sys
 from threading import Lock, Condition, Event
-from typing import no_type_check
+from typing import no_type_check, ContextManager
 from functools import wraps
 if sys.version_info >= (3, 3):
     from threading import Timer
@@ -72,6 +72,22 @@ class RTimer(Timer):
         except Exception as e:
             logger.error("task exception: %s", e)
             raise
+
+@contextlib.contextmanager
+def lock_timeout_log(lock: Lock, timeout: int = 5) -> ContextManager[bool]:
+    start = time.time()
+    warned = False
+    while True:
+        logger.debug("locking {} with {} timeout".format(lock, timeout))
+        locked = lock.acquire(timeout=timeout)
+        if locked:
+            logger.debug("locked {}".format(lock))
+            yield locked
+            return lock.release()
+        now = time.time()
+        if (now-start) > 30:
+            logger.info("possible deadlock acquiring {}".format(lock))
+            warned = True
 
 class CephfsConnectionPool(object):
     class Connection(object):
