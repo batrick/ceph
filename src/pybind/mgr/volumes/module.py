@@ -431,15 +431,13 @@ class Module(orchestrator.OrchestratorClientMixin, MgrModule):
         self.inited = False
         # for mypy
         self.max_concurrent_clones = None
-        self.lock = threading.Lock()
         super(Module, self).__init__(*args, **kwargs)
         # Initialize config option members
         self.config_notify()
-        with self.lock:
-            self.vc = VolumeClient(self)
-            self.fs_export = FSExport(self)
-            self.nfs = NFSCluster(self)
-            self.inited = True
+        self.vc = VolumeClient(self)
+        self.fs_export = FSExport(self)
+        self.nfs = NFSCluster(self)
+        self.inited = True
 
     def __del__(self):
         self.vc.shutdown()
@@ -451,16 +449,15 @@ class Module(orchestrator.OrchestratorClientMixin, MgrModule):
         """
         This method is called whenever one of our config options is changed.
         """
-        with self.lock:
-            for opt in self.MODULE_OPTIONS:
-                setattr(self,
-                        opt['name'],  # type: ignore
-                        self.get_module_option(opt['name']))  # type: ignore
-                self.log.debug(' mgr option %s = %s',
-                               opt['name'], getattr(self, opt['name']))  # type: ignore
-                if self.inited:
-                    if opt['name'] == "max_concurrent_clones":
-                        self.vc.cloner.reconfigure_max_concurrent_clones(self.max_concurrent_clones)
+        for opt in self.MODULE_OPTIONS:
+            setattr(self,
+                    opt['name'],  # type: ignore
+                    self.get_module_option(opt['name']))  # type: ignore
+            self.log.debug(' mgr option %s = %s',
+                           opt['name'], getattr(self, opt['name']))  # type: ignore
+            if self.inited:
+                if opt['name'] == "max_concurrent_clones":
+                    self.vc.cloner.reconfigure_max_concurrent_clones(self.max_concurrent_clones)
 
     def handle_command(self, inbuf, cmd):
         handler_name = "_cmd_" + cmd['prefix'].replace(" ", "_")
