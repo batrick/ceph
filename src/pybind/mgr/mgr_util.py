@@ -19,7 +19,7 @@ if sys.version_info >= (3, 3):
 else:
     from threading import _Timer as Timer
 
-from typing import Tuple, Any, Callable, Optional, Dict, TYPE_CHECKING, TypeVar, List, Iterable, Generator, Generic
+from typing import Tuple, Any, Callable, Optional, Dict, TYPE_CHECKING, TypeVar, List, Iterable, Generator, Generic, Iterator
 T = TypeVar('T')
 
 if TYPE_CHECKING:
@@ -72,6 +72,22 @@ class RTimer(Timer):
         except Exception as e:
             logger.error("task exception: %s", e)
             raise
+
+@contextlib.contextmanager
+def lock_timeout_log(lock: Lock, timeout: int = 5) -> Iterator[bool]:
+    start = time.time()
+    warned = False
+    while True:
+        logger.debug("locking {} with {} timeout".format(lock, timeout))
+        locked = lock.acquire(timeout=timeout)
+        if locked:
+            logger.debug("locked {}".format(lock))
+            yield locked
+            return lock.release()
+        now = time.time()
+        if (now-start) > 30:
+            logger.info("possible deadlock acquiring {}".format(lock))
+            warned = True
 
 class CephfsConnectionPool(object):
     class Connection(object):
