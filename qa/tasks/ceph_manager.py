@@ -1493,7 +1493,6 @@ class CephManager:
         self.controller = controller
         self.next_pool_id = 0
         self.cluster = cluster
-        self.cephadm = cephadm
         if (logger):
             self.log = lambda x: logger.info(x)
         else:
@@ -1505,6 +1504,17 @@ class CephManager:
             self.log = tmp
         if self.config is None:
             self.config = dict()
+
+        self.testdir = teuthology.get_testdir(self.ctx)
+        # NOTE: These variables are meant to be overriden by vstart_runner.py.
+        self.cephadm = cephadm
+        self.run_cluster_cmd_prefix = [
+            'sudo', 'adjust-ulimits', 'ceph-coverage',
+            f'{self.testdir}/archive/coverage', 'timeout', '120', 'ceph',
+            '--cluster', self.cluster]
+        self.run_ceph_w_prefix = ['sudo', 'daemon-helper', 'kill', 'ceph',
+                                  '--cluster', self.cluster]
+
         pools = self.list_pools()
         self.pools = {}
         for pool in pools:
@@ -1534,6 +1544,8 @@ class CephManager:
         """
         if isinstance(kwargs['args'], str):
             kwargs['args'] = shlex.split(kwargs['args'])
+        elif isinstance(kwargs['args'], tuple):
+            kwargs['args'] = list(kwargs['args'])
 
         if self.cephadm:
             return shell(self.ctx, self.cluster, self.controller,
@@ -1541,11 +1553,7 @@ class CephManager:
                          stdout=StringIO(),
                          check_status=kwargs.get('check_status', True))
 
-        testdir = teuthology.get_testdir(self.ctx)
-        prefix = ['sudo', 'adjust-ulimits', 'ceph-coverage',
-                  f'{testdir}/archive/coverage', 'timeout', '120', 'ceph',
-                  '--cluster', self.cluster]
-        kwargs['args'] = prefix + list(kwargs['args'])
+        kwargs['args'] = self.run_cluster_cmd_prefix + kwargs['args']
         return self.controller.run(**kwargs)
 
     def raw_cluster_cmd(self, *args, **kwargs) -> str:
@@ -1566,13 +1574,8 @@ class CephManager:
         kwargs['check_status'] = False
         return self.run_cluster_cmd(**kwargs).exitstatus
 
-    # XXX: Setting "shell" to True for LocalCephManager.run_ceph_w(), doesn't
-    # work with vstart_runner.py; see https://tracker.ceph.com/issues/49644.
-    # shell=False as default parameter is just to maintain compatibility
-    # between interfaces of CephManager.run_ceph_w() and
-    # LocalCephManager.run_ceph_w(). This doesn't affect how "ceph -w" process
-    # is launched by this method since this parameters remains unused in
-    # this method.
+    # XXX: Setting "shell" to True doesn't work with vstart_runner.py;
+    # see https://tracker.ceph.com/issues/49644.
     def run_ceph_w(self, watch_channel=None, shell=False):
         """
         Execute "ceph -w" in the background with stdout connected to a BytesIO,
@@ -1582,17 +1585,12 @@ class CephManager:
                               'cluster', 'audit', ...
         :type watch_channel: str
         """
-        args = ["sudo",
-                "daemon-helper",
-                "kill",
-                "ceph",
-                '--cluster',
-                self.cluster,
-                "-w"]
+        args = self.run_ceph_w_prefix + ['-w']
         if watch_channel is not None:
             args.append("--watch-channel")
             args.append(watch_channel)
-        return self.controller.run(args=args, wait=False, stdout=StringIO(), stdin=run.PIPE)
+        return self.controller.run(args=args, wait=False, stdout=StringIO(),
+                                   stdin=run.PIPE, shell=shell)
 
     def get_mon_socks(self):
         """
@@ -1689,11 +1687,10 @@ class CephManager:
         if remote is None:
             remote = self.controller
 
-        testdir = teuthology.get_testdir(self.ctx)
         pre = [
             'adjust-ulimits',
             'ceph-coverage',
-            '{tdir}/archive/coverage'.format(tdir=testdir),
+            f'{self.testdir}/archive/coverage',
             'rados',
             '--cluster',
             self.cluster,
@@ -1803,12 +1800,11 @@ class CephManager:
                 check_status=check_status,
             )
 
-        testdir = teuthology.get_testdir(self.ctx)
         args = [
             'sudo',
             'adjust-ulimits',
             'ceph-coverage',
-            '{tdir}/archive/coverage'.format(tdir=testdir),
+            f'{self.testdir}/archive/coverage',
             'timeout',
             str(timeout),
             'ceph',
