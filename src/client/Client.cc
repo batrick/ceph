@@ -2015,7 +2015,8 @@ void Client::encode_dentry_release(Dentry *dn, MetaRequest *req,
     rel.item.dname_len = dn->name.length();
     rel.item.dname_seq = dn->lease_seq;
     rel.dname = dn->name;
-    dn->lease_mds = -1;
+    if (likely(!inject_directory_dentries_race))
+      dn->lease_mds = -1;
   }
   ldout(cct, 25) << __func__ << " exit(dn:"
 	   << dn << ")" << dendl;
@@ -2468,11 +2469,10 @@ bool Client::is_dir_operation(MetaRequest *req)
   return false;
 }
 
-void Client::handle_client_reply(const MConstRef<MClientReply>& reply)
+void Client::_handle_client_reply(const MConstRef<MClientReply>& reply)
 {
   mds_rank_t mds_num = mds_rank_t(reply->get_source().num());
 
-  std::scoped_lock cl(client_lock);
   MetaSession *session = _get_mds_session(mds_num, reply->get_connection().get());
   if (!session) {
     return;
@@ -2490,6 +2490,13 @@ void Client::handle_client_reply(const MConstRef<MClientReply>& reply)
 
   ldout(cct, 20) << __func__ << " got a reply. Safe:" << is_safe
 		 << " tid " << tid << dendl;
+
+  if (unlikely(inject_directory_dentries_race &&
+               request->get_op() == CEPH_MDS_OP_RENAME)) {
+    ldout(cct, 10) << __func__ << " insert to directory dentries race queue" << dendl;
+    inject_directory_dentries_race_queue.emplace(reply);
+    return;
+  }
 
   if (request->got_unsafe && !is_safe) {
     //duplicate response
@@ -2572,6 +2579,12 @@ void Client::handle_client_reply(const MConstRef<MClientReply>& reply)
   }
   if (is_unmounting())
     mount_cond.notify_all();
+}
+
+void Client::handle_client_reply(const MConstRef<MClientReply>& reply)
+{
+  std::scoped_lock cl(client_lock);
+  _handle_client_reply(reply);
 }
 
 void Client::_handle_full_flag(int64_t pool)
@@ -6612,6 +6625,16 @@ void Client::tick()
     blocklisted = false;
     _kick_stale_sessions();
     last_auto_reconnect = now;
+  }
+
+  inject_directory_dentries_race = cct->_conf.get_val<bool>("client_inject_directory_dentries_race");
+  if (unlikely(!inject_directory_dentries_race &&
+               !inject_directory_dentries_race_queue.empty())) {
+    ldout(cct, 10) << __func__ << " clear directory dentries race queue" << dendl;
+    for (auto &reply : inject_directory_dentries_race_queue) {
+      _handle_client_reply(reply);
+    }
+    inject_directory_dentries_race_queue.clear();
   }
 }
 
@@ -13673,7 +13696,10 @@ int Client::_rename(Inode *fromdir, const char *fromname, Inode *todir, const ch
     req->old_dentry_drop = CEPH_CAP_FILE_SHARED;
     req->old_dentry_unless = CEPH_CAP_FILE_EXCL;
 
-    de->is_renaming = true;
+    if (unlikely(inject_directory_dentries_race))
+      de->is_renaming = false;
+    else
+      de->is_renaming = true;
     req->set_dentry(de);
     req->dentry_drop = CEPH_CAP_FILE_SHARED;
     req->dentry_unless = CEPH_CAP_FILE_EXCL;
@@ -15598,6 +15624,7 @@ mds_rank_t Client::_get_random_up_mds() const
 
   if (up.empty())
     return MDS_RANK_NONE;
+
   std::set<mds_rank_t>::const_iterator p = up.begin();
   for (int n = rand() % up.size(); n; n--)
     ++p;
