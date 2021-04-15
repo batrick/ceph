@@ -392,6 +392,13 @@ options:
   - mds
   flags:
   - runtime
+- name: mds_client_async_dirop
+  type: bool
+  level: advanced
+  desc: allow clients do file creation/unlink asynchronously
+  default: true
+  services:
+  - mds
 - name: mds_early_reply
   type: bool
   level: advanced
