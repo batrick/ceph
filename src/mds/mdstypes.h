@@ -65,6 +65,8 @@
 #define MDS_INO_STRAY_OWNER(i) (signed (((unsigned (i)) - MDS_INO_STRAY_OFFSET) / NUM_STRAY))
 #define MDS_INO_STRAY_INDEX(i) (((unsigned (i)) - MDS_INO_STRAY_OFFSET) % NUM_STRAY)
 
+#define MDS_IS_PRIVATE_INO(i) ((i) < MDS_INO_SYSTEM_BASE && (i) != CEPH_INO_ROOT && (i) != CEPH_INO_LOST_AND_FOUND)
+
 typedef int32_t mds_rank_t;
 constexpr mds_rank_t MDS_RANK_NONE		= -1;
 constexpr mds_rank_t MDS_RANK_EPHEMERAL_DIST	= -2;
