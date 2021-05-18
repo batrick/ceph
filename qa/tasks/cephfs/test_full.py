@@ -25,9 +25,8 @@ class FullnessTestCase(CephFSTestCase):
     pool_capacity = None  # type: Optional[int]
     fill_mb = None
 
-    # Subclasses define what fullness means to them
     def is_full(self):
-        raise NotImplementedError()
+        return self.fs.is_full()
 
     def setUp(self):
         CephFSTestCase.setUp(self)
@@ -214,9 +213,13 @@ class FullnessTestCase(CephFSTestCase):
             log.warning("This test may run rather slowly unless you decrease"
                      "osd_mon_report_interval (5 is a good setting)!")
 
+        # set the object_size to 1MB to make the objects destributed more even
+        # among the OSDs to fix Tracker#45434
+        file_layout = "stripe_unit=1048576 stripe_count=1 object_size=1048576"
         self.mount_a.run_python(template.format(
             fill_mb=self.fill_mb,
             file_path=file_path,
+            file_layout=file_layout,
             full_wait=full_wait,
             is_fuse=isinstance(self.mount_a, FuseMount)
         ))
@@ -234,6 +237,7 @@ class FullnessTestCase(CephFSTestCase):
             print("writing some data through which we expect to succeed")
             bytes = 0
             f = os.open("{file_path}", os.O_WRONLY | os.O_CREAT)
+            os.system(f'setfattr -n "ceph.file.layout" -v "{file_layout}" "{file_path}"')
             bytes += os.write(f, b'a' * 512 * 1024)
             os.fsync(f)
             print("fsync'ed data successfully, will now attempt to fill fs")
@@ -305,6 +309,7 @@ class FullnessTestCase(CephFSTestCase):
             print("writing some data through which we expect to succeed")
             bytes = 0
             f = os.open("{file_path}", os.O_WRONLY | os.O_CREAT)
+            os.system('setfattr -n "ceph.file.layout" -v "{file_layout}" "{file_path}"')
             bytes += os.write(f, b'a' * 4096)
             os.fsync(f)
             print("fsync'ed data successfully, will now attempt to fill fs")
@@ -373,9 +378,6 @@ class TestQuotaFull(FullnessTestCase):
         self.fs.mon_manager.raw_cluster_cmd("osd", "pool", "set-quota", pool_name,
                                             "max_bytes", "{0}".format(self.pool_capacity))
 
-    def is_full(self):
-        return self.fs.is_full()
-
 
 class TestClusterFull(FullnessTestCase):
     """
@@ -392,9 +394,6 @@ class TestClusterFull(FullnessTestCase):
             full_ratio = float(self.fs.get_config("mon_osd_full_ratio", service_type="mon"))
             TestClusterFull.pool_capacity = int(max_avail * full_ratio)
             TestClusterFull.fill_mb = (self.pool_capacity // (1024 * 1024))
-
-    def is_full(self):
-        return self.fs.is_full()
 
 # Hide the parent class so that unittest.loader doesn't try to run it.
 del globals()['FullnessTestCase']
