@@ -543,9 +543,9 @@ class TestDataScan(CephFSTestCase):
             pgs_to_files[pgid].append(file_path)
             log.info("{0}: {1}".format(file_path, pgid))
 
-        pg_count = self.fs.pgs_per_fs_pool
+        pg_count = self.fs.get_pool_pg_num(self.fs.get_data_pool_name())
         for pg_n in range(0, pg_count):
-            pg_str = "{0}.{1}".format(self.fs.get_data_pool_id(), pg_n)
+            pg_str = "{0}.{1:x}".format(self.fs.get_data_pool_id(), pg_n)
             out = self.fs.data_scan(["pg_files", "mydir", pg_str])
             lines = [l for l in out.split("\n") if l]
             log.info("{0}: {1}".format(pg_str, lines))
