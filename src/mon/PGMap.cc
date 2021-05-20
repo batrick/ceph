@@ -3657,9 +3657,9 @@ int process_pg_map_command(
     cmd_getval(cmdmap, "stuckops", stuckop_vec);
     if (stuckop_vec.empty())
       stuckop_vec.push_back("unclean");
-    int64_t threshold;
-    cmd_getval(cmdmap, "threshold", threshold,
-               g_conf().get_val<int64_t>("mon_pg_stuck_threshold"));
+    const int64_t threshold = cmd_getval<int64_t>(
+      cmdmap, "threshold",
+      g_conf().get_val<int64_t>("mon_pg_stuck_threshold"));
 
     if (pg_map.dump_stuck_pg_stats(ds, f, (int)threshold, stuckop_vec) < 0) {
       *ss << "failed";
@@ -3671,9 +3671,9 @@ int process_pg_map_command(
   }
 
   if (prefix == "pg debug") {
-    string debugop;
-    cmd_getval(cmdmap, "debugop", debugop,
-	       string("unfound_objects_exist"));
+    const string debugop = cmd_getval<string>(
+      cmdmap, "debugop",
+      "unfound_objects_exist");
     if (debugop == "unfound_objects_exist") {
       bool unfound_objects_exist = false;
       for (const auto& p : pg_map.pg_stat) {

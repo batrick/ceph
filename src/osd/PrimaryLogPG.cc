@@ -1145,8 +1145,7 @@ void PrimaryLogPG::do_command(
   else if (prefix == "scrub" ||
 	   prefix == "deep_scrub") {
     bool deep = (prefix == "deep_scrub");
-    int64_t time;
-    cmd_getval(cmdmap, "time", time, (int64_t)0);
+    int64_t time = cmd_getval<int64_t>(cmdmap, "time", 0);
 
     if (is_primary()) {
       const pg_pool_t *p = &pool.info;
