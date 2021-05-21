@@ -30,6 +30,15 @@ options:
   services:
   - mds_client
   with_legacy: true
+- name: client_inject_directory_dentries_race
+  type: bool
+  flags:
+  - runtime
+  level: dev
+  desc: inject directory dentries race for rename
+  default: false
+  services:
+  - mds_client
 - name: client_mount_timeout
   type: float
   level: advanced
