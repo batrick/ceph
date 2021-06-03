@@ -56,6 +56,8 @@ class TestSessionMap(CephFSTestCase):
         That when a client unmounts, the thread count on the MDS goes back
         to what it was before the client mounted
         """
+        self.config_set('mds', 'ms_async_reap_threshold', '1')
+
         self.mount_a.umount_wait()
         self.mount_b.umount_wait()
 
