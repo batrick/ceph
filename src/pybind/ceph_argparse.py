@@ -1025,7 +1025,11 @@ def validate_one(word, desc, partial=False):
     raise an exception), desc.instance.val will
     contain the validated value (in the appropriate type).
     """
-    desc.instance.valid(word, partial)
+    if desc.N:
+        for part in word.split(','):
+            desc.instance.valid(part, partial)
+    else:
+        desc.instance.valid(word, partial)
     desc.numseen += 1
     if desc.N:
         desc.n = desc.numseen + 1

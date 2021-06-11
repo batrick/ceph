@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- mode:python; tab-width:4; indent-tabs-mode:t; coding:utf-8 -*-
+# -*- mode:python; tab-width:4; indent-tabs-mode:nil; coding:utf-8 -*-
 # vim: ts=4 sw=4 smarttab expandtab fileencoding=utf-8
 #
 # Ceph - scalable distributed file system
@@ -15,8 +15,10 @@
 #  version 2.1 of the License, or (at your option) any later version.
 #
 
-from nose.tools import eq_ as eq
-from nose.tools import *
+from nose.tools import assert_equal, assert_raises, \
+    assert_not_in, assert_in, \
+    assert_regexp_matches, \
+    nottest
 from unittest import TestCase
 
 from ceph_argparse import validate_command, parse_json_funcsigs, validate, \
@@ -28,17 +30,18 @@ import random
 import re
 import string
 import sys
-import json
 try:
     from StringIO import StringIO
 except ImportError:
     from io import StringIO
+
 
 def get_command_descriptions(what):
     CEPH_BIN = os.environ['CEPH_BIN']
     if CEPH_BIN == "":
         CEPH_BIN = "."
     return os.popen(CEPH_BIN + "/get_command_descriptions " + "--" + what).read()
+
 
 def test_parse_json_funcsigs():
     commands = get_command_descriptions("all")
@@ -47,6 +50,7 @@ def test_parse_json_funcsigs():
     # syntax error https://github.com/ceph/ceph/pull/585
     commands = get_command_descriptions("pull585")
     assert_raises(TypeError, parse_json_funcsigs, commands, 'cli')
+
 
 sigdict = parse_json_funcsigs(get_command_descriptions("all"), 'cli')
 
@@ -152,6 +156,8 @@ class TestPG(TestArgparse):
                                    'osds',
                                    'pgs',
                                    'pgs_brief'])
+        self.assert_valid_command('pg dump --dumpcontents summary,sum'.split())
+        self.assert_valid_command('pg dump summary,sum'.split())
         assert_equal({}, validate_command(sigdict, ['pg', 'dump', 'invalid']))
 
     def test_dump_json(self):
@@ -277,9 +283,6 @@ class TestMonitor(TestArgparse):
 
     def test_compact(self):
         self.assert_valid_command(['compact'])
-
-    def test_scrub(self):
-        self.assert_valid_command(['scrub'])
 
     def test_fsid(self):
         self.assert_valid_command(['fsid'])
@@ -1167,7 +1170,7 @@ class TestOSD(TestArgparse):
                                                         'toomany']))
 
     def test_tier_cache_mode(self):
-        for mode in ('none', 'writeback', 'forward', 'readonly', 'readforward', 'readproxy'):
+        for mode in ('none', 'writeback', 'readonly', 'readproxy'):
             self.assert_valid_command(['osd', 'tier', 'cache-mode',
                                        'poolname', mode])
         assert_equal({}, validate_command(sigdict, ['osd', 'tier',
@@ -1263,6 +1266,7 @@ class TestValidate(TestCase):
 
         self.sig = parse_funcsig(self.prefix + self.args_dict)
 
+    @nottest
     def arg_kwarg_test(self, prefix, args, sig, arg_type=0):
         """
         Runs validate in different arg/kargs ways.
@@ -1281,8 +1285,8 @@ class TestValidate(TestCase):
             a_type = arg_type
             if a_type == self.MIXED:
                 a_type = random.choice((self.ARGS,
-                                          self.KWARGS,
-                                          self.KWARGS_EQ))
+                                        self.KWARGS,
+                                        self.KWARGS_EQ))
             if a_type == self.ARGS:
                 final_args.append(v)
             elif a_type == self.KWARGS:
