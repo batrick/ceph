@@ -254,9 +254,9 @@ bool MDCache::shutdown()
 // ====================================================================
 // some inode functions
 
-void MDCache::add_inode(CInode *in) 
+void MDCache::add_inode(CInode *in)
 {
-  // add to lru, inode map
+  // add to inode map
   if (in->last == CEPH_NOSNAP) {
     auto &p = inode_map[in->ino()];
     ceph_assert(!p); // should be no dup inos!
@@ -513,6 +513,13 @@ void MDCache::_create_system_file(CDir *dir, std::string_view name, CInode *in, 
   dout(10) << "_create_system_file " << name << " in " << *dir << dendl;
   CDentry *dn = dir->add_null_dentry(name);
 
+  // Pin the stray dentries until the open root is finished to
+  // prevent the stray dentries to be trimmed before pinned in
+  // the _create_system_file_finish().
+  if (in->is_stray()) {
+    dn->get(0);
+  }
+
   dn->push_projected_linkage(in);
   version_t dpv = dn->pre_dirty();
   
@@ -575,6 +582,13 @@ void MDCache::_create_system_file_finish(MutationRef& mut, CDentry *dn, version_
     ceph_assert(dir);
     dir->mark_dirty(mut->ls);
     dir->mark_new(mut->ls);
+  }
+
+  // The stray dentries have been pinned in pop_projected_linkage(),
+  // no need to pin it with dummy ref any more, more detail please
+  // see _create_system_file().
+  if (in->is_stray()) {
+    dn->put(0);
   }
 
   mut->apply();
