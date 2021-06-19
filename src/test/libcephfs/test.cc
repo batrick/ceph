@@ -17,8 +17,10 @@
 #include "include/cephfs/libcephfs.h"
 #include "mds/mdstypes.h"
 #include "include/stat.h"
+#include <condition_variable>
 #include <errno.h>
 #include <fcntl.h>
+#include <mutex>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -1326,6 +1328,81 @@ TEST(LibCephFS, Rename) {
   ASSERT_EQ(-ENOENT, ceph_rename(cmount, path_src, path_dst));
 
   ASSERT_EQ(0, ceph_unlink(cmount, path_dst));
+  ceph_shutdown(cmount);
+}
+
+static void rename_racer_func(struct ceph_mount_info *cmount,
+                              std::condition_variable &cond,
+                              std::mutex &lock, bool &thread_started,
+                              char *src, char *dst)
+{
+  {
+    std::scoped_lock<std::mutex> l(lock);
+    thread_started = true;
+    cond.notify_one();
+  }
+
+  // the ceph_rename() will be stuck and will wait the
+  // client_inject_directory_dentries_race to be false
+  ASSERT_EQ(0, ceph_rename(cmount, src, dst));
+}
+
+// See tracker #49912
+TEST(LibCephFS, RenameRace) {
+  struct ceph_mount_info *cmount;
+  ASSERT_EQ(ceph_create(&cmount, nullptr), 0);
+  ASSERT_EQ(ceph_conf_read_file(cmount, nullptr), 0);
+  ASSERT_EQ(0, ceph_conf_parse_env(cmount, nullptr));
+  CephContext *cct = ceph_get_mount_context(cmount);
+  ASSERT_NE(nullptr, cct);
+  ASSERT_EQ(0, cct->_conf.set_val("client_inject_directory_dentries_race", "true"));
+  ASSERT_EQ(ceph_mount(cmount, nullptr), 0);
+
+  char src[256];
+  char dst[256];
+  sprintf(src, "src_rename_race_%d", getpid());
+  sprintf(dst, "dst_rename_race_%d", getpid());
+
+  int fd = ceph_open(cmount, src, O_CREAT, 0666);
+  ASSERT_GT(fd, 0);
+  ceph_close(cmount, fd);
+
+  std::mutex lock;
+  std::condition_variable cond;
+  bool thread_started = false;
+  std::thread tid = std::thread(rename_racer_func, cmount,
+                                std::ref(cond), std::ref(lock),
+                                std::ref(thread_started), src, dst);
+  {
+    std::unique_lock<std::mutex> l(lock);
+    cond.wait(l, [&thread_started] {
+      return thread_started;
+    });
+  }
+
+  // to sleep 3 seconds to make sure the ceph_rename()
+  // in rename_racer_func thread has been executed.
+  sleep(3);
+
+  Inode *root = nullptr;
+  int r = ceph_ll_lookup_root(cmount, &root);
+  ASSERT_EQ(r, 0);
+
+
+  Inode *tmpi = nullptr;
+  struct ceph_statx stx_src, stx_dst;
+  UserPerm *perms = ceph_mount_perms(cmount);
+  r = ceph_ll_lookup(cmount, root, dst, &tmpi, &stx_dst, 0, 0, perms);
+  ASSERT_EQ(r, 0);
+  cout << "dst ino: " << stx_dst.stx_ino << std::endl;
+  r = ceph_ll_lookup(cmount, root, src, &tmpi, &stx_src, 0, 0, perms);
+  ASSERT_EQ(r, 0);
+  cout << "src ino: " << stx_src.stx_ino << std::endl;
+  ASSERT_EQ(stx_src.stx_ino, stx_dst.stx_ino);
+
+  // this will wake up the rename_racer_func thread.
+  ASSERT_EQ(0, cct->_conf.set_val("client_inject_directory_dentries_race", "false"));
+  tid.join();
   ceph_shutdown(cmount);
 }
 

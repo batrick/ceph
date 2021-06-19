@@ -1088,6 +1088,11 @@ Dentry *Client::insert_dentry_inode(Dir *dir, const string& dname, LeaseStat *dl
     Inode *diri = dir->parent_inode;
     clear_dir_complete_and_ordered(diri, false);
     dn = link(dir, dname, in, dn);
+
+    if (old_dentry) {
+      dn->is_renaming = false;
+      signal_cond_list(waiting_for_rename);
+    }
   }
 
   update_dentry_lease(dn, dlease, from, session);
@@ -2010,7 +2015,8 @@ void Client::encode_dentry_release(Dentry *dn, MetaRequest *req,
     rel.item.dname_len = dn->name.length();
     rel.item.dname_seq = dn->lease_seq;
     rel.dname = dn->name;
-    dn->lease_mds = -1;
+    if (likely(!inject_directory_dentries_race))
+      dn->lease_mds = -1;
   }
   ldout(cct, 25) << __func__ << " exit(dn:"
 	   << dn << ")" << dendl;
@@ -2463,11 +2469,10 @@ bool Client::is_dir_operation(MetaRequest *req)
   return false;
 }
 
-void Client::handle_client_reply(const MConstRef<MClientReply>& reply)
+void Client::_handle_client_reply(const MConstRef<MClientReply>& reply)
 {
   mds_rank_t mds_num = mds_rank_t(reply->get_source().num());
 
-  std::scoped_lock cl(client_lock);
   MetaSession *session = _get_mds_session(mds_num, reply->get_connection().get());
   if (!session) {
     return;
@@ -2485,6 +2490,13 @@ void Client::handle_client_reply(const MConstRef<MClientReply>& reply)
 
   ldout(cct, 20) << __func__ << " got a reply. Safe:" << is_safe
 		 << " tid " << tid << dendl;
+
+  if (unlikely(inject_directory_dentries_race &&
+               request->get_op() == CEPH_MDS_OP_RENAME)) {
+    ldout(cct, 10) << __func__ << " insert to directory dentries race queue" << dendl;
+    inject_directory_dentries_race_queue.emplace(reply);
+    return;
+  }
 
   if (request->got_unsafe && !is_safe) {
     //duplicate response
@@ -2567,6 +2579,12 @@ void Client::handle_client_reply(const MConstRef<MClientReply>& reply)
   }
   if (is_unmounting())
     mount_cond.notify_all();
+}
+
+void Client::handle_client_reply(const MConstRef<MClientReply>& reply)
+{
+  std::scoped_lock cl(client_lock);
+  _handle_client_reply(reply);
 }
 
 void Client::_handle_full_flag(int64_t pool)
@@ -6577,6 +6595,16 @@ void Client::tick()
     _kick_stale_sessions();
     last_auto_reconnect = now;
   }
+
+  inject_directory_dentries_race = cct->_conf.get_val<bool>("client_inject_directory_dentries_race");
+  if (unlikely(!inject_directory_dentries_race &&
+               !inject_directory_dentries_race_queue.empty())) {
+    ldout(cct, 10) << __func__ << " clear directory dentries race queue" << dendl;
+    for (auto &reply : inject_directory_dentries_race_queue) {
+      _handle_client_reply(reply);
+    }
+    inject_directory_dentries_race_queue.clear();
+  }
 }
 
 void Client::start_tick_thread()
@@ -6752,7 +6780,8 @@ bool Client::_dentry_valid(const Dentry *dn)
 }
 
 int Client::_lookup(Inode *dir, const string& dname, int mask, InodeRef *target,
-		    const UserPerm& perms, std::string* alternate_name)
+                    const UserPerm& perms, std::string* alternate_name,
+                    bool is_rename)
 {
   int r = 0;
   Dentry *dn = NULL;
@@ -6830,6 +6859,19 @@ relookup:
       }
     } else {
       ldout(cct, 20) << " no cap on " << dn->inode->vino() << dendl;
+    }
+
+    // In rare case during the rename if another thread tries to
+    // lookup the dst dentry, it may get an inconsistent result
+    // that both src dentry and dst dentry will link to the same
+    // inode at the same time.
+    // Will wait the rename to finish and try it again.
+    if (!is_rename && dn->is_renaming) {
+      ldout(cct, 1) << __func__ << " dir " << *dir
+                    << " rename is on the way, will wait for dn '"
+                    << dname << "'" << dendl;
+      wait_on_list(waiting_for_rename);
+      goto relookup;
     }
   } else {
     // can we conclude ENOENT locally?
@@ -13662,12 +13704,16 @@ int Client::_rename(Inode *fromdir, const char *fromname, Inode *todir, const ch
     req->old_dentry_drop = CEPH_CAP_FILE_SHARED;
     req->old_dentry_unless = CEPH_CAP_FILE_EXCL;
 
+    if (unlikely(inject_directory_dentries_race))
+      de->is_renaming = false;
+    else
+      de->is_renaming = true;
     req->set_dentry(de);
     req->dentry_drop = CEPH_CAP_FILE_SHARED;
     req->dentry_unless = CEPH_CAP_FILE_EXCL;
 
     InodeRef oldin, otherin;
-    res = _lookup(fromdir, fromname, 0, &oldin, perm);
+    res = _lookup(fromdir, fromname, 0, &oldin, perm, nullptr, true);
     if (res < 0)
       goto fail;
 
@@ -13676,7 +13722,7 @@ int Client::_rename(Inode *fromdir, const char *fromname, Inode *todir, const ch
     req->set_old_inode(oldinode);
     req->old_inode_drop = CEPH_CAP_LINK_SHARED;
 
-    res = _lookup(todir, toname, 0, &otherin, perm);
+    res = _lookup(todir, toname, 0, &otherin, perm, nullptr, true);
     switch (res) {
     case 0:
       {
@@ -15575,6 +15621,7 @@ mds_rank_t Client::_get_random_up_mds() const
 
   if (up.empty())
     return MDS_RANK_NONE;
+
   std::set<mds_rank_t>::const_iterator p = up.begin();
   for (int n = rand() % up.size(); n; n--)
     ++p;
