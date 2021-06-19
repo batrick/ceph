@@ -938,6 +938,7 @@ protected:
   void kick_requests(MetaSession *session);
   void kick_requests_closed(MetaSession *session);
   void handle_client_request_forward(const MConstRef<MClientRequestForward>& reply);
+  void _handle_client_reply(const MConstRef<MClientReply>& reply);
   void handle_client_reply(const MConstRef<MClientReply>& reply);
   bool is_dir_operation(MetaRequest *request);
 
@@ -1295,7 +1296,8 @@ private:
 		 const UserPerm& perms);
 
   int _lookup(Inode *dir, const string& dname, int mask, InodeRef *target,
-	      const UserPerm& perm, std::string* alternate_name=nullptr);
+	      const UserPerm& perm, std::string* alternate_name=nullptr,
+              bool is_rename=false);
 
   int _link(Inode *in, Inode *dir, const char *name, const UserPerm& perm, std::string alternate_name,
 	    InodeRef *inp = 0);
@@ -1473,6 +1475,9 @@ private:
 
   epoch_t cap_epoch_barrier = 0;
 
+  set<cref_t<MClientReply>> inject_directory_dentries_race_queue;
+  bool inject_directory_dentries_race = false;
+
   // mds sessions
   map<mds_rank_t, MetaSession> mds_sessions;  // mds -> push seq
   std::set<mds_rank_t> mds_ranks_closing;  // mds ranks currently tearing down sessions
@@ -1535,6 +1540,8 @@ private:
 
   std::map<std::pair<int64_t,std::string>, int> pool_perms;
   std::list<ceph::condition_variable*> waiting_for_pool_perm;
+
+  std::list<ceph::condition_variable*> waiting_for_rename;
 
   uint64_t retries_on_invalidate = 0;
 
