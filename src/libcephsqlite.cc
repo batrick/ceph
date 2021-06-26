@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <regex>
@@ -790,6 +791,13 @@ static int autoreg(sqlite3* db, char** err, const struct sqlite3_api_routines* t
   return SQLITE_OK;
 }
 
+static void cephsqlite_atexit()
+{
+  auto vfs = sqlite3_vfs_find("ceph");
+  auto&& appd = getdata(vfs);
+  delete &appd;
+}
+
 LIBCEPHSQLITE_API int sqlite3_cephsqlite_init(sqlite3* db, char** err, const sqlite3_api_routines* api)
 {
   SQLITE_EXTENSION_INIT2(api);
@@ -809,7 +817,14 @@ LIBCEPHSQLITE_API int sqlite3_cephsqlite_init(sqlite3* db, char** err, const sql
     vfs->xFullPathname = FullPathname;
     vfs->xCurrentTimeInt64 = CurrentTime;
     appd->cct = nullptr;
-    sqlite3_vfs_register(vfs, 0);
+    if (int rc = sqlite3_vfs_register(vfs, 0); rc) {
+      delete appd;
+      return rc;
+    }
+  }
+
+  if (int rc = std::atexit(cephsqlite_atexit); rc) {
+    return SQLITE_INTERNAL;
   }
 
   if (int rc = sqlite3_auto_extension((void(*)(void))autoreg); rc) {
