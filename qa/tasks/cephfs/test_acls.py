@@ -21,7 +21,7 @@ class TestACLs(XFSTestsDev):
         elif isinstance(self.mount_a, KernelMount):
             log.info('client is kernel mounted')
 
-        self.mount_a.client_remote.run(args=['sudo', './check',
+        self.mount_a.client_remote.run(args=['./check',
             'generic/099'], cwd=self.repo_path, stdout=BytesIO(),
             stderr=BytesIO(), timeout=30, check_status=True,
             label='running tests for ACLs from xfstests-dev')
