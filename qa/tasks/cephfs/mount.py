@@ -12,7 +12,7 @@ from textwrap import dedent
 from IPy import IP
 
 from teuthology.contextutil import safe_while
-from teuthology.misc import get_file, sudo_write_file
+from teuthology.misc import get_file, write_file
 from teuthology.orchestra import run
 from teuthology.orchestra.run import CommandFailedError, ConnectionLostError, Raw
 
@@ -625,7 +625,7 @@ class CephFSMount(object):
         for suffix in self.test_files:
             log.info("Creating file {0}".format(suffix))
             self.client_remote.run(args=[
-                'sudo', 'touch', os.path.join(self.hostfs_mntpt, suffix)
+                'touch', os.path.join(self.hostfs_mntpt, suffix)
             ])
 
     def test_create_file(self, filename='testfile', dirname=None, user=None,
@@ -639,7 +639,7 @@ class CephFSMount(object):
         for suffix in self.test_files:
             log.info("Checking file {0}".format(suffix))
             r = self.client_remote.run(args=[
-                'sudo', 'ls', os.path.join(self.hostfs_mntpt, suffix)
+                'ls', os.path.join(self.hostfs_mntpt, suffix)
             ], check_status=False)
             if r.exitstatus != 0:
                 raise RuntimeError("Expected file {0} not found".format(suffix))
@@ -652,7 +652,7 @@ class CephFSMount(object):
         if path.find(self.hostfs_mntpt) == -1:
             path = os.path.join(self.hostfs_mntpt, path)
 
-        sudo_write_file(self.client_remote, path, data)
+        write_file(self.client_remote, path, data)
 
         if perms:
             self.run_shell(args=f'chmod {perms} {path}')
@@ -664,7 +664,7 @@ class CephFSMount(object):
         if path.find(self.hostfs_mntpt) == -1:
             path = os.path.join(self.hostfs_mntpt, path)
 
-        return self.run_shell(args=['sudo', 'cat', path], omit_sudo=False).\
+        return self.run_shell(args=['cat', path]).\
             stdout.getvalue().strip()
 
     def create_destroy(self):
@@ -673,16 +673,16 @@ class CephFSMount(object):
         filename = "{0} {1}".format(datetime.datetime.now(), self.client_id)
         log.debug("Creating test file {0}".format(filename))
         self.client_remote.run(args=[
-            'sudo', 'touch', os.path.join(self.hostfs_mntpt, filename)
+            'touch', os.path.join(self.hostfs_mntpt, filename)
         ])
         log.debug("Deleting test file {0}".format(filename))
         self.client_remote.run(args=[
-            'sudo', 'rm', '-f', os.path.join(self.hostfs_mntpt, filename)
+            'rm', '-f', os.path.join(self.hostfs_mntpt, filename)
         ])
 
     def _run_python(self, pyscript, py_version='python3'):
         return self.client_remote.run(
-               args=['sudo', 'adjust-ulimits', 'daemon-helper', 'kill',
+               args=['adjust-ulimits', 'daemon-helper', 'kill',
                      py_version, '-c', pyscript], wait=False, stdin=run.PIPE,
                stdout=StringIO())
 
@@ -691,12 +691,9 @@ class CephFSMount(object):
         p.wait()
         return p.stdout.getvalue().strip()
 
-    def run_shell(self, args, omit_sudo=True, timeout=900, **kwargs):
+    def run_shell(self, args, timeout=900, **kwargs):
         args = args.split() if isinstance(args, str) else args
-        # XXX: all commands ran with CephFS mount as CWD must be executed with
-        #  superuser privileges when tests are being run using teuthology.
-        if args[0] != 'sudo':
-            args.insert(0, 'sudo')
+        kwargs.pop('omit_sudo', False)
         cwd = kwargs.pop('cwd', self.mountpoint)
         stdout = kwargs.pop('stdout', StringIO())
         stderr = kwargs.pop('stderr', StringIO())
@@ -845,7 +842,7 @@ class CephFSMount(object):
         i = 0
         while i < timeout:
             r = self.client_remote.run(args=[
-                'sudo', 'ls', os.path.join(self.hostfs_mntpt, basename)
+                'stat', os.path.join(self.hostfs_mntpt, basename)
             ], check_status=False)
             if r.exitstatus == 0:
                 log.debug("File {0} became visible from {1} after {2}s".format(
@@ -943,7 +940,7 @@ class CephFSMount(object):
 
         log.info("check lock on file {0}".format(basename))
         self.client_remote.run(args=[
-            'sudo', 'python3', '-c', pyscript
+            'python3', '-c', pyscript
         ])
 
     def write_background(self, basename="background_file", loop=False):

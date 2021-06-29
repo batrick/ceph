@@ -278,9 +278,9 @@ class TestVolumesHelper(CephFSTestCase):
         # this symlink's ownership would be changed
         sym_path2 = os.path.join(dir_path, "sym.0")
 
-        self.mount_a.run_shell(["sudo", "mkdir", dir_path], omit_sudo=False)
-        self.mount_a.run_shell(["sudo", "ln", "-s", "./{}".format(reg_file), sym_path1], omit_sudo=False)
-        self.mount_a.run_shell(["sudo", "ln", "-s", "./{}".format(reg_file), sym_path2], omit_sudo=False)
+        self.mount_a.run_shell(["mkdir", dir_path])
+        self.mount_a.run_shell(["ln", "-s", "./{}".format(reg_file), sym_path1])
+        self.mount_a.run_shell(["ln", "-s", "./{}".format(reg_file), sym_path2])
         # flip ownership to nobody. assumption: nobody's id is 65534
         self.mount_a.run_shell(["sudo", "chown", "-h", "65534:65534", sym_path2], omit_sudo=False)
 
@@ -333,8 +333,7 @@ class TestVolumesHelper(CephFSTestCase):
             # add a fake clone source
             meta_contents = meta_contents + '[source]\nvolume = fake\nsubvolume = fake\nsnapshot = fake\n'
         meta_filepath1 = os.path.join(self.mount_a.mountpoint, basepath, ".meta")
-        self.mount_a.client_remote.write_file(meta_filepath1,
-                                              meta_contents, sudo=True)
+        self.mount_a.client_remote.write_file(meta_filepath1, meta_contents)
         return createpath
 
     def _update_fake_trash(self, subvol_name, subvol_group=None, trash_name='fake', create=True):
