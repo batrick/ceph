@@ -471,7 +471,7 @@ class TestDataScan(CephFSTestCase):
         self.fs.set_joinable()
         self.fs.wait_for_daemons()
         self.mount_a.mount_wait()
-        files = self.mount_a.run_shell(["ls", "subdir/"]).stdout.getvalue().strip().split("\n")
+        files = self.mount_a.run_shell(["ls", "-l", ".", "subdir/"]).stdout.getvalue().strip().split("\n")
         self.assertListEqual(sorted(files), sorted(list(set(file_names) - set([victim_dentry]))))
 
         # Stop the filesystem
@@ -490,6 +490,7 @@ class TestDataScan(CephFSTestCase):
         self.fs.set_joinable()
         self.fs.wait_for_daemons()
         self.mount_a.mount_wait()
+        self.mount_a.run_shell(["ls", "-l", "subdir/"]).stdout.getvalue().strip().split("\n")
         out = self.mount_a.run_shell(["cat", "subdir/{0}".format(victim_dentry)]).stdout.getvalue().strip()
         self.assertEqual(out, victim_dentry)
 
