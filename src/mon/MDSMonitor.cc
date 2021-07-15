@@ -2296,9 +2296,37 @@ void MDSMonitor::tick()
   if (!is_active() || !is_leader()) return;
 
   auto &pending = get_pending_fsmap_writeable();
+  auto now = clock::now();
 
   bool do_propose = false;
   bool propose_osdmap = false;
+
+  if (check_fsmap_struct_version) {
+    /* Allow time for trimming otherwise PaxosService::is_writeable will always
+     * be false.
+     */
+
+    auto since = std::chrono::duration<double>(now-last_fsmap_struct_flush);
+    if (since.count() > 30.0) {
+      FSMap fsmap;
+      bufferlist bl;
+      auto v = get_first_committed();
+      int err = get_version(v, bl);
+      if (err) {
+        derr << "could not get version " << v << dendl;
+        ceph_abort();
+      }
+      fsmap.decode(bl);
+      if (fsmap.is_struct_old()) {
+        dout(5) << "fsmap struct is too old; proposing to flush out old versions" << dendl;
+        do_propose = true;
+        last_fsmap_struct_flush = now;
+      } else {
+        dout(20) << "struct is recent" << dendl;
+        check_fsmap_struct_version = false;
+      }
+    }
+  }
 
   do_propose |= pending.check_health();
 
