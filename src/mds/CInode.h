@@ -71,7 +71,7 @@ public:
       update_layout = true;
   }
 
-  void update(ObjectOperation &op, inode_backtrace_t &bt);
+  void update(ObjectOperation &op, inode_backtrace_t &bt, std::string_view symlink);
   int64_t get_pool() { return pool; }
 
 private:
@@ -87,6 +87,7 @@ struct CInodeCommitOperations {
   inode_backtrace_t bt;
   version_t version;
   CInode *in;
+  std::string_view symlink;
 };
 
 /**
@@ -740,7 +741,7 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
 
   void _commit_ops(int r, C_GatherBuilder &gather_bld,
                    std::vector<CInodeCommitOperation> &ops_vec,
-                   inode_backtrace_t &bt);
+                   inode_backtrace_t &bt, std::string_view symlink);
   void build_backtrace(int64_t pool, inode_backtrace_t& bt);
   void _store_backtrace(std::vector<CInodeCommitOperation> &ops_vec,
                         inode_backtrace_t &bt, int op_prio);

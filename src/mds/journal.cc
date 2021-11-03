@@ -99,7 +99,7 @@ struct BatchCommitBacktrace : public Context {
     C_GatherBuilder gather(g_ceph_context);
 
     for (auto &op : ops_vec) {
-      op.in->_commit_ops(r, gather, op.ops_vec, op.bt);
+      op.in->_commit_ops(r, gather, op.ops_vec, op.bt, op.symlink);
       op.ops_vec.clear();
       op.bt.clear();
     }

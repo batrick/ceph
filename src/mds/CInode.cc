@@ -53,7 +53,7 @@
 
 using namespace std;
 
-void CInodeCommitOperation::update(ObjectOperation &op, inode_backtrace_t &bt) {
+void CInodeCommitOperation::update(ObjectOperation &op, inode_backtrace_t &bt, std::string_view symlink) {
   using ceph::encode;
 
   op.priority = priority;
@@ -70,6 +70,12 @@ void CInodeCommitOperation::update(ObjectOperation &op, inode_backtrace_t &bt) {
   bufferlist layout_bl;
   encode(_layout, layout_bl, _features);
   op.setxattr("layout", layout_bl);
+
+  if (!symlink.empty()) {
+    bufferlist symlink_bl;
+    encode(symlink, symlink_bl);
+    op.setxattr("symlink", symlink_bl);
+  }
 }
 
 class CInodeIOContext : public MDSIOContextBase
@@ -1314,7 +1320,7 @@ struct C_IO_Inode_StoredBacktrace : public CInodeIOContext {
 
 void CInode::_commit_ops(int r, C_GatherBuilder &gather_bld,
                          std::vector<CInodeCommitOperation> &ops_vec,
-                         inode_backtrace_t &bt)
+                         inode_backtrace_t &bt, std::string_view symlink)
 {
   dout(10) << __func__ << dendl;
 
@@ -1326,10 +1332,12 @@ void CInode::_commit_ops(int r, C_GatherBuilder &gather_bld,
   SnapContext snapc;
   object_t oid = get_object_name(ino(), frag_t(), "");
 
+  std::string_view slink = mdcache->get_symlink_recovery() ? symlink : "";
+
   for (auto &op : ops_vec) {
     ObjectOperation obj_op;
     object_locator_t oloc(op.get_pool());
-    op.update(obj_op, bt);
+    op.update(obj_op, bt, slink);
     mdcache->mds->objecter->mutate(oid, oloc, obj_op, snapc,
                                    ceph::real_clock::now(),
                                    0, gather_bld.new_sub());
@@ -1376,6 +1384,9 @@ void CInode::store_backtrace(MDSContext *fin, int op_prio)
   std::vector<CInodeCommitOperation> ops_vec;
   inode_backtrace_t bt;
   auto version = get_inode()->backtrace_version;
+  std::string_view op_symlink;
+  if (is_symlink())
+    op_symlink = symlink;
 
   _store_backtrace(ops_vec, bt, op_prio);
 
@@ -1383,7 +1394,7 @@ void CInode::store_backtrace(MDSContext *fin, int op_prio)
 			 new C_OnFinisher(
 			   new C_IO_Inode_StoredBacktrace(this, version, fin),
 			   mdcache->mds->finisher));
-  _commit_ops(0, gather, ops_vec, bt);
+  _commit_ops(0, gather, ops_vec, bt, op_symlink);
   ceph_assert(gather.has_subs());
   gather.activate();
 }
@@ -1392,6 +1403,8 @@ void CInode::store_backtrace(CInodeCommitOperations &op, int op_prio)
 {
   op.version = get_inode()->backtrace_version;
   op.in = this;
+  if (is_symlink())
+    op.symlink = symlink;
 
   _store_backtrace(op.ops_vec, op.bt, op_prio);
 }
