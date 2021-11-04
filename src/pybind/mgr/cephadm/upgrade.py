@@ -467,6 +467,18 @@ class CephadmUpgrade:
             else:
                 assert False
 
+        # Older monitors (pre-v16.2.5) asserted that FSMap::compat ==
+        # MDSMap::compat for all fs. This is no longer the case beginning in
+        # v16.2.5. We must disable the sanity checks during upgrade.
+        # N.B.: we don't bother confirming the operator has not already
+        # disabled this or saving the config value.
+        self.check_mon_command({
+            'prefix': 'config set',
+            'name': 'mon_mds_skip_sanity',
+            'value': '1',
+            'who': 'mon',
+        })
+
         return continue_upgrade
 
     def _enough_mons_for_ok_to_stop(self) -> bool:
@@ -876,6 +888,12 @@ class CephadmUpgrade:
                 'name': 'container_image',
                 'who': name_to_config_section(daemon_type),
             })
+
+        self.check_mon_command({
+            'prefix': 'config rm',
+            'name': 'mon_mds_skip_sanity',
+            'who': 'mon',
+        })
 
         logger.info('Upgrade: Complete!')
         if self.upgrade_state.progress_id:
