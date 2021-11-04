@@ -675,6 +675,17 @@ void FSMap::decode(bufferlist::const_iterator& p)
   if (struct_v >= 7) {
     decode(ever_enabled_multiple, p);
   }
+
+  for (auto& p: standby_daemons) {
+    static const CompatSet empty;
+    auto& info = p.second;
+    if (empty.compare(info.compat) == 0) {
+      /* bootstrap old compat; mds_info_t::decode does not have access to FSMap::default_compat */
+      /* this only applies to v16.2.4 and older MDS */
+      info.compat = MDSMap::get_compat_set_v16_2_4();
+    }
+  }
+
   DECODE_FINISH(p);
 }
 
