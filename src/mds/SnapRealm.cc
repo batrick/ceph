@@ -341,15 +341,21 @@ void SnapRealm::split_at(SnapRealm *child)
   }
 
   // split inodes_with_caps
-  for (auto p = inodes_with_caps.begin(); !p.end(); ) {
-    CInode *in = *p;
-    ++p;
-    // does inode fall within the child realm?
-    if (child->inode->is_ancestor_of(in)) {
-      dout(20) << " child gets " << *in << dendl;
-      in->move_to_realm(child);
-    } else {
-      dout(20) << "    keeping " << *in << dendl;
+  if (child->inode->dirfragtree_empty()) {
+    // Optimization: if child inode has no dirfrags, it cannot be a parent to
+    // any inode with caps in our cache
+    dout(20) << __func__ << ": child inode has no dirfrags" << dendl;
+  } else {
+    for (auto p = inodes_with_caps.begin(); !p.end(); ) {
+      CInode *in = *p;
+      ++p;
+      // does inode fall within the child realm?
+      if (child->inode->is_ancestor_of(in)) {
+        dout(20) << " child gets " << *in << dendl;
+        in->move_to_realm(child);
+      } else {
+        dout(20) << "    keeping " << *in << dendl;
+      }
     }
   }
 }
