@@ -7,6 +7,7 @@ tasks:
     tag: v16.2.4
     exclude_packages:
       - ceph-volume
+- print: "**** done install task..."
 - cephadm:
     roleless: true
     image: docker.io/ceph/ceph:v16.2.4
@@ -22,4 +23,3 @@ tasks:
       - ceph orch ls
       - ceph orch host ls
       - ceph orch device ls
-
