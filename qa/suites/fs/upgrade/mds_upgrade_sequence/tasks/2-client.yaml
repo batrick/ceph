@@ -1,3 +1,3 @@
 tasks:
-- kclient:
-- print: "**** done kclient client"
+- ceph_fuse:
+- print: "**** done ceph-fuse client"
