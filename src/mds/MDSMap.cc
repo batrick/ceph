@@ -94,6 +94,10 @@ CompatSet MDSMap::get_compat_set_v16_2_4() {
   feature_incompat.insert(MDS_FEATURE_INCOMPAT_DIRINODE);
   feature_incompat.insert(MDS_FEATURE_INCOMPAT_ENCODING);
   feature_incompat.insert(MDS_FEATURE_INCOMPAT_OMAPDIRFRAG);
+  /* While not all fs v16.2.4- would have inline enabled, some do and this
+   * would be a required bit on the MDS when the MDSMap is upgraded.
+   */
+  feature_incompat.insert(MDS_FEATURE_INCOMPAT_INLINE);
   feature_incompat.insert(MDS_FEATURE_INCOMPAT_NOANCHOR);
   feature_incompat.insert(MDS_FEATURE_INCOMPAT_FILE_LAYOUT_V2);
   feature_incompat.insert(MDS_FEATURE_INCOMPAT_SNAPREALM_V2);
