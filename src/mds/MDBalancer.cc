@@ -37,6 +37,10 @@ using namespace std;
 #include "common/config.h"
 #include "common/errno.h"
 
+/* Note, by default ceph_mds_balancer is 1/5. For debug messages 1<lvl<=5, should_gather will
+ * be true so whatever debug_mds is is ignored. So, some messages may not appear in the log.
+ * Increase both debug levels to get expected output!
+ */
 #define dout_context g_ceph_context
 #undef dout_prefix
 #define dout_prefix *_dout << "mds." << mds->get_nodeid() << ".bal " << __func__ << " "
