@@ -43,7 +43,7 @@ class KernelMount(CephFSMount):
         self._mount_bin = ['adjust-ulimits', 'ceph-coverage', self.test_dir +\
                            '/archive/coverage', '/bin/mount', '-t', 'ceph']
 
-    def mount(self, mntopts=[], check_status=True, **kwargs):
+    def mount(self, mntopts=None, check_status=True, **kwargs):
         self.update_attrs(**kwargs)
         self.assert_and_log_minimum_mount_details()
 
@@ -119,7 +119,7 @@ class KernelMount(CephFSMount):
         stx_opt = self._make_mount_cmd_old_or_new_style()
         for opt_name, opt_val in stx_opt[1].items():
             opts += f',{opt_name}={opt_val}'
-        if mntopts:
+        if mntopts is not None:
             opts += ',' + ','.join(mntopts)
         log.info(f'mounting using device: {stx_opt[0]}')
         # do not fall-back to old-style mount (catch new-style
