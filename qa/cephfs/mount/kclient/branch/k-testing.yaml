@@ -1,0 +1,6 @@
+teuthology:
+  postmerge:
+    - if yaml.teuthology.meta.kclient_stock_rhel then reject() end
+kernel:
+  client:
+    branch: testing
