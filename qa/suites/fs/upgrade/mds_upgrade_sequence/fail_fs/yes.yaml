@@ -1,3 +1,6 @@
+teuthology:
+  variables:
+    fail_fs: true
 overrides:
   ceph:
     conf:
