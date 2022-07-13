@@ -1,0 +1,14 @@
+teuthology:
+  postmerge:
+    - |
+      local a = py_attrgetter
+      local kernel = a(yaml).get("kernel", py_dict())
+      local client = a(kernel).get("client", py_dict())
+      local sha1 = a(client).get("sha1")
+      if sha1 ~= "distro" then reject() end
+os_type: rhel
+os_version: "8.6"
+overrides:
+  selinux:
+    whitelist:
+      - scontext=system_u:system_r:logrotate_t:s0
