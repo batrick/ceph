@@ -135,7 +135,7 @@ class KernelMount(CephFSMount):
         log.debug('Unmounting client client.{id}...'.format(id=self.client_id))
 
         try:
-            cmd=['sudo', 'umount', self.hostfs_mntpt]
+            cmd=['sudo', 'timeout', '300', 'umount', self.hostfs_mntpt]
             if force:
                 cmd.append('-f')
             self.client_remote.run(args=cmd, timeout=UMOUNT_TIMEOUT, omit_sudo=False)
