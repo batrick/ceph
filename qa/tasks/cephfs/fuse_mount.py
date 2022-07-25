@@ -321,7 +321,7 @@ class FuseMount(CephFSMount):
             log.info('Running fusermount -u on {name}...'.format(name=self.client_remote.name))
             stderr = StringIO()
             self.client_remote.run(
-                args=['sudo', 'fusermount', '-u', self.hostfs_mntpt],
+                args=['sudo', 'timeout', '300', 'fusermount', '-u', self.hostfs_mntpt],
                 stderr=stderr, timeout=UMOUNT_TIMEOUT, omit_sudo=False)
         except run.CommandFailedError:
             if "mountpoint not found" in stderr.getvalue():
