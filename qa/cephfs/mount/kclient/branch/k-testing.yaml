@@ -1,5 +1,6 @@
 teuthology:
   postmerge:
     - if yaml.teuthology.meta.kclient_stock_rhel then reject() end
-tasks:
-  - ceph-fuse:
+kernel:
+  client:
+    branch: testing
