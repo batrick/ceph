@@ -407,10 +407,23 @@ void ScrubStack::scrub_dirfrag(CDir *dir, bool *done)
   ScrubHeaderRef header = dir->get_scrub_header();
   version_t last_scrub = dir->scrub_info()->last_recursive.version;
   if (header->get_recursive()) {
-    for (auto it = dir->begin(); it != dir->end(); ++it) {
-      if (it->first.snapid != CEPH_NOSNAP)
+    auto next_seq = mdcache->get_global_snaprealm()->get_newest_seq()+1;
+    for (auto it = dir->begin(); it != dir->end(); /* nop */) {
+      auto [dnk, dn] = *it;
+      ++it;
+
+      if (dn->scrub(next_seq)) {
+        std::string path;
+        dir->get_inode()->make_path_string(path, true);
+        clog->warn() << "Scrub error on dentry " << *dn
+                     << " see " << g_conf()->name
+                     << " log and `damage ls` output for details";
+      }
+
+      if (dnk.snapid != CEPH_NOSNAP) {
 	continue;
-      CDentry *dn = it->second;
+      }
+
       CDentry::linkage_t *dnl = dn->get_linkage();
       if (dn->get_version() <= last_scrub &&
 	  dnl->get_remote_d_type() != DT_DIR &&
