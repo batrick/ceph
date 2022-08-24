@@ -1812,6 +1812,11 @@ CDentry *CDir::_load_dentry(
            << " [" << first << "," << last << "]"
            << dendl;
 
+  if (first > last) {
+    go_bad_dentry(last, dname);
+    /* try to continue */
+  }
+
   bool stale = false;
   if (snaps && last != CEPH_NOSNAP) {
     set<snapid_t>::const_iterator p = snaps->lower_bound(first);
@@ -3748,8 +3753,44 @@ void CDir::scrub_maybe_delete_info()
 
 bool CDir::scrub_local()
 {
+  bool good = true;
   ceph_assert(is_complete());
-  bool good = check_rstats(true);
+
+  const auto next_seq = mdcache->get_global_snaprealm()->get_newest_seq()+1;
+  dout(20) << "next_seq = " << next_seq << dendl;
+  auto&& realm = inode->find_snaprealm();
+  /* attempt to locate damage in first of CDentry, see:
+   * https://tracker.ceph.com/issues/56140 */
+  for ([[maybe_unused]] auto&& [dnk, dn] : *this) {
+    /* skip projected dentries as first/last may have placeholder values */
+    if (!dn->is_projected()) {
+      bool corrupt = false;
+      if (dn->first > next_seq)
+        derr << __func__ << ": first > next_seq (" << next_seq << ") " << *dn << dendl;
+        corrupt = true;
+      } else if (dn->first > dn->last) {
+        derr << __func__ << ": first > last " << *dn << dendl;
+        corrupt = true;
+      }
+      if (!corrupt && realm) {
+        auto snaps = realm->get_snaps();
+        if (snaps.empty() && dn->last == CEPH_NOSNAP) {
+          /* ok, first could be anything (2 <= first <= next_seq), there may
+           * still be damage but it is significantly more work to check */
+        } else if (dn->first < next_seq && !snaps.count(dn->first)) {
+          derr << __func__ <<  ": first not in " << snaps << " " << *dn << dendl;
+          corrupt = true;
+        }
+      }
+      if (corrupt) {
+        derr << __func__ << ": dn->first corrupt for " << *dn << dendl;
+        go_bad_dentry(dn->last, dn->get_name());
+        good = false;
+      }
+    }
+  }
+
+  good = check_rstats(true) && good;
   if (!good && scrub_infop->header->get_repair()) {
     mdcache->repair_dirfrag_stats(this);
     scrub_infop->header->set_repaired();
