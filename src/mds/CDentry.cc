@@ -662,4 +662,54 @@ std::string CDentry::linkage_t::get_remote_d_type_string() const
   }
 }
 
+bool CDentry::scrub(snapid_t next_seq)
+{
+  dout(20) << "scrubbing " << *this << " next_seq = " << next_seq << dendl;
+
+  bool damaged = false;
+
+  /* attempt to locate damage in first of CDentry, see:
+   * https://tracker.ceph.com/issues/56140
+   */
+  /* skip projected dentries as first/last may have placeholder values */
+  if (!is_projected()) {
+    CDir* dir = get_dir();
+
+    auto&& realm = dir->get_inode()->find_snaprealm();
+    auto&& snaps = realm->get_snaps();
+    auto it = snaps.lower_bound(first);
+    bool stale = (it == snaps.end() || *it > last);
+    if (last == CEPH_NOSNAP || !stale) {
+      /* not stale */
+
+      if (first > next_seq) {
+        derr << __func__ << ": first > next_seq (" << next_seq << ") " << *this << dendl;
+        damaged = true;
+      } else if (first > last) {
+        derr << __func__ << ": first > last " << *this << dendl;
+        damaged = true;
+      }
+
+      if (!damaged && realm) {
+        if (snaps.empty() && last == CEPH_NOSNAP) {
+          /* ok, first could be anything (2 <= first <= next_seq), there may
+           * still be damage but it is significantly more work to check */
+        } else if (first < next_seq && !snaps.count(first) && last != CEPH_NOSNAP) {
+          derr << __func__ <<  ": first not in " << snaps << " " << *this << dendl;
+          damaged = true;
+        }
+      }
+      if (damaged) {
+        derr << __func__ << ": first corrupt for " << *this << dendl;
+        dir->go_bad_dentry(last, get_name());
+        damaged = true;
+      }
+    } else if (stale) {
+      dout(20) << "is stale" << dendl;
+    }
+  }
+
+  return damaged;
+}
+
 MEMPOOL_DEFINE_OBJECT_FACTORY(CDentry, co_dentry, mds_co);
