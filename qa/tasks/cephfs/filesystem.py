@@ -592,6 +592,10 @@ class Filesystem(MDSCluster):
         a = map(lambda x: str(x).lower(), args)
         self.mon_manager.raw_cluster_cmd("fs", "flag", "set", var, *a)
 
+    def set_config(self, opt, val, rank=0, status=None):
+        command = ["config", "set", opt, val]
+        self.rank_asok(command, rank, status=status)
+
     def set_allow_multifs(self, yes=True):
         self.set_flag("enable_multiple", yes)
 
