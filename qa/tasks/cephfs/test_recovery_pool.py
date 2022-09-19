@@ -177,9 +177,8 @@ class TestRecoveryPool(CephFSTestCase):
         self.fs.wait_for_daemons()
         self.recovery_fs.wait_for_daemons()
         status = self.recovery_fs.status()
+        self.config_set('mds', 'debug_mds', '20')
         for rank in self.recovery_fs.get_ranks(status=status):
-            self.fs.mon_manager.raw_cluster_cmd('tell', "mds." + rank['name'],
-                                                'injectargs', '--debug-mds=20')
             self.fs.rank_tell(['scrub', 'start', '/', 'recursive,repair'], rank=rank['rank'], status=status)
         log.info(str(self.mds_cluster.status()))
 
