@@ -755,7 +755,7 @@ void Server::handle_client_session(const cref_t<MClientSession> &m)
         ceph_assert(r == 0);
         log_session_status("ACCEPTED", "");
       });
-      mdlog->start_submit_entry(new ESession(m->get_source_inst(), true, pv, client_metadata),
+      mdlog->submit_entry(new ESession(m->get_source_inst(), true, pv, client_metadata),
 				new C_MDS_session_finish(this, session, sseq, true, pv, fin));
       mdlog->flush();
     }
@@ -1408,7 +1408,7 @@ void Server::journal_close_session(Session *session, int state, Context *on_safe
   auto le = new ESession(session->info.inst, false, pv, inos_to_free, piv, session->delegated_inos);
   auto fin = new C_MDS_session_finish(this, session, sseq, false, pv, inos_to_free, piv,
 				      session->delegated_inos, mdlog->get_current_segment(), on_safe);
-  mdlog->start_submit_entry(le, fin);
+  mdlog->submit_entry(le, fin);
   mdlog->flush();
 
   // clean up requests, too
@@ -4459,7 +4459,6 @@ void Server::handle_client_open(MDRequestRef& mdr)
   if (cur->is_auth() && cur->last == CEPH_NOSNAP &&
       mdcache->open_file_table.should_log_open(cur)) {
     EOpen *le = new EOpen(mds->mdlog);
-    mdlog->start_entry(le);
     le->add_clean_inode(cur);
     mdlog->submit_entry(le);
   }
@@ -4661,7 +4660,6 @@ void Server::handle_client_openc(MDRequestRef& mdr)
   // prepare finisher
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "openc");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(req->get_reqid(), req->get_oldest_client_tid());
   journal_allocated_inos(mdr, &le->metablob);
   mdcache->predirty_journal_parents(mdr, &le->metablob, newi, dn->get_dir(), PREDIRTY_PRIMARY|PREDIRTY_DIR, 1);
@@ -5300,7 +5298,6 @@ void Server::handle_client_setattr(MDRequestRef& mdr)
   // project update
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "setattr");
-  mdlog->start_entry(le);
 
   auto pi = cur->project_inode(mdr);
 
@@ -5392,7 +5389,6 @@ void Server::do_open_truncate(MDRequestRef& mdr, int cmode)
 
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "open_truncate");
-  mdlog->start_entry(le);
 
   // prepare
   auto pi = in->project_inode(mdr);
@@ -5525,7 +5521,6 @@ void Server::handle_client_setlayout(MDRequestRef& mdr)
   // log + wait
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "setlayout");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(req->get_reqid(), req->get_oldest_client_tid());
   mdcache->predirty_journal_parents(mdr, &le->metablob, cur, 0, PREDIRTY_PRIMARY);
   mdcache->journal_dirty_inode(mdr.get(), &le->metablob, cur);
@@ -5647,7 +5642,6 @@ void Server::handle_client_setdirlayout(MDRequestRef& mdr)
   // log + wait
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "setlayout");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(req->get_reqid(), req->get_oldest_client_tid());
   mdcache->predirty_journal_parents(mdr, &le->metablob, cur, 0, PREDIRTY_PRIMARY);
   mdcache->journal_dirty_inode(mdr.get(), &le->metablob, cur);
@@ -6241,7 +6235,6 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
   // log + wait
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "set vxattr layout");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(req->get_reqid(), req->get_oldest_client_tid());
   mdcache->predirty_journal_parents(mdr, &le->metablob, cur, 0, PREDIRTY_PRIMARY);
   mdcache->journal_dirty_inode(mdr.get(), &le->metablob, cur);
@@ -6286,7 +6279,6 @@ void Server::handle_remove_vxattr(MDRequestRef& mdr, CInode *cur)
     // log + wait
     mdr->ls = mdlog->get_current_segment();
     EUpdate *le = new EUpdate(mdlog, "remove dir layout vxattr");
-    mdlog->start_entry(le);
     le->metablob.add_client_req(req->get_reqid(), req->get_oldest_client_tid());
     mdcache->predirty_journal_parents(mdr, &le->metablob, cur, 0, PREDIRTY_PRIMARY);
     mdcache->journal_dirty_inode(mdr.get(), &le->metablob, cur);
@@ -6575,7 +6567,6 @@ void Server::handle_client_setxattr(MDRequestRef& mdr)
   // log + wait
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "setxattr");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(req->get_reqid(), req->get_oldest_client_tid());
   mdcache->predirty_journal_parents(mdr, &le->metablob, cur, 0, PREDIRTY_PRIMARY);
   mdcache->journal_dirty_inode(mdr.get(), &le->metablob, cur);
@@ -6645,7 +6636,6 @@ void Server::handle_client_removexattr(MDRequestRef& mdr)
   // log + wait
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "removexattr");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(req->get_reqid(), req->get_oldest_client_tid());
   mdcache->predirty_journal_parents(mdr, &le->metablob, cur, 0, PREDIRTY_PRIMARY);
   mdcache->journal_dirty_inode(mdr.get(), &le->metablob, cur);
@@ -6996,7 +6986,6 @@ void Server::handle_client_mknod(MDRequestRef& mdr)
   // prepare finisher
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "mknod");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(req->get_reqid(), req->get_oldest_client_tid());
   journal_allocated_inos(mdr, &le->metablob);
   
@@ -7079,7 +7068,6 @@ void Server::handle_client_mkdir(MDRequestRef& mdr)
   // prepare finisher
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "mkdir");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(req->get_reqid(), req->get_oldest_client_tid());
   journal_allocated_inos(mdr, &le->metablob);
   mdcache->predirty_journal_parents(mdr, &le->metablob, newi, dn->get_dir(), PREDIRTY_PRIMARY|PREDIRTY_DIR, 1);
@@ -7164,7 +7152,6 @@ void Server::handle_client_symlink(MDRequestRef& mdr)
   // prepare finisher
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "symlink");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(req->get_reqid(), req->get_oldest_client_tid());
   journal_allocated_inos(mdr, &le->metablob);
   mdcache->predirty_journal_parents(mdr, &le->metablob, newi, dn->get_dir(), PREDIRTY_PRIMARY|PREDIRTY_DIR, 1);
@@ -7367,7 +7354,6 @@ void Server::_link_local(MDRequestRef& mdr, CDentry *dn, CInode *targeti, SnapRe
 
   // log + wait
   EUpdate *le = new EUpdate(mdlog, "link_local");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(mdr->reqid, mdr->client_request->get_oldest_client_tid());
   mdcache->predirty_journal_parents(mdr, &le->metablob, targeti, dn->get_dir(), PREDIRTY_DIR, 1);      // new dn
   mdcache->predirty_journal_parents(mdr, &le->metablob, targeti, 0, PREDIRTY_PRIMARY);           // targeti
@@ -7478,7 +7464,6 @@ void Server::_link_remote(MDRequestRef& mdr, bool inc, CDentry *dn, CInode *targ
   // add to event
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, inc ? "link_remote":"unlink_remote");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(mdr->reqid, mdr->client_request->get_oldest_client_tid());
   if (!mdr->more()->witnessed.empty()) {
     dout(20) << " noting uncommitted_peers " << mdr->more()->witnessed << dendl;
@@ -7608,8 +7593,6 @@ void Server::handle_peer_link_prep(MDRequestRef& mdr)
   mdr->ls = mdlog->get_current_segment();
   EPeerUpdate *le = new EPeerUpdate(mdlog, "peer_link_prep", mdr->reqid, mdr->peer_to_mds,
 				      EPeerUpdate::OP_PREPARE, EPeerUpdate::LINK);
-  mdlog->start_entry(le);
-
   auto pi = dnl->get_inode()->project_inode(mdr);
 
   // update journaled target inode
@@ -7741,7 +7724,6 @@ void Server::_commit_peer_link(MDRequestRef& mdr, int r, CInode *targeti)
     // write a commit to the journal
     EPeerUpdate *le = new EPeerUpdate(mdlog, "peer_link_commit", mdr->reqid, mdr->peer_to_mds,
 					EPeerUpdate::OP_COMMIT, EPeerUpdate::LINK);
-    mdlog->start_entry(le);
     submit_mdlog_entry(le, new C_MDS_CommittedPeer(this, mdr), mdr, __func__);
     mdlog->flush();
   } else {
@@ -7844,7 +7826,6 @@ void Server::do_link_rollback(bufferlist &rbl, mds_rank_t leader, MDRequestRef& 
   // journal it
   EPeerUpdate *le = new EPeerUpdate(mdlog, "peer_link_rollback", rollback.reqid, leader,
 				      EPeerUpdate::OP_ROLLBACK, EPeerUpdate::LINK);
-  mdlog->start_entry(le);
   le->commit.add_dir_context(parent);
   le->commit.add_dir(parent, true);
   le->commit.add_primary_dentry(in->get_projected_parent_dn(), 0, true);
@@ -8102,7 +8083,6 @@ void Server::_unlink_local(MDRequestRef& mdr, CDentry *dn, CDentry *straydn)
 
   // prepare log entry
   EUpdate *le = new EUpdate(mdlog, "unlink_local");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(mdr->reqid, mdr->client_request->get_oldest_client_tid());
   if (!mdr->more()->witnessed.empty()) {
     dout(20) << " noting uncommitted_peers " << mdr->more()->witnessed << dendl;
@@ -8360,7 +8340,6 @@ void Server::handle_peer_rmdir_prep(MDRequestRef& mdr)
   mdr->ls = mdlog->get_current_segment();
   EPeerUpdate *le =  new EPeerUpdate(mdlog, "peer_rmdir", mdr->reqid, mdr->peer_to_mds,
 				       EPeerUpdate::OP_PREPARE, EPeerUpdate::RMDIR);
-  mdlog->start_entry(le);
   le->rollback = mdr->more()->rollback_bl;
 
   le->commit.add_dir_context(straydn->get_dir());
@@ -8459,7 +8438,6 @@ void Server::_commit_peer_rmdir(MDRequestRef& mdr, int r, CDentry *straydn)
       EPeerUpdate *le = new EPeerUpdate(mdlog, "peer_rmdir_commit", mdr->reqid,
 					  mdr->peer_to_mds, EPeerUpdate::OP_COMMIT,
 					  EPeerUpdate::RMDIR);
-      mdlog->start_entry(le);
       submit_mdlog_entry(le, new C_MDS_CommittedPeer(this, mdr), mdr, __func__);
       mdlog->flush();
     } else {
@@ -8535,7 +8513,6 @@ void Server::do_rmdir_rollback(bufferlist &rbl, mds_rank_t leader, MDRequestRef&
 
   EPeerUpdate *le = new EPeerUpdate(mdlog, "peer_rmdir_rollback", rollback.reqid, leader,
 				      EPeerUpdate::OP_ROLLBACK, EPeerUpdate::RMDIR);
-  mdlog->start_entry(le);
   
   le->commit.add_dir_context(dn->get_dir());
   le->commit.add_primary_dentry(dn, in, true);
@@ -9097,7 +9074,6 @@ void Server::handle_client_rename(MDRequestRef& mdr)
   // -- prepare journal entry --
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "rename");
-  mdlog->start_entry(le);
   le->metablob.add_client_req(mdr->reqid, req->get_oldest_client_tid());
   if (!mdr->more()->witnessed.empty()) {
     dout(20) << " noting uncommitted_peers " << mdr->more()->witnessed << dendl;
@@ -10103,7 +10079,6 @@ void Server::handle_peer_rename_prep(MDRequestRef& mdr)
   mdr->ls = mdlog->get_current_segment();
   EPeerUpdate *le = new EPeerUpdate(mdlog, "peer_rename_prep", mdr->reqid, mdr->peer_to_mds,
 				      EPeerUpdate::OP_PREPARE, EPeerUpdate::RENAME);
-  mdlog->start_entry(le);
   le->rollback = mdr->more()->rollback_bl;
   
   bufferlist blah;  // inode import data... obviously not used if we're the peer
@@ -10111,7 +10086,7 @@ void Server::handle_peer_rename_prep(MDRequestRef& mdr)
 
   if (le->commit.empty()) {
     dout(10) << " empty metablob, skipping journal" << dendl;
-    mdlog->cancel_entry(le);
+    delete le;
     mdr->ls = NULL;
     _logged_peer_rename(mdr, srcdn, destdn, straydn);
   } else {
@@ -10265,7 +10240,6 @@ void Server::_commit_peer_rename(MDRequestRef& mdr, int r,
       EPeerUpdate *le = new EPeerUpdate(mdlog, "peer_rename_commit", mdr->reqid,
 					  mdr->peer_to_mds, EPeerUpdate::OP_COMMIT,
 					  EPeerUpdate::RENAME);
-      mdlog->start_entry(le);
       submit_mdlog_entry(le, new C_MDS_CommittedPeer(this, mdr), mdr, __func__);
       mdlog->flush();
     } else {
@@ -10609,7 +10583,6 @@ void Server::do_rename_rollback(bufferlist &rbl, mds_rank_t leader, MDRequestRef
   // journal it
   EPeerUpdate *le = new EPeerUpdate(mdlog, "peer_rename_rollback", rollback.reqid, leader,
 				      EPeerUpdate::OP_ROLLBACK, EPeerUpdate::RENAME);
-  mdlog->start_entry(le);
 
   if (srcdn && (srcdn->authority().first == whoami || force_journal_src)) {
     le->commit.add_dir_context(srcdir);
@@ -10667,7 +10640,7 @@ void Server::do_rename_rollback(bufferlist &rbl, mds_rank_t leader, MDRequestRef
 
   if (mdr && !mdr->more()->peer_update_journaled) {
     ceph_assert(le->commit.empty());
-    mdlog->cancel_entry(le);
+    delete le;
     mut->ls = NULL;
     _rename_rollback_finish(mut, mdr, srcdn, srcdnpv, destdn, straydn, splits, finish_mdr);
   } else {
@@ -11097,7 +11070,6 @@ void Server::handle_client_mksnap(MDRequestRef& mdr)
   // journal the inode changes
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "mksnap");
-  mdlog->start_entry(le);
 
   le->metablob.add_client_req(req->get_reqid(), req->get_oldest_client_tid());
   le->metablob.add_table_transaction(TABLE_SNAP, stid);
@@ -11223,7 +11195,6 @@ void Server::handle_client_rmsnap(MDRequestRef& mdr)
   
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "rmsnap");
-  mdlog->start_entry(le);
   
   // project the snaprealm
   auto &newnode = *pi.snapnode;
@@ -11375,7 +11346,6 @@ void Server::handle_client_renamesnap(MDRequestRef& mdr)
   // journal the inode changes
   mdr->ls = mdlog->get_current_segment();
   EUpdate *le = new EUpdate(mdlog, "renamesnap");
-  mdlog->start_entry(le);
 
   le->metablob.add_client_req(req->get_reqid(), req->get_oldest_client_tid());
   le->metablob.add_table_transaction(TABLE_SNAP, stid);
