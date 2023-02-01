@@ -541,6 +541,7 @@ options:
   fmt_desc: The maximum number of segments (objects) in the journal before
     we initiate trimming. Set to ``-1`` to disable limits.
   default: 128
+  min: 8
   services:
   - mds
   with_legacy: true
