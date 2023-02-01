@@ -3792,6 +3792,7 @@ const char** MDSRankDispatcher::get_tracked_conf_keys() const
     "mds_cache_trim_decay_rate",
     "mds_cap_acquisition_throttle_retry_request_time",
     "mds_cap_revoke_eviction_timeout",
+    "mds_debug_subtrees",
     "mds_dir_max_entries",
     "mds_dump_cache_threshold_file",
     "mds_dump_cache_threshold_formatter",
@@ -3807,6 +3808,9 @@ const char** MDSRankDispatcher::get_tracked_conf_keys() const
     "mds_inject_journal_corrupt_dentry_first",
     "mds_inject_migrator_session_race",
     "mds_inject_rename_corrupt_dentry_first",
+    "mds_log_events_per_segment",
+    "mds_log_max_events",
+    "mds_log_max_segments",
     "mds_log_pause",
     "mds_max_caps_per_client",
     "mds_max_export_size",
@@ -3899,12 +3903,10 @@ void MDSRankDispatcher::handle_conf_change(const ConfigProxy& conf, const std::s
 
     dout(10) << "flushing conf change to components: " << changed << dendl;
 
-    if (changed.count("mds_log_pause") && !g_conf()->mds_log_pause) {
-      mdlog->kick_submitter();
-    }
     sessionmap.handle_conf_change(changed);
     server->handle_conf_change(changed);
     mdcache->handle_conf_change(changed, *mdsmap);
+    mdlog->handle_conf_change(changed, *mdsmap);
     purge_queue.handle_conf_change(changed, *mdsmap);
   }));
 }
