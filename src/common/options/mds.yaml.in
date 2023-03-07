@@ -966,6 +966,14 @@ options:
   services:
   - mds
   fmt_desc: The debug subtree invariants (for developers only).
+- name: mds_kill_shutdown_at
+  type: uint
+  level: dev
+  default: 0
+  services:
+  - mds
+  flags:
+  - runtime
 - name: mds_kill_mdstable_at
   type: int
   level: dev

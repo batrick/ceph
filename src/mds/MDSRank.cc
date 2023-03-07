@@ -3802,6 +3802,7 @@ const char** MDSRankDispatcher::get_tracked_conf_keys() const
     "mds_heartbeat_grace",
     "mds_heartbeat_reset_grace",
     "mds_inject_migrator_session_race",
+    "mds_kill_shutdown_at",
     "mds_log_event_large_threshold",
     "mds_log_events_per_segment",
     "mds_log_major_segment_event_ratio",
