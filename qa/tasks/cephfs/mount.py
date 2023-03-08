@@ -1181,7 +1181,7 @@ class CephFSMount(object):
                 path = os.path.join(abs_path, fname)
                 handles.append(open(path, 'w'))
 
-            while True:
+            while os.read(0, 0) == 0:
                 time.sleep(1)
             """).format(abs_path=abs_path, count=count)
 
