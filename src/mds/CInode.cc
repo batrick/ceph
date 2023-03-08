@@ -2405,7 +2405,6 @@ void CInode::finish_scatter_update(ScatterLock *lock, CDir *dir,
       }
 	
       EUpdate *le = new EUpdate(mdlog, ename);
-      mdlog->start_entry(le);
       le->metablob.add_dir_context(dir);
       le->metablob.add_dir(dir, true);
       
