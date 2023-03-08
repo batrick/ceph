@@ -1181,8 +1181,10 @@ class CephFSMount(object):
                 path = os.path.join(abs_path, fname)
                 handles.append(open(path, 'w'))
 
-            while True:
+            while os.read(0, 4096) != b'':
+                print("waiting with handles open", file=sys.stderr)
                 time.sleep(1)
+            print("stdin closed, goodbye!", file=sys.stderr)
             """).format(abs_path=abs_path, count=count)
 
         rproc = self._run_python(pyscript)
