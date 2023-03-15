@@ -3809,6 +3809,8 @@ const char** MDSRankDispatcher::get_tracked_conf_keys() const
     "mds_log_max_events",
     "mds_log_max_segments",
     "mds_log_pause",
+    "mds_log_skip_corrupt_events",
+    "mds_log_skip_unbounded_events",
     "mds_max_caps_per_client",
     "mds_max_export_size",
     "mds_max_purge_files",
