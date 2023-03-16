@@ -17,6 +17,7 @@
 #include "CDentry.h"
 #include "CInode.h"
 #include "CDir.h"
+#include "SnapClient.h"
 
 #include "MDSRank.h"
 #include "MDCache.h"
@@ -693,6 +694,26 @@ bool CDentry::scrub(snapid_t next_seq)
         /* TODO: maybe trim? */
       }
     }
+  }
+  return false;
+}
+
+bool CDentry::check_corruption(bool load)
+{
+  auto next_snap = dir->mdcache->get_global_snaprealm()->get_newest_seq()+1;
+  if (first > last || first > next_snap) {
+    if (load) {
+      dout(1) << "loaded already corrupt dentry: " << *this << dendl;
+      corrupt_first_loaded = true;
+    } else {
+      derr << "newly corrupt dentry to be committed: " << *this << dendl;
+    }
+    dir->go_bad_dentry(last, get_name());
+    if (!load && g_conf().get_val<bool>("mds_abort_on_newly_corrupt_dentry")) {
+      dir->mdcache->mds->clog->error() << "MDS abort because newly corrupt dentry to be committed: " << *this;
+      ceph_abort("detected newly corrupt dentry"); /* avoid writing out newly corrupted dn */
+    }
+    return true;
   }
   return false;
 }
