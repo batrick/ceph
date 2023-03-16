@@ -39,7 +39,7 @@
 #include "common/HeartbeatMap.h"
 #include "ScrubStack.h"
 #include "events/ESubtreeMap.h"
-#include "events/ESegment.h"
+#include "events/EResetJournal.h"
 
 
 #include "MDSRank.h"
@@ -2152,8 +2152,7 @@ void MDSRank::boot_create()
   mdlog->create(fin.new_sub());
 
   // open new journal segment, but do not journal subtree map (yet)
-  // N.B. this singular event will be skipped during replay
-  auto le = new ESegment();
+  auto le = new EResetJournal();
   mdlog->submit_entry(le);
 
   if (whoami == mdsmap->get_root()) {
