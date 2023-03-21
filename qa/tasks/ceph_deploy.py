@@ -541,6 +541,7 @@ def build_ceph_cluster(ctx, config):
                         '--',
                         'gzip',
                         '--best',
+                        '--verbose',
                         '--',
                     ],
                     wait=False,
