@@ -183,6 +183,7 @@ class TestForwardScrub(CephFSTestCase):
             "--filter-tag", tag,
             self.fs.get_data_pool_name()
         ])
+        self.fs.data_scan(["scan_links"])
 
         # After in-place injection stats should be kosher again
         self.fs.set_ceph_conf('mds', 'mds verify scatter', True)
