@@ -171,7 +171,9 @@ class mClockScheduler : public OpScheduler, md_config_obs_t {
     }
   }
 
-public:
+  unsigned cutoff_priority = get_io_prio_cut(cct);
+
+public: 
   mClockScheduler(CephContext *cct, int whoami, uint32_t num_shards,
     int shard_id, bool is_rotational, MonClient *monc);
   ~mClockScheduler() override;
