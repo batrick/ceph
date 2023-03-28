@@ -2,6 +2,7 @@ import ceph_module  # noqa
 
 from typing import cast, Tuple, Any, Dict, Generic, Optional, Callable, List, \
     Mapping, NamedTuple, Sequence, Union, TYPE_CHECKING
+from collections import abc
 if TYPE_CHECKING:
     import sys
     if sys.version_info >= (3, 8):
@@ -499,6 +500,28 @@ def CLICheckNonemptyFileInput(desc: str) -> Callable[[HandlerFuncType], HandlerF
         check.__signature__ = inspect.signature(func)  # type: ignore[attr-defined]
         return check
     return CheckFileInput
+
+# If the mgr loses its lock on the database because e.g. the pgs were
+# transiently down, then close it and allow it to be reopened.
+MAX_DBCLEANUP_RETRIES = 3
+def MgrModuleRecoverDB(func: abc.Callable) -> abc.Callable:
+    @functools.wraps(func)
+    def check(self: MgrModule, *args: Any, **kwargs: Any) -> Any:
+        retries = 0
+        while True:
+            try:
+                return func(self, *args, **kwargs)
+            except sqlite3.DatabaseError as e:
+                self.log.error(f"Caught fatal database error: {e}")
+                retries = retries+1
+                if retries > MAX_DBCLEANUP_RETRIES:
+                    raise
+                self.log.debug(f"attempting reopen of database")
+                self.close_db()
+                self.open_db();
+                # allow retry of func(...)
+    check.__signature__ = inspect.signature(func)  # type: ignore[attr-defined]
+    return check
 
 def CLIRequiresDB(func: HandlerFuncType) -> HandlerFuncType:
     @functools.wraps(func)
@@ -1170,7 +1193,7 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
         if version <= 0:
             self.log.info(f"creating main.db for {self.module_name}")
             assert self.SCHEMA is not None
-            cur = db.executescript(self.SCHEMA)
+            db.executescript(self.SCHEMA)
             self.update_schema_version(db, 1)
         else:
             assert self.SCHEMA_VERSIONED is not None
@@ -1206,6 +1229,12 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
         db.row_factory = sqlite3.Row
         self.load_schema(db)
 
+    def close_db(self) -> None:
+        with self._db_lock:
+            if self._db is not None:
+                self._db.close()
+                self._db = None
+
     def open_db(self) -> Optional[sqlite3.Connection]:
         if not self.pool_exists(self.MGR_POOL_NAME):
             if not self.have_enough_osds():
@@ -1214,6 +1243,13 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
         uri = f"file:///{self.MGR_POOL_NAME}:{self.module_name}/main.db?vfs=ceph";
         self.log.debug(f"using uri {uri}")
         db = sqlite3.connect(uri, check_same_thread=False, uri=True)
+        # if libcephsqlite reconnects, update the addrv for blocklist
+        with db:
+            cur = db.execute('SELECT json_extract(ceph_status(), "$.addr");')
+            (addrv,) = cur.fetchone()
+            assert addrv is not None
+            self.log.debug(f"new libcephsqlite addrv = {addrv}")
+            self._ceph_register_client("libcephsqlite", addrv, True)
         self.configure_db(db)
         return db
 
@@ -1329,7 +1365,7 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
         if self._rados:
             addrs = self._rados.get_addrs()
             self._rados.shutdown()
-            self._ceph_unregister_client(addrs)
+            self._ceph_unregister_client(None, addrs)
 
     @API.expose
     def get(self, data_name: str) -> Any:
@@ -2135,7 +2171,7 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
         ctx_capsule = self.get_context()
         self._rados = rados.Rados(context=ctx_capsule)
         self._rados.connect()
-        self._ceph_register_client(self._rados.get_addrs())
+        self._ceph_register_client(None, self._rados.get_addrs(), False)
         return self._rados
 
     @staticmethod
