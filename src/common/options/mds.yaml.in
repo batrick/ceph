@@ -520,6 +520,7 @@ options:
   level: advanced
   desc: maximum number of events in an MDS journal segment
   default: 1024
+  min: 1
   services:
   - mds
 # segment size for mds log, default to default file_layout_t
