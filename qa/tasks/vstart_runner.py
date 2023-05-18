@@ -204,6 +204,7 @@ class LocalRemoteProcess(object):
     def __init__(self, args, subproc, check_status, stdout, stderr, usr_args):
         self.args = args
         self.subproc = subproc
+        self.stdin = subproc.stdin
         self.stdout = stdout
         self.stderr = stderr
         self.usr_args = usr_args
@@ -242,6 +243,16 @@ class LocalRemoteProcess(object):
             else:
                 return
 
+        # Close stdin to signal termination (if the command interprets that)
+        # and null subproc.stdin so communicate() does not try flushing/closing
+        # it again.
+        try:
+            if self.stdin is not None:
+                self.stdin.close()
+        except IOError:
+            pass
+        self.stdin = None
+        self.subproc.stdin = None
         out, err = self.subproc.communicate()
         out, err = rm_nonascii_chars(out), rm_nonascii_chars(err)
         self._write_stdout(out)
@@ -285,16 +296,6 @@ class LocalRemoteProcess(object):
         else:
             log.debug(f"kill: already terminated ({self.usr_args})")
 
-    @property
-    def stdin(self):
-        class FakeStdIn(object):
-            def __init__(self, mount_daemon):
-                self.mount_daemon = mount_daemon
-
-            def close(self):
-                self.mount_daemon.kill()
-
-        return FakeStdIn(self)
 
 
 class LocalRemote(RemoteShell):
