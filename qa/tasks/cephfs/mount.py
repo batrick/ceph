@@ -762,7 +762,7 @@ class CephFSMount(object):
         if sudo:
             args.append('sudo')
             omit_sudo = False
-        args += ['adjust-ulimits', 'daemon-helper', 'kill', py_version, '-c', pyscript]
+        args += ['stdin-killer', '--', py_version, '-c', pyscript]
         return self.client_remote.run(args=args, wait=False, stdin=run.PIPE,
                                       stdout=StringIO(), omit_sudo=omit_sudo)
 
@@ -1221,8 +1221,10 @@ class CephFSMount(object):
                 path = os.path.join(abs_path, fname)
                 handles.append(open(path, 'w'))
 
-            while True:
+            print("waiting with handles open", file=sys.stderr)
+            while os.read(0, 4096) != b"":
                 time.sleep(1)
+            print("stdin closed, goodbye!", file=sys.stderr)
             """).format(abs_path=abs_path, count=count)
 
         rproc = self._run_python(pyscript)
