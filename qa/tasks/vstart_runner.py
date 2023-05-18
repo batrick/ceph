@@ -297,6 +297,15 @@ class LocalRemoteProcess(object):
             log.debug(f"kill: already terminated ({self.usr_args})")
 
 
+def find_executable(exe):
+    for path in os.getenv('PATH').split(':'):
+        try:
+            path = os.path.join(path, exe)
+            os.lstat(path)
+            return path
+        except OSError:
+            pass
+    return None
 
 class LocalRemote(RemoteShell):
     """
@@ -305,6 +314,21 @@ class LocalRemote(RemoteShell):
 
     Run this inside your src/ dir!
     """
+
+    rewrite_helper_tools = [
+      {
+        'name': 'adjust-ulimits',
+        'path': None
+      },
+      {
+        'name': 'daemon-helper',
+        'path': None
+      },
+      {
+        'name': 'stdin-killer',
+        'path': None
+      },
+    ]
 
     def __init__(self):
         super().__init__()
@@ -332,6 +356,17 @@ class LocalRemote(RemoteShell):
         except shutil.SameFileError:
             pass
 
+    def _expand_teuthology_tools(self, args):
+        assert isinstance(args, list)
+        for tool in self.rewrite_helper_tools:
+            name, path = tool['name'], tool['path']
+            if path is None:
+                tool['path'] = find_executable(name)
+                path = tool['path']
+                log.info(f"{name} path is {path}")
+            for i, arg in enumerate(args):
+                if arg == name:
+                    args[i] = path
 
     def _omit_cmd_args(self, args, omit_sudo):
         """
@@ -339,8 +374,7 @@ class LocalRemote(RemoteShell):
         using vstart_runner.py. And sudo's omission depends on the value of
         the variable omit_sudo.
         """
-        helper_tools = ('adjust-ulimits', 'ceph-coverage',
-                        'None/archive/coverage')
+        helper_tools = ('ceph-coverage', 'None/archive/coverage')
         for i in helper_tools:
             if i in args:
                 helper_tools_found = True
@@ -356,9 +390,6 @@ class LocalRemote(RemoteShell):
         if helper_tools_found:
             args = args.replace('None/archive/coverage', '')
             prefix += """
-adjust-ulimits() {
-    "$@"
-}
 ceph-coverage() {
     "$@"
 }
@@ -396,6 +427,7 @@ sudo() {
 
     def _perform_checks_and_adjustments(self, args, omit_sudo):
         if isinstance(args, list):
+            self._expand_teuthology_tools(args) # hack only for list
             args = quote(args)
 
         assert isinstance(args, str)
