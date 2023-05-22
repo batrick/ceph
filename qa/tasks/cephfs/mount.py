@@ -762,7 +762,7 @@ class CephFSMount(object):
         if sudo:
             args.append('sudo')
             omit_sudo = False
-        args += ['adjust-ulimits', 'daemon-helper', 'kill', py_version, '-c', pyscript]
+        args += ['stdin-killer', '--', py_version, '-c', pyscript]
         return self.client_remote.run(args=args, wait=False, stdin=run.PIPE,
                                       stdout=StringIO(), omit_sudo=omit_sudo)
 
@@ -949,22 +949,44 @@ class CephFSMount(object):
 
         if write:
             pyscript = dedent("""
+                import fcntl
+                import os
+                import sys
                 import time
+
+                fcntl.fcntl(sys.stdin, fcntl.F_SETFL, fcntl.fcntl(sys.stdin, fcntl.F_GETFL) | os.O_NONBLOCK)
 
                 with open("{path}", 'w') as f:
                     f.write('content')
                     f.flush()
                     f.write('content2')
                     while True:
-                        time.sleep(1)
+                        print("open_background: keeping file open", file=sys.stderr)
+                        try:
+                             if os.read(0, 4096) == b"":
+                                  break
+                        except BlockingIOError:
+                            pass
+                        time.sleep(2)
                 """).format(path=path)
         else:
             pyscript = dedent("""
+                import fcntl
+                import os
+                import sys
                 import time
+
+                fcntl.fcntl(sys.stdin, fcntl.F_SETFL, fcntl.fcntl(sys.stdin, fcntl.F_GETFL) | os.O_NONBLOCK)
 
                 with open("{path}", 'r') as f:
                     while True:
-                        time.sleep(1)
+                        print("open_background: keeping file open", file=sys.stderr)
+                        try:
+                             if os.read(0, 4096) == b"":
+                                  break
+                        except BlockingIOError:
+                            pass
+                        time.sleep(2)
                 """).format(path=path)
 
         rproc = self._run_python(pyscript)
@@ -986,13 +1008,23 @@ class CephFSMount(object):
         path = os.path.join(self.hostfs_mntpt, basename)
 
         pyscript = dedent("""
+            import fcntl
+            import sys
             import time
             import os
+
+            fcntl.fcntl(sys.stdin, fcntl.F_SETFL, fcntl.fcntl(sys.stdin, fcntl.F_GETFL) | os.O_NONBLOCK)
 
             os.mkdir("{path}")
             fd = os.open("{path}", os.O_RDONLY)
             while True:
-                time.sleep(1)
+                print("open_dir_background: keeping dir open", file=sys.stderr)
+                try:
+                     if os.read(0, 4096) == b"":
+                          break
+                except BlockingIOError:
+                    pass
+                time.sleep(2)
             """).format(path=path)
 
         rproc = self._run_python(pyscript)
@@ -1037,19 +1069,31 @@ class CephFSMount(object):
         path = os.path.join(self.hostfs_mntpt, basename)
 
         script_builder = """
+            import sys
             import time
             import fcntl
-            import struct"""
+            import os
+            import struct
+
+            fcntl.fcntl(sys.stdin, fcntl.F_SETFL, fcntl.fcntl(sys.stdin, fcntl.F_GETFL) | os.O_NONBLOCK)
+        """
         if do_flock:
             script_builder += """
             f1 = open("{path}-1", 'w')
-            fcntl.flock(f1, fcntl.LOCK_EX | fcntl.LOCK_NB)"""
+            fcntl.flock(f1, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            """
         script_builder += """
             f2 = open("{path}-2", 'w')
             lockdata = struct.pack('hhllhh', fcntl.F_WRLCK, 0, 0, 0, 0, 0)
             fcntl.fcntl(f2, fcntl.F_SETLK, lockdata)
             while True:
-                time.sleep(1)
+                print("lock_background: keeping lock", file=sys.stderr)
+                try:
+                     if os.read(0, 4096) == b"":
+                          break
+                except BlockingIOError:
+                    pass
+                time.sleep(2)
             """
 
         pyscript = dedent(script_builder).format(path=path)
@@ -1068,6 +1112,7 @@ class CephFSMount(object):
             import time
             import fcntl
             import struct
+            import sys
             f1 = open("{path}-1", 'w')
             fcntl.flock(f1, fcntl.LOCK_EX)
             f2 = open("{path}-2", 'w')
@@ -1087,7 +1132,9 @@ class CephFSMount(object):
         script_builder = """
             import fcntl
             import errno
-            import struct"""
+            import struct
+            import sys
+        """
         if do_flock:
             script_builder += """
             f1 = open("{path}-1", 'r')
@@ -1127,16 +1174,26 @@ class CephFSMount(object):
         path = os.path.join(self.hostfs_mntpt, basename)
 
         pyscript = dedent("""
+            import fcntl
             import os
+            import sys
             import time
+
+            fcntl.fcntl(sys.stdin, fcntl.F_SETFL, fcntl.fcntl(sys.stdin, fcntl.F_GETFL) | os.O_NONBLOCK)
 
             fd = os.open("{path}", os.O_RDWR | os.O_CREAT, 0o644)
             try:
                 while True:
+                    print("write_background: writing", file=sys.stderr)
                     os.write(fd, b'content')
-                    time.sleep(1)
                     if not {loop}:
                         break
+                    try:
+                        if os.read(0, 4096) == b"":
+                            break
+                    except BlockingIOError:
+                        pass
+                    time.sleep(2)
             except IOError as e:
                 pass
             os.close(fd)
@@ -1205,9 +1262,12 @@ class CephFSMount(object):
         abs_path = os.path.join(self.hostfs_mntpt, fs_path)
 
         pyscript = dedent("""
+            import fcntl
             import sys
             import time
             import os
+
+            fcntl.fcntl(sys.stdin, fcntl.F_SETFL, fcntl.fcntl(sys.stdin, fcntl.F_GETFL) | os.O_NONBLOCK)
 
             n = {count}
             abs_path = "{abs_path}"
@@ -1221,8 +1281,16 @@ class CephFSMount(object):
                 path = os.path.join(abs_path, fname)
                 handles.append(open(path, 'w'))
 
+            print("waiting with handles open", file=sys.stderr, file=sys.stderr)
             while True:
-                time.sleep(1)
+                print("open_n_background: keeping files open", file=sys.stderr)
+                try:
+                     if os.read(0, 4096) == b"":
+                          break
+                except BlockingIOError:
+                    pass
+                time.sleep(2)
+            print("stdin closed, goodbye!", file=sys.stderr, file=sys.stderr)
             """).format(abs_path=abs_path, count=count)
 
         rproc = self._run_python(pyscript)
