@@ -112,15 +112,19 @@ class FailHandler : public FileSystemCommandHandler
       return -EINVAL;
     }
 
-    auto fs = fsmap.get_filesystem(fs_name);
+    auto* fsp = fsmap.get_filesystem(fs_name);
+    if (fsp == nullptr) {
+      ss << "Not found: '" << fs_name << "'";
+      return -ENOENT;
+    }
 
-    auto f = [](auto fs) {
-      fs->mds_map.set_flag(CEPH_MDSMAP_NOT_JOINABLE);
+    auto f = [](auto&& fs) {
+      fs.get_mds_map().set_flag(CEPH_MDSMAP_NOT_JOINABLE);
     };
-    fsmap.modify_filesystem(fs->fscid, std::move(f));
+    fsmap.modify_filesystem(fsp->get_fscid(), std::move(f));
 
     std::vector<mds_gid_t> to_fail;
-    for (const auto& p : fs->mds_map.get_mds_info()) {
+    for (const auto& p : fsp->get_mds_map().get_mds_info()) {
       to_fail.push_back(p.first);
     }
 
@@ -184,10 +188,9 @@ class FsNewHandler : public FileSystemCommandHandler
         return -EINVAL;
     }
 
-    if (fsmap.get_filesystem(fs_name)) {
-      auto fs = fsmap.get_filesystem(fs_name);
-      if (*(fs->mds_map.get_data_pools().begin()) == data
-          && fs->mds_map.get_metadata_pool() == metadata) {
+    if (auto* fsp = fsmap.get_filesystem(fs_name); fsp) {
+      if (*(fsp->get_mds_map().get_data_pools().begin()) == data
+          && fsp->get_mds_map().get_metadata_pool() == metadata) {
         // Identical FS created already, this is a no-op
         ss << "filesystem '" << fs_name << "' already exists";
         return 0;
@@ -221,10 +224,10 @@ class FsNewHandler : public FileSystemCommandHandler
     bool allow_overlay = false;
     cmd_getval(cmdmap, "allow_dangerous_metadata_overlay", allow_overlay);
 
-    for (auto& fs : fsmap.get_filesystems()) {
-      const std::vector<int64_t> &data_pools = fs->mds_map.get_data_pools();
+    for (const auto& [fscid, fs] : std::as_const(fsmap)) {
+      const std::vector<int64_t> &data_pools = fs.get_mds_map().get_data_pools();
       if ((std::find(data_pools.begin(), data_pools.end(), data) != data_pools.end()
-	   || fs->mds_map.get_metadata_pool() == metadata)
+	   || fs.get_mds_map().get_metadata_pool() == metadata)
 	  && !allow_overlay) {
 	ss << "Filesystem '" << fs_name
 	   << "' is already using one of the specified RADOS pools. This should ONLY be done in emergencies and after careful reading of the documentation. Pass --allow-dangerous-metadata-overlay to permit this.";
@@ -240,6 +243,25 @@ class FsNewHandler : public FileSystemCommandHandler
       }
       if (fsmap.filesystem_exists(fscid)) {
         ss << "filesystem already exists with id '" << fscid << "'";
+        return -EINVAL;
+      }
+    }
+
+    vector<string> fsops_vec;
+    cmd_getval(cmdmap, "set", fsops_vec);
+    if(!fsops_vec.empty()) {
+      if(fsops_vec[0] != "set") {
+        ss << "invalid command";
+        return -EINVAL;
+      }
+      if(fsops_vec.size() % 2 == 0 || fsops_vec.size() < 2) {
+      /* since "set" is part of fs options vector, if size of vec is divisble
+      by 2, it indicates that the fsops key-value pairs are incomplete e.g.
+      ["set", "max_mds", "2"]   # valid
+      ["set", "max_mds"]        # invalid 
+      */  
+        ss << "incomplete list of key-val pairs provided "
+           << fsops_vec.size() - 1;
         return -EINVAL;
       }
     }
@@ -264,43 +286,66 @@ class FsNewHandler : public FileSystemCommandHandler
       mon->osdmon()->wait_for_writeable(op, new PaxosService::C_RetryMessage(mon->mdsmon(), op));
       return -EAGAIN;
     }
-    mon->osdmon()->do_application_enable(data,
-					 pg_pool_t::APPLICATION_NAME_CEPHFS,
-					 "data", fs_name, true);
-    mon->osdmon()->do_application_enable(metadata,
-					 pg_pool_t::APPLICATION_NAME_CEPHFS,
-					 "metadata", fs_name, true);
-    mon->osdmon()->do_set_pool_opt(metadata,
-				   pool_opts_t::RECOVERY_PRIORITY,
-				   static_cast<int64_t>(5));
-    mon->osdmon()->do_set_pool_opt(metadata,
-				   pool_opts_t::PG_NUM_MIN,
-				   static_cast<int64_t>(16));
-    mon->osdmon()->do_set_pool_opt(metadata,
-				   pool_opts_t::PG_AUTOSCALE_BIAS,
-				   static_cast<double>(4.0));
-    mon->osdmon()->propose_pending();
 
     bool recover = false;
     cmd_getval(cmdmap, "recover", recover);
 
-    // All checks passed, go ahead and create.
-    auto&& fs = fsmap.create_filesystem(fs_name, metadata, data,
-        mon->get_quorum_con_features(), fscid, recover);
+    auto fs = fsmap.create_filesystem(fs_name, metadata, data, mon->get_quorum_con_features(), recover);
 
-    ss << "new fs with metadata pool " << metadata << " and data pool " << data;
-
-    if (recover) {
-      return 0;
+    // set fs options
+    string set_fsops_info;
+    for (size_t i = 1 ; i < fsops_vec.size() ; i+=2) {
+      std::ostringstream oss;
+      int ret = set_val(mon, fsmap, op, cmdmap, oss, &fs, fsops_vec[i], fsops_vec[i+1]);
+      if (ret < 0) {
+        ss << oss.str();
+        return ret;
+      }
+      if ((i + 2) <= fsops_vec.size()) {
+        set_fsops_info.append("; ");
+      }
+      set_fsops_info.append(oss.str());
     }
 
-    // assign a standby to rank 0 to avoid health warnings
-    auto info = fsmap.find_replacement_for({fs->fscid, 0});
+    {
+      auto& cfs = fsmap.commit_filesystem(fscid, std::move(fs));
 
-    if (info) {
-      mon->clog->info() << info->human_name() << " assigned to filesystem "
-          << fs_name << " as rank 0";
-      fsmap.promote(info->global_id, *fs, 0);
+      ss << "new fs with metadata pool " << metadata << " and data pool " << data;
+      ss << set_fsops_info;
+
+      mon->osdmon()->do_application_enable(data,
+					   pg_pool_t::APPLICATION_NAME_CEPHFS,
+					   "data", fs_name, true);
+      mon->osdmon()->do_application_enable(metadata,
+					   pg_pool_t::APPLICATION_NAME_CEPHFS,
+					   "metadata", fs_name, true);
+      mon->osdmon()->do_set_pool_opt(metadata,
+				     pool_opts_t::RECOVERY_PRIORITY,
+				     static_cast<int64_t>(5));
+      mon->osdmon()->do_set_pool_opt(metadata,
+				     pool_opts_t::PG_NUM_MIN,
+				     static_cast<int64_t>(16));
+      mon->osdmon()->do_set_pool_opt(metadata,
+				     pool_opts_t::PG_AUTOSCALE_BIAS,
+				     static_cast<double>(4.0));
+      mon->osdmon()->propose_pending();
+
+      if (recover) {
+        return 0;
+      }
+
+      // assign a standby to all the ranks to avoid health warnings
+      for (int i = 0 ; i < cfs.get_mds_map().get_max_mds() ; ++i) {
+        auto info = fsmap.find_replacement_for({cfs.get_fscid(), i});
+
+        if (info) {
+          mon->clog->info() << info->human_name() << " assigned to filesystem "
+                            << cfs.get_mds_map().get_fs_name() << " as rank " << i;
+          fsmap.promote(info->global_id, cfs.get_fscid(), i);
+        } else {
+          break;
+        }
+      }
     }
 
     return 0;
@@ -330,20 +375,45 @@ public:
       return -EINVAL;
     }
 
-    auto fs = fsmap.get_filesystem(fs_name);
+    auto* fsp = fsmap.get_filesystem(fs_name);
     string var;
     if (!cmd_getval(cmdmap, "var", var) || var.empty()) {
       ss << "Invalid variable";
       return -EINVAL;
     }
     string val;
-    string interr;
-    int64_t n = 0;
     if (!cmd_getval(cmdmap, "val", val)) {
       return -EINVAL;
     }
+
+    return set_val(mon, fsmap, op, cmdmap, ss, fsp->get_fscid(), var, val);
+  }
+};
+
+static void modify_filesystem(FSMap& fsmap, auto&& fsv, auto&& fn)
+{
+  if (std::holds_alternative<Filesystem*>(fsv)) {
+    fn(*std::get<Filesystem*>(fsv));
+  } else if (std::holds_alternative<fs_cluster_id_t>(fsv)) {
+    fsmap.modify_filesystem(std::get<fs_cluster_id_t>(fsv), std::move(fn));
+  } else ceph_assert(0);
+}
+
+int FileSystemCommandHandler::set_val(Monitor *mon, FSMap& fsmap, MonOpRequestRef op,
+            const cmdmap_t& cmdmap, std::ostream &ss, fs_or_fscid fsv,
+            std::string var, std::string val)
+{
+  const Filesystem* fsp;
+  if (std::holds_alternative<Filesystem*>(fsv)) {
+    fsp = std::get<Filesystem*>(fsv);
+  } else if (std::holds_alternative<fs_cluster_id_t>(fsv)) {
+    fsp = &fsmap.get_filesystem(std::get<fs_cluster_id_t>(fsv));
+  } else ceph_assert(0);
+
+  {
+    std::string interr;
     // we got a string.  see if it contains an int.
-    n = strict_strtoll(val.c_str(), 10, &interr);
+    int64_t n = strict_strtoll(val.c_str(), 10, &interr);
     if (var == "max_mds") {
       // NOTE: see also "mds set_max_mds", which can modify the same field.
       if (interr.length()) {
@@ -356,9 +426,9 @@ public:
         return -EINVAL;
       }
 
-      if (n > 1 && n > fs->mds_map.get_max_mds()) {
-	if (fs->mds_map.was_snaps_ever_allowed() &&
-	    !fs->mds_map.allows_multimds_snaps()) {
+      if (n > 1 && n > fsp->get_mds_map().get_max_mds()) {
+	if (fsp->get_mds_map().was_snaps_ever_allowed() &&
+	    !fsp->get_mds_map().allows_multimds_snaps()) {
 	  ss << "multi-active MDS is not allowed while there are snapshots possibly created by pre-mimic MDS";
 	  return -EINVAL;
 	}
@@ -368,12 +438,11 @@ public:
         return -EINVAL;
       }
 
-      fsmap.modify_filesystem(
-          fs->fscid,
-          [n](std::shared_ptr<Filesystem> fs)
+      modify_filesystem(fsmap, fsv,
+          [n](auto&& fs)
       {
-	fs->mds_map.clear_flag(CEPH_MDSMAP_NOT_JOINABLE);
-        fs->mds_map.set_max_mds(n);
+	fs.get_mds_map().clear_flag(CEPH_MDSMAP_NOT_JOINABLE);
+        fs.get_mds_map().set_max_mds(n);
       });
     } else if (var == "inline_data") {
       bool enable_inline = false;
@@ -392,19 +461,17 @@ public:
 	}
 	ss << "inline data enabled";
 
-        fsmap.modify_filesystem(
-            fs->fscid,
-            [](std::shared_ptr<Filesystem> fs)
+        modify_filesystem(fsmap, fsv,
+            [](auto&& fs)
         {
-          fs->mds_map.set_inline_data_enabled(true);
+          fs.get_mds_map().set_inline_data_enabled(true);
         });
       } else {
 	ss << "inline data disabled";
-        fsmap.modify_filesystem(
-            fs->fscid,
-            [](std::shared_ptr<Filesystem> fs)
+        modify_filesystem(fsmap, fsv,
+            [](auto&& fs)
         {
-          fs->mds_map.set_inline_data_enabled(false);
+          fs.get_mds_map().set_inline_data_enabled(false);
         });
       }
     } else if (var == "balancer") {
@@ -413,11 +480,10 @@ public:
       } else {
         ss << "setting the metadata load balancer to " << val;
       }
-      fsmap.modify_filesystem(
-	fs->fscid,
-	[val](std::shared_ptr<Filesystem> fs)
+      modify_filesystem(fsmap, fsv,
+	[val](auto&& fs)
         {
-          fs->mds_map.set_balancer(val);
+          fs.get_mds_map().set_balancer(val);
         });
       return true;
     } else if (var == "bal_rank_mask") {
@@ -426,20 +492,19 @@ public:
 	return -EINVAL;
       }
 
-      if (fs->mds_map.check_special_bal_rank_mask(val, MDSMap::BAL_RANK_MASK_TYPE_ANY) == false) {
+      if (fsp->get_mds_map().check_special_bal_rank_mask(val, MDSMap::BAL_RANK_MASK_TYPE_ANY) == false) {
 	std::string bin_string;
-	int r = fs->mds_map.hex2bin(val, bin_string, MAX_MDS, ss);
+	int r = fsp->get_mds_map().hex2bin(val, bin_string, MAX_MDS, ss);
 	if (r != 0) {
 	  return r;
 	}
       }
       ss << "setting the metadata balancer rank mask to " << val;
 
-      fsmap.modify_filesystem(
-	fs->fscid,
-	[val](std::shared_ptr<Filesystem> fs)
+      modify_filesystem(fsmap, fsv,
+	[val](auto&& fs)
         {
-          fs->mds_map.set_bal_rank_mask(val);
+          fs.get_mds_map().set_bal_rank_mask(val);
         });
       return true;
     } else if (var == "max_file_size") {
@@ -451,22 +516,20 @@ public:
 	ss << var << " must at least " << CEPH_MIN_STRIPE_UNIT;
 	return -ERANGE;
       }
-      fsmap.modify_filesystem(
-          fs->fscid,
-          [n](std::shared_ptr<Filesystem> fs)
+      modify_filesystem(fsmap, fsv,
+          [n](auto&& fs)
       {
-        fs->mds_map.set_max_filesize(n);
+        fs.get_mds_map().set_max_filesize(n);
       });
     } else if (var == "max_xattr_size") {
       if (interr.length()) {
 	ss << var << " requires an integer value";
 	return -EINVAL;
       }
-      fsmap.modify_filesystem(
-          fs->fscid,
-          [n](std::shared_ptr<Filesystem> fs)
+      modify_filesystem(fsmap, fsv,
+          [n](auto&& fs)
       {
-        fs->mds_map.set_max_xattr_size(n);
+        fs.get_mds_map().set_max_xattr_size(n);
       });
     } else if (var == "allow_new_snaps") {
       bool enable_snaps = false;
@@ -476,19 +539,17 @@ public:
       }
 
       if (!enable_snaps) {
-        fsmap.modify_filesystem(
-            fs->fscid,
-            [](std::shared_ptr<Filesystem> fs)
+        modify_filesystem(fsmap, fsv,
+            [](auto&& fs)
         {
-          fs->mds_map.clear_snaps_allowed();
+          fs.get_mds_map().clear_snaps_allowed();
         });
 	ss << "disabled new snapshots";
       } else {
-        fsmap.modify_filesystem(
-            fs->fscid,
-            [](std::shared_ptr<Filesystem> fs)
+        modify_filesystem(fsmap, fsv,
+            [](auto&& fs)
         {
-          fs->mds_map.set_snaps_allowed();
+          fs.get_mds_map().set_snaps_allowed();
         });
 	ss << "enabled new snapshots";
       }
@@ -513,19 +574,17 @@ public:
 
       if (enable) {
 	ss << "enabled multimds with snapshot";
-        fsmap.modify_filesystem(
-            fs->fscid,
-            [](std::shared_ptr<Filesystem> fs)
+        modify_filesystem(fsmap, fsv,
+            [](auto&& fs)
         {
-	  fs->mds_map.set_multimds_snaps_allowed();
+	  fs.get_mds_map().set_multimds_snaps_allowed();
         });
       } else {
 	ss << "disabled multimds with snapshot";
-        fsmap.modify_filesystem(
-            fs->fscid,
-            [](std::shared_ptr<Filesystem> fs)
+        modify_filesystem(fsmap, fsv,
+            [](auto&& fs)
         {
-	  fs->mds_map.clear_multimds_snaps_allowed();
+	  fs.get_mds_map().clear_multimds_snaps_allowed();
         });
       }
     } else if (var == "allow_dirfrags") {
@@ -538,27 +597,26 @@ public:
         return r;
       }
 
-      ss << fs->mds_map.get_fs_name();
+      ss << fsp->get_mds_map().get_fs_name();
 
-      fsmap.modify_filesystem(
-          fs->fscid,
-          [is_down](std::shared_ptr<Filesystem> fs)
+      modify_filesystem(fsmap, fsv,
+          [is_down](auto&& fs)
       {
 	if (is_down) {
-          if (fs->mds_map.get_max_mds() > 0) {
-	    fs->mds_map.set_old_max_mds();
-	    fs->mds_map.set_max_mds(0);
+          if (fs.get_mds_map().get_max_mds() > 0) {
+	    fs.get_mds_map().set_old_max_mds();
+	    fs.get_mds_map().set_max_mds(0);
           } /* else already down! */
 	} else {
-	  mds_rank_t oldmax = fs->mds_map.get_old_max_mds();
-	  fs->mds_map.set_max_mds(oldmax ? oldmax : 1);
+	  mds_rank_t oldmax = fs.get_mds_map().get_old_max_mds();
+	  fs.get_mds_map().set_max_mds(oldmax ? oldmax : 1);
 	}
       });
 
       if (is_down) {
 	ss << " marked down. ";
       } else {
-	ss << " marked up, max_mds = " << fs->mds_map.get_max_mds();
+	ss << " marked up, max_mds = " << fsp->get_mds_map().get_max_mds();
       }
     } else if (var == "cluster_down" || var == "joinable") {
       bool joinable = true;
@@ -570,16 +628,15 @@ public:
         joinable = !joinable;
       }
 
-      ss << fs->mds_map.get_fs_name();
+      ss << fsp->get_mds_map().get_fs_name();
 
-      fsmap.modify_filesystem(
-          fs->fscid,
-          [joinable](std::shared_ptr<Filesystem> fs)
+      modify_filesystem(fsmap, fsv,
+          [joinable](auto&& fs)
       {
 	if (joinable) {
-	  fs->mds_map.clear_flag(CEPH_MDSMAP_NOT_JOINABLE);
+	  fs.get_mds_map().clear_flag(CEPH_MDSMAP_NOT_JOINABLE);
 	} else {
-	  fs->mds_map.set_flag(CEPH_MDSMAP_NOT_JOINABLE);
+	  fs.get_mds_map().set_flag(CEPH_MDSMAP_NOT_JOINABLE);
 	}
       });
 
@@ -602,11 +659,10 @@ public:
        ss << var << " must be non-negative";
        return -ERANGE;
       }
-      fsmap.modify_filesystem(
-          fs->fscid,
-          [n](std::shared_ptr<Filesystem> fs)
+      modify_filesystem(fsmap, fsv,
+          [n](auto&& fs)
       {
-        fs->mds_map.set_standby_count_wanted(n);
+        fs.get_mds_map().set_standby_count_wanted(n);
       });
     } else if (var == "session_timeout") {
       if (interr.length()) {
@@ -617,11 +673,10 @@ public:
        ss << var << " must be at least 30s";
        return -ERANGE;
       }
-      fsmap.modify_filesystem(
-          fs->fscid,
-          [n](std::shared_ptr<Filesystem> fs)
+      modify_filesystem(fsmap, fsv,
+          [n](auto&& fs)
       {
-        fs->mds_map.set_session_timeout((uint32_t)n);
+        fs.get_mds_map().set_session_timeout((uint32_t)n);
       });
     } else if (var == "session_autoclose") {
       if (interr.length()) {
@@ -632,11 +687,10 @@ public:
        ss << var << " must be at least 30s";
        return -ERANGE;
       }
-      fsmap.modify_filesystem(
-          fs->fscid,
-          [n](std::shared_ptr<Filesystem> fs)
+      modify_filesystem(fsmap, fsv,
+          [n](auto&& fs)
       {
-        fs->mds_map.set_session_autoclose((uint32_t)n);
+        fs.get_mds_map().set_session_autoclose((uint32_t)n);
       });
     } else if (var == "allow_standby_replay") {
       bool allow = false;
@@ -652,7 +706,7 @@ public:
           return -EAGAIN;
         }
         std::vector<mds_gid_t> to_fail;
-        for (const auto& [gid, info]: fs->mds_map.get_mds_info()) {
+        for (const auto& [gid, info]: fsp->get_mds_map().get_mds_info()) {
           if (info.state == MDSMap::STATE_STANDBY_REPLAY) {
             to_fail.push_back(gid);
           }
@@ -666,14 +720,14 @@ public:
         }
       }
 
-      auto f = [allow](auto& fs) {
+      auto f = [allow](auto&& fs) {
         if (allow) {
-          fs->mds_map.set_standby_replay_allowed();
+          fs.get_mds_map().set_standby_replay_allowed();
         } else {
-          fs->mds_map.clear_standby_replay_allowed();
+          fs.get_mds_map().clear_standby_replay_allowed();
         }
       };
-      fsmap.modify_filesystem(fs->fscid, std::move(f));
+      modify_filesystem(fsmap, fsv, std::move(f));
     } else if (var == "min_compat_client") {
       auto vno = ceph_release_from_name(val.c_str());
       if (!vno) {
@@ -685,9 +739,9 @@ public:
             "The oldest release to set is octopus.\n"
             "Please migrate to `ceph fs required_client_features ...`.";
       auto f = [vno](auto&& fs) {
-        fs->mds_map.set_min_compat_client(vno);
+        fs.get_mds_map().set_min_compat_client(vno);
       };
-      fsmap.modify_filesystem(fs->fscid, std::move(f));
+      modify_filesystem(fsmap, fsv, std::move(f));
     } else if (var == "refuse_client_session") {
       bool refuse_session = false;
       int r = parse_bool(val, &refuse_session, ss);
@@ -696,24 +750,22 @@ public:
       }
 
       if (refuse_session) {
-        if (!(fs->mds_map.test_flag(CEPH_MDSMAP_REFUSE_CLIENT_SESSION))) {
-          fsmap.modify_filesystem(
-            fs->fscid,
-            [](std::shared_ptr<Filesystem> fs)
+        if (!(fsp->get_mds_map().test_flag(CEPH_MDSMAP_REFUSE_CLIENT_SESSION))) {
+          modify_filesystem(fsmap, fsv,
+            [](auto&& fs)
           {
-            fs->mds_map.set_flag(CEPH_MDSMAP_REFUSE_CLIENT_SESSION);
+            fs.get_mds_map().set_flag(CEPH_MDSMAP_REFUSE_CLIENT_SESSION);
           });
           ss << "client(s) blocked from establishing new session(s)"; 
         } else {
           ss << "client(s) already blocked from establishing new session(s)";
         }     
       } else {
-          if (fs->mds_map.test_flag(CEPH_MDSMAP_REFUSE_CLIENT_SESSION)) {
-            fsmap.modify_filesystem(
-              fs->fscid,
-              [](std::shared_ptr<Filesystem> fs)
+          if (fsp->get_mds_map().test_flag(CEPH_MDSMAP_REFUSE_CLIENT_SESSION)) {
+            modify_filesystem(fsmap, fsv,
+              [](auto&& fs)
             {
-              fs->mds_map.clear_flag(CEPH_MDSMAP_REFUSE_CLIENT_SESSION);
+              fs.get_mds_map().clear_flag(CEPH_MDSMAP_REFUSE_CLIENT_SESSION);
             });
             ss << "client(s) allowed to establish new session(s)"; 
           } else {
@@ -724,10 +776,9 @@ public:
       ss << "unknown variable " << var;
       return -EINVAL;
     }
-
-    return 0;
   }
-};
+  return 0;
+}
 
 class CompatSetHandler : public FileSystemCommandHandler
 {
@@ -751,8 +802,8 @@ class CompatSetHandler : public FileSystemCommandHandler
 	ss << "Missing filesystem name";
 	return -EINVAL;
       }
-      auto fs = fsmap.get_filesystem(fs_name);
-      if (fs == nullptr) {
+      auto* fsp = fsmap.get_filesystem(fs_name);
+      if (fsp == nullptr) {
 	ss << "Not found: '" << fs_name << "'";
 	return -ENOENT;
       }
@@ -769,12 +820,12 @@ class CompatSetHandler : public FileSystemCommandHandler
         return -EINVAL;
       }
 
-      if (fs->mds_map.get_num_up_mds() > 0) {
+      if (fsp->get_mds_map().get_num_up_mds() > 0) {
         ss << "file system must be failed or down; use `ceph fs fail` to bring down";
         return -EBUSY;
       }
 
-      CompatSet cs = fs->mds_map.compat;
+      CompatSet cs = fsp->get_mds_map().compat;
       if (subop == "rm_compat") {
         if (cs.compat.contains(feature)) {
           ss << "removed compat feature " << feature;
@@ -826,10 +877,10 @@ class CompatSetHandler : public FileSystemCommandHandler
       } else ceph_assert(0);
 
       auto modifyf = [cs = std::move(cs)](auto&& fs) {
-        fs->mds_map.compat = cs;
+        fs.get_mds_map().compat = cs;
       };
 
-      fsmap.modify_filesystem(fs->fscid, std::move(modifyf));
+      fsmap.modify_filesystem(fsp->get_fscid(), std::move(modifyf));
       return 0;
     }
 };
@@ -854,8 +905,8 @@ class RequiredClientFeaturesHandler : public FileSystemCommandHandler
 	ss << "Missing filesystem name";
 	return -EINVAL;
       }
-      auto fs = fsmap.get_filesystem(fs_name);
-      if (fs == nullptr) {
+      auto* fsp = fsmap.get_filesystem(fs_name);
+      if (fsp == nullptr) {
 	ss << "Not found: '" << fs_name << "'";
 	return -ENOENT;
       }
@@ -888,12 +939,12 @@ class RequiredClientFeaturesHandler : public FileSystemCommandHandler
       if (subop == "add") {
 	bool ret = false;
 	fsmap.modify_filesystem(
-	    fs->fscid,
+	    fsp->get_fscid(),
 	    [feature, &ret](auto&& fs)
 	{
-	  if (fs->mds_map.get_required_client_features().test(feature))
+	  if (fs.get_mds_map().get_required_client_features().test(feature))
 	    return;
-	  fs->mds_map.add_required_client_feature(feature);
+	  fs.get_mds_map().add_required_client_feature(feature);
 	  ret = true;
 	});
 	if (ret) {
@@ -904,12 +955,12 @@ class RequiredClientFeaturesHandler : public FileSystemCommandHandler
       } else {
 	bool ret = false;
 	fsmap.modify_filesystem(
-	    fs->fscid,
+	    fsp->get_fscid(),
 	    [feature, &ret](auto&& fs)
 	{
-          if (!fs->mds_map.get_required_client_features().test(feature))
+          if (!fs.get_mds_map().get_required_client_features().test(feature))
             return;
-          fs->mds_map.remove_required_client_feature(feature);
+          fs.get_mds_map().remove_required_client_feature(feature);
           ret = true;
 	});
 	if (ret) {
@@ -964,9 +1015,14 @@ class AddDataPoolHandler : public FileSystemCommandHandler
       return r;
     }
 
-    auto fs = fsmap.get_filesystem(fs_name);
+    auto* fsp = fsmap.get_filesystem(fs_name);
+    if (fsp == nullptr) {
+        ss << "filesystem '" << fs_name << "' does not exist";
+        return -ENOENT;
+    }
+
     // no-op when the data_pool already on fs
-    if (fs->mds_map.is_data_pool(poolid)) {
+    if (fsp->get_mds_map().is_data_pool(poolid)) {
       ss << "data pool " << poolid << " is already on fs " << fs_name;
       return 0;
     }
@@ -982,10 +1038,10 @@ class AddDataPoolHandler : public FileSystemCommandHandler
     mon->osdmon()->propose_pending();
 
     fsmap.modify_filesystem(
-        fs->fscid,
-        [poolid](std::shared_ptr<Filesystem> fs)
+        fsp->get_fscid(),
+        [poolid](auto&&  fs)
     {
-      fs->mds_map.add_data_pool(poolid);
+      fs.get_mds_map().add_data_pool(poolid);
     });
 
     ss << "added data pool " << poolid << " to fsmap";
@@ -1013,13 +1069,13 @@ class SetDefaultHandler : public FileSystemCommandHandler
   {
     std::string fs_name;
     cmd_getval(cmdmap, "fs_name", fs_name);
-    auto fs = fsmap.get_filesystem(fs_name);
-    if (fs == nullptr) {
+    auto* fsp = fsmap.get_filesystem(fs_name);
+    if (fsp == nullptr) {
         ss << "filesystem '" << fs_name << "' does not exist";
         return -ENOENT;
     }
 
-    fsmap.set_legacy_client_fscid(fs->fscid);
+    fsmap.set_legacy_client_fscid(fsp->get_fscid());
     return 0;
   }
 };
@@ -1050,15 +1106,15 @@ class RemoveFilesystemHandler : public FileSystemCommandHandler
     //  syntax should apply to multi-FS future)
     string fs_name;
     cmd_getval(cmdmap, "fs_name", fs_name);
-    auto fs = fsmap.get_filesystem(fs_name);
-    if (fs == nullptr) {
+    auto* fsp = fsmap.get_filesystem(fs_name);
+    if (fsp == nullptr) {
         // Consider absence success to make deletes idempotent
         ss << "filesystem '" << fs_name << "' does not exist";
         return 0;
     }
 
     // Check that no MDS daemons are active
-    if (fs->mds_map.get_num_up_mds() > 0) {
+    if (fsp->get_mds_map().get_num_up_mds() > 0) {
       ss << "all MDS daemons must be inactive/failed before removing filesystem. See `ceph fs fail`.";
       return -EINVAL;
     }
@@ -1072,13 +1128,13 @@ class RemoveFilesystemHandler : public FileSystemCommandHandler
       return -EPERM;
     }
 
-    if (fsmap.get_legacy_client_fscid() == fs->fscid) {
+    if (fsmap.get_legacy_client_fscid() == fsp->get_fscid()) {
       fsmap.set_legacy_client_fscid(FS_CLUSTER_ID_NONE);
     }
 
     std::vector<mds_gid_t> to_fail;
     // There may be standby_replay daemons left here
-    for (const auto &i : fs->mds_map.get_mds_info()) {
+    for (const auto &i : fsp->get_mds_map().get_mds_info()) {
       ceph_assert(i.second.state == MDSMap::STATE_STANDBY_REPLAY);
       to_fail.push_back(i.first);
     }
@@ -1092,7 +1148,7 @@ class RemoveFilesystemHandler : public FileSystemCommandHandler
       mon->osdmon()->propose_pending(); /* maybe new blocklists */
     }
 
-    fsmap.erase_filesystem(fs->fscid);
+    fsmap.erase_filesystem(fsp->get_fscid());
 
     return 0;
   }
@@ -1114,15 +1170,15 @@ class ResetFilesystemHandler : public FileSystemCommandHandler
   {
     string fs_name;
     cmd_getval(cmdmap, "fs_name", fs_name);
-    auto fs = fsmap.get_filesystem(fs_name);
-    if (fs == nullptr) {
+    auto* fsp = fsmap.get_filesystem(fs_name);
+    if (fsp == nullptr) {
         ss << "filesystem '" << fs_name << "' does not exist";
         // Unlike fs rm, we consider this case an error
         return -ENOENT;
     }
 
     // Check that no MDS daemons are active
-    if (fs->mds_map.get_num_up_mds() > 0) {
+    if (fsp->get_mds_map().get_num_up_mds() > 0) {
       ss << "all MDS daemons must be inactive before resetting filesystem: set the cluster_down flag"
             " and use `ceph mds fail` to make this so";
       return -EINVAL;
@@ -1137,7 +1193,7 @@ class ResetFilesystemHandler : public FileSystemCommandHandler
       return -EPERM;
     }
 
-    fsmap.reset_filesystem(fs->fscid);
+    fsmap.reset_filesystem(fsp->get_fscid());
 
     return 0;
   }
@@ -1162,14 +1218,14 @@ class RenameFilesystemHandler : public FileSystemCommandHandler
 
     string fs_name;
     cmd_getval(cmdmap, "fs_name", fs_name);
-    auto fs = fsmap.get_filesystem(fs_name);
+    auto* fsp = fsmap.get_filesystem(fs_name);
 
     string new_fs_name;
     cmd_getval(cmdmap, "new_fs_name", new_fs_name);
-    auto new_fs = fsmap.get_filesystem(new_fs_name);
+    auto* new_fsp = fsmap.get_filesystem(new_fs_name);
 
-    if (fs == nullptr) {
-        if (new_fs) {
+    if (fsp == nullptr) {
+        if (new_fsp) {
           // make 'fs rename' idempotent
 	  ss << "File system may already have been renamed. Desired file system '"
 	     << new_fs_name << "' exists.";
@@ -1180,12 +1236,12 @@ class RenameFilesystemHandler : public FileSystemCommandHandler
 	}
     }
 
-    if (new_fs) {
+    if (new_fsp) {
       ss << "Desired file system name '" << new_fs_name << "' already in use";
       return -EINVAL;
     }
 
-    if (fs->mirror_info.mirrored) {
+    if (fsp->get_mirror_info().mirrored) {
       ss << "Mirroring is enabled on file system '"<< fs_name << "'. Disable mirroring on the "
         "file system after ensuring it's OK to do so, and then retry to rename.";
       return -EPERM;
@@ -1206,21 +1262,21 @@ class RenameFilesystemHandler : public FileSystemCommandHandler
       mon->osdmon()->wait_for_writeable(op, new PaxosService::C_RetryMessage(mon->mdsmon(), op));
       return -EAGAIN;
     }
-    for (const auto p : fs->mds_map.get_data_pools()) {
+    for (const auto p : fsp->get_mds_map().get_data_pools()) {
       mon->osdmon()->do_application_enable(p,
 					   pg_pool_t::APPLICATION_NAME_CEPHFS,
 					   "data", new_fs_name, true);
     }
 
-    mon->osdmon()->do_application_enable(fs->mds_map.get_metadata_pool(),
+    mon->osdmon()->do_application_enable(fsp->get_mds_map().get_metadata_pool(),
 					 pg_pool_t::APPLICATION_NAME_CEPHFS,
 					 "metadata", new_fs_name, true);
     mon->osdmon()->propose_pending();
 
-    auto f = [new_fs_name](auto fs) {
-                    fs->mds_map.set_fs_name(new_fs_name);
+    auto f = [new_fs_name](auto&& fs) {
+                    fs.get_mds_map().set_fs_name(new_fs_name);
              };
-    fsmap.modify_filesystem(fs->fscid, std::move(f));
+    fsmap.modify_filesystem(fsp->get_fscid(), std::move(f));
 
     ss << "File system is renamed. cephx credentials authorized to "
           "old file system name need to be reauthorized to new file "
@@ -1272,17 +1328,22 @@ class RemoveDataPoolHandler : public FileSystemCommandHandler
 
     ceph_assert(poolid >= 0);  // Checked by parsing code above
 
-    auto fs = fsmap.get_filesystem(fs_name);
-    if (fs->mds_map.get_first_data_pool() == poolid) {
+    auto* fsp = fsmap.get_filesystem(fs_name);
+    if (fsp == nullptr) {
+        ss << "filesystem '" << fs_name << "' does not exist";
+        return -ENOENT;
+    }
+
+    if (fsp->get_mds_map().get_first_data_pool() == poolid) {
       ss << "cannot remove default data pool";
       return -EINVAL;
     }
 
     int r = 0;
-    fsmap.modify_filesystem(fs->fscid,
-        [&r, poolid](std::shared_ptr<Filesystem> fs)
+    fsmap.modify_filesystem(fsp->get_fscid(),
+        [&r, poolid](auto&& fs)
     {
-      r = fs->mds_map.remove_data_pool(poolid);
+      r = fs.get_mds_map().remove_data_pool(poolid);
     });
     if (r == -ENOENT) {
       // It was already removed, succeed in silence
@@ -1342,20 +1403,20 @@ public:
       return -EINVAL;
     }
 
-    auto fs = fsmap.get_filesystem(fs_name);
-    if (fs == nullptr) {
+    auto* fsp = fsmap.get_filesystem(fs_name);
+    if (fsp == nullptr) {
       ss << "Filesystem '" << fs_name << "' not found";
       return -ENOENT;
     }
 
-    if (fs->mirror_info.is_mirrored()) {
+    if (fsp->get_mirror_info().is_mirrored()) {
       return 0;
     }
 
-    auto f = [](auto &&fs) {
-               fs->mirror_info.enable_mirroring();
+    auto f = [](auto&& fs) {
+      fs.get_mirror_info().enable_mirroring();
     };
-    fsmap.modify_filesystem(fs->fscid, std::move(f));
+    fsmap.modify_filesystem(fsp->get_fscid(), std::move(f));
 
     return 0;
   }
@@ -1377,20 +1438,20 @@ public:
       return -EINVAL;
     }
 
-    auto fs = fsmap.get_filesystem(fs_name);
-    if (fs == nullptr) {
+    auto* fsp = fsmap.get_filesystem(fs_name);
+    if (fsp == nullptr) {
       ss << "Filesystem '" << fs_name << "' not found";
       return -ENOENT;
     }
 
-    if (!fs->mirror_info.is_mirrored()) {
+    if (!fsp->get_mirror_info().is_mirrored()) {
       return 0;
     }
 
-    auto f = [](auto &&fs) {
-      fs->mirror_info.disable_mirroring();
+    auto f = [](auto&& fs) {
+      fs.get_mirror_info().disable_mirroring();
     };
-    fsmap.modify_filesystem(fs->fscid, std::move(f));
+    fsmap.modify_filesystem(fsp->get_fscid(), std::move(f));
 
     return 0;
   }
@@ -1416,7 +1477,7 @@ public:
     return std::make_pair(client, cluster);
   }
 
-  bool peer_add(FSMap &fsmap, Filesystem::const_ref &&fs,
+  bool peer_add(FSMap &fsmap, const Filesystem& fs,
                 const cmdmap_t &cmdmap, std::ostream &ss) {
     string peer_uuid;
     string remote_spec;
@@ -1432,21 +1493,21 @@ public:
       return false;
     }
 
-    if (fs->mirror_info.has_peer(peer_uuid)) {
+    if (fs.get_mirror_info().has_peer(peer_uuid)) {
       ss << "peer already exists";
       return true;
     }
-    if (fs->mirror_info.has_peer((*remote_conf).first, (*remote_conf).second,
+    if (fs.get_mirror_info().has_peer((*remote_conf).first, (*remote_conf).second,
                                  remote_fs_name)) {
       ss << "peer already exists";
       return true;
     }
 
-    auto f = [peer_uuid, remote_conf, remote_fs_name](auto &&fs) {
-               fs->mirror_info.peer_add(peer_uuid, (*remote_conf).first,
+    auto f = [peer_uuid, remote_conf, remote_fs_name](auto&& fs) {
+               fs.get_mirror_info().peer_add(peer_uuid, (*remote_conf).first,
                                         (*remote_conf).second, remote_fs_name);
              };
-    fsmap.modify_filesystem(fs->fscid, std::move(f));
+    fsmap.modify_filesystem(fs.get_fscid(), std::move(f));
     return true;
   }
 
@@ -1459,18 +1520,18 @@ public:
       return -EINVAL;
     }
 
-    auto fs = fsmap.get_filesystem(fs_name);
-    if (fs == nullptr) {
+    auto* fsp = fsmap.get_filesystem(fs_name);
+    if (fsp == nullptr) {
       ss << "Filesystem '" << fs_name << "' not found";
       return -ENOENT;
     }
 
-    if (!fs->mirror_info.is_mirrored()) {
+    if (!fsp->get_mirror_info().is_mirrored()) {
       ss << "Mirroring not enabled for filesystem '" << fs_name << "'";
       return -EINVAL;
     }
 
-    auto res = peer_add(fsmap, std::move(fs), cmdmap, ss);
+    auto res = peer_add(fsmap, *fsp, cmdmap, ss);
     if (!res) {
       return -EINVAL;
     }
@@ -1486,20 +1547,20 @@ public:
     : FileSystemCommandHandler("fs mirror peer_remove")
   {}
 
-  bool peer_remove(FSMap &fsmap, Filesystem::const_ref &&fs,
+  bool peer_remove(FSMap &fsmap, const Filesystem& fs,
                    const cmdmap_t &cmdmap, std::ostream &ss) {
     string peer_uuid;
     cmd_getval(cmdmap, "uuid", peer_uuid);
 
-    if (!fs->mirror_info.has_peer(peer_uuid)) {
+    if (!fs.get_mirror_info().has_peer(peer_uuid)) {
       ss << "cannot find peer with uuid: " << peer_uuid;
       return true;
     }
 
-    auto f = [peer_uuid](auto &&fs) {
-               fs->mirror_info.peer_remove(peer_uuid);
+    auto f = [peer_uuid](auto&& fs) {
+               fs.get_mirror_info().peer_remove(peer_uuid);
              };
-    fsmap.modify_filesystem(fs->fscid, std::move(f));
+    fsmap.modify_filesystem(fs.get_fscid(), std::move(f));
     return true;
   }
 
@@ -1512,18 +1573,18 @@ public:
       return -EINVAL;
     }
 
-    auto fs = fsmap.get_filesystem(fs_name);
-    if (fs == nullptr) {
+    auto* fsp = fsmap.get_filesystem(fs_name);
+    if (fsp == nullptr) {
       ss << "Filesystem '" << fs_name << "' not found";
       return -ENOENT;
     }
 
-    if (!fs->mirror_info.is_mirrored()) {
+    if (!fsp->get_mirror_info().is_mirrored()) {
       ss << "Mirroring not enabled for filesystem '" << fs_name << "'";
       return -EINVAL;
     }
 
-    auto res = peer_remove(fsmap, std::move(fs), cmdmap, ss);
+    auto res = peer_remove(fsmap, *fsp, cmdmap, ss);
     if (!res) {
       return -EINVAL;
     }
@@ -1674,8 +1735,8 @@ int FileSystemCommandHandler::is_op_allowed(
     FSMap fsmap_copy = fsmap;
     fsmap_copy.filter(op->get_session()->get_allowed_fs_names());
 
-    auto fs = fsmap_copy.get_filesystem(fs_name);
-    if (fs == nullptr) {
+    auto* fsp = fsmap_copy.get_filesystem(fs_name);
+    if (fsp == nullptr) {
       auto prefix = get_prefix();
       /* let "fs rm" and "fs rename" handle idempotent cases where file systems do not exist */
       if (!(prefix == "fs rm" || prefix == "fs rename") && fsmap.get_filesystem(fs_name) == nullptr) {
