@@ -49,7 +49,7 @@ class TestFragmentation(CephFSTestCase):
         """
 
         for k, v in kwargs.items():
-            self.config_set('mds', k.__str__(), v.__str__())
+            self.fs.set_config(k.__str__(), v.__str__())
 
     def _test_oversize(self, killpoint=None):
         """
