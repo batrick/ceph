@@ -21,7 +21,7 @@ import socket
 import yaml
 
 from paramiko import SSHException
-from tasks.ceph_manager import CephManager, write_conf, get_valgrind_args
+from tasks.ceph_manager import CephManager, write_conf, get_valgrind_args, save_conf_epoch
 from tarfile import ReadError
 from tasks.cephfs.filesystem import MDSCluster, Filesystem
 from teuthology import misc as teuthology
@@ -381,6 +381,40 @@ def crush_setup(ctx, config):
               'osd', 'crush', 'tunables', profile])
     yield
 
+
+@contextlib.contextmanager
+def conf_setup(ctx, config):
+    cluster_name = config['cluster']
+    first_mon = teuthology.get_first_mon(ctx, config, cluster_name)
+    (mon_remote,) = ctx.cluster.only(first_mon).remotes.keys()
+
+    configs = config.get('cluster-conf', {})
+    procs = []
+    for section, confs in configs.items():
+        for k, v in confs.items():
+            cmd = [
+                'sudo',
+                'ceph',
+                '--cluster',
+                cluster_name,
+                'config',
+                'set',
+                str(section),
+                str(k),
+                str(v),
+            ]
+            log.info(f"{str(cmd)}")
+            procs.append(mon_remote.run(args=cmd, wait=False))
+    log.debug("set %d configs", len(procs))
+    for p in procs:
+        p.wait()
+    yield
+
+@contextlib.contextmanager
+def conf_epoch(ctx, config):
+    cm = ctx.managers[config['cluster']]
+    cm.save_conf_epoch()
+    yield
 
 @contextlib.contextmanager
 def check_enable_crimson(ctx, config):
@@ -1921,6 +1955,7 @@ def task(ctx, config):
             mon_bind_addrvec=config.get('mon_bind_addrvec', True),
         )),
         lambda: run_daemon(ctx=ctx, config=config, type_='mon'),
+        lambda: conf_setup(ctx=ctx, config=config),
         lambda: run_daemon(ctx=ctx, config=config, type_='mgr'),
         lambda: crush_setup(ctx=ctx, config=config),
         lambda: check_enable_crimson(ctx=ctx, config=config),
@@ -1930,6 +1965,7 @@ def task(ctx, config):
         lambda: run_daemon(ctx=ctx, config=config, type_='mds'),
         lambda: cephfs_setup(ctx=ctx, config=config),
         lambda: watchdog_setup(ctx=ctx, config=config),
+        lambda: conf_epoch(ctx=ctx, config=config),
     ]
 
     with contextutil.nested(*subtasks):
