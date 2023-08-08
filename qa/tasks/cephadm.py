@@ -1520,6 +1520,37 @@ def crush_setup(ctx, config):
 
 
 @contextlib.contextmanager
+def conf_setup(ctx, config):
+    cluster_name = config['cluster']
+    remote = ctx.ceph[cluster_name].bootstrap_remote
+
+    configs = config.get('cluster-conf', {})
+    procs = []
+    for section, confs in configs.items():
+        for k, v in confs.items():
+            k = str(k).replace(' ', '_') # pre-pacific compatibility
+            cmd = [
+                'ceph',
+                'config',
+                'set',
+                str(section),
+                k,
+                str(v),
+            ]
+            log.info(f"{str(cmd)}")
+            procs.append(_shell(ctx, cluster_name, remote, args=cmd, wait=False))
+    log.debug("set %d configs", len(procs))
+    for p in procs:
+        p.wait()
+    yield
+
+@contextlib.contextmanager
+def conf_epoch(ctx, config):
+    cm = ctx.managers[config['cluster']]
+    cm.save_conf_epoch()
+    yield
+
+@contextlib.contextmanager
 def create_rbd_pool(ctx, config):
     if config.get('create_rbd_pool', False):
       cluster_name = config['cluster']
@@ -1734,6 +1765,7 @@ def task(ctx, config):
                               else ceph_bootstrap(ctx, config),
             lambda: crush_setup(ctx=ctx, config=config),
             lambda: ceph_mons(ctx=ctx, config=config),
+            lambda: conf_setup(ctx=ctx, config=config),
             lambda: distribute_config_and_admin_keyring(ctx=ctx, config=config),
             lambda: ceph_mgrs(ctx=ctx, config=config),
             lambda: ceph_osds(ctx=ctx, config=config),
@@ -1747,6 +1779,7 @@ def task(ctx, config):
             lambda: ceph_monitoring('grafana', ctx=ctx, config=config),
             lambda: ceph_clients(ctx=ctx, config=config),
             lambda: create_rbd_pool(ctx=ctx, config=config),
+            lambda: conf_epoch(ctx=ctx, config=config),
     ):
         try:
             if config.get('wait-for-healthy', True):
