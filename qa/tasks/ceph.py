@@ -383,6 +383,49 @@ def crush_setup(ctx, config):
 
 
 @contextlib.contextmanager
+def conf_setup(ctx, config):
+    cluster_name = config['cluster']
+    first_mon = teuthology.get_first_mon(ctx, config, cluster_name)
+    (mon_remote,) = ctx.cluster.only(first_mon).remotes.keys()
+
+    configs = config.get('cluster-conf', {})
+    procs = []
+    for section, confs in configs.items():
+        for k, v in confs.items():
+            cmd = [
+                'sudo',
+                'ceph',
+                '--cluster',
+                cluster_name,
+                'config',
+                'set',
+                str(section),
+                str(k),
+                str(v),
+            ]
+            log.info(f"{str(cmd)}")
+            procs.append(mon_remote.run(args=cmd, wait=False))
+    log.debug("set %d configs", len(procs))
+    for p in procs:
+        p.wait()
+
+    cmd = [
+        'sudo',
+        'ceph',
+        '--cluster',
+        cluster_name,
+        'config',
+        'log',
+        '1',
+        '--format=json',
+    ]
+    p = mon_remote.run(args=cmd, stdout=StringIO())
+    J = json.loads(p.stdout.getvalue())
+    ctx.conf_epoch = J[0]["version"]
+    log.info("config epoch is %d", ctx.conf_epoch)
+    yield
+
+@contextlib.contextmanager
 def check_enable_crimson(ctx, config):
     # enable crimson-osds if crimson
     log.info("check_enable_crimson: {}".format(is_crimson(config)))
@@ -1921,6 +1964,7 @@ def task(ctx, config):
             mon_bind_addrvec=config.get('mon_bind_addrvec', True),
         )),
         lambda: run_daemon(ctx=ctx, config=config, type_='mon'),
+        lambda: conf_setup(ctx=ctx, config=config),
         lambda: run_daemon(ctx=ctx, config=config, type_='mgr'),
         lambda: crush_setup(ctx=ctx, config=config),
         lambda: check_enable_crimson(ctx=ctx, config=config),
