@@ -139,6 +139,7 @@ MDCache::MDCache(MDSRank *m, PurgeQueue &purge_queue_) :
   export_ephemeral_random_max = g_conf().get_val<double>("mds_export_ephemeral_random_max");
 
   symlink_recovery = g_conf().get_val<bool>("mds_symlink_recovery");
+  kill_dirfrag_at = static_cast<enum dirfrag_killpoint>(g_conf().get_val<int64_t>("mds_kill_dirfrag_at"));
 
   kill_shutdown_at = g_conf().get_val<uint64_t>("mds_kill_shutdown_at");
 
@@ -191,6 +192,11 @@ void MDCache::handle_conf_change(const std::set<std::string>& changed, const MDS
   if (changed.count("mds_export_ephemeral_random_max")) {
     export_ephemeral_random_max = g_conf().get_val<double>("mds_export_ephemeral_random_max");
   }
+
+  if (changed.count("mds_kill_dirfrag_at")) {
+    kill_dirfrag_at = static_cast<enum dirfrag_killpoint>(g_conf().get_val<int64_t>("mds_kill_dirfrag_at"));
+  }
+
   if (changed.count("mds_health_cache_threshold"))
     cache_health_threshold = g_conf().get_val<double>("mds_health_cache_threshold");
   if (changed.count("mds_cache_mid"))
@@ -11731,6 +11737,7 @@ void MDCache::merge_dir(CInode *diri, frag_t frag)
 
 void MDCache::fragment_freeze_dirs(const std::vector<CDir*>& dirs)
 {
+  ceph_assert(kill_dirfrag_at != dirfrag_killpoint::FRAGMENT_FREEZE);
   bool any_subtree = false, any_non_subtree = false;
   for (const auto& dir : dirs) {
     dir->auth_pin(dir);  // until we mark and complete them
@@ -12123,6 +12130,8 @@ void MDCache::_fragment_logged(MDRequestRef& mdr)
 
   dout(10) << "fragment_logged " << basedirfrag << " bits " << info.bits
 	   << " on " << *diri << dendl;
+  ceph_assert(kill_dirfrag_at != dirfrag_killpoint::FRAGMENT_LOGGED);
+
   mdr->mark_event("prepare logged");
 
   mdr->apply();  // mark scatterlock
@@ -12159,6 +12168,7 @@ void MDCache::_fragment_stored(MDRequestRef& mdr)
   // tell peers
   mds_rank_t diri_auth = (first->is_subtree_root() && !diri->is_auth()) ?
 			  diri->authority().first : CDIR_AUTH_UNKNOWN;
+  dout(20) << " first dirfrag " << *first << " diri_auth=" << diri_auth << dendl;
   for (const auto &p : first->get_replicas()) {
     if (mds->mdsmap->get_state(p.first) < MDSMap::STATE_REJOIN ||
 	(mds->mdsmap->get_state(p.first) == MDSMap::STATE_REJOIN &&
@@ -12185,6 +12195,7 @@ void MDCache::_fragment_stored(MDRequestRef& mdr)
        * So we need to ensure replicas have received the notify, then unlock
        * the dirfragtreelock.
        */
+      dout(20) << " ack wanted" << dendl;
       notify->mark_ack_wanted();
       info.notify_ack_waiting.insert(p.first);
     }
@@ -12195,6 +12206,7 @@ void MDCache::_fragment_stored(MDRequestRef& mdr)
     }
 
     mds->send_message_mds(notify, p.first);
+    ceph_assert(kill_dirfrag_at != dirfrag_killpoint::FRAGMENT_STORED_POST_NOTIFY);
   }
 
   // journal commit
@@ -12217,6 +12229,8 @@ void MDCache::_fragment_stored(MDRequestRef& mdr)
     dir->unfreeze_dir();
   }
 
+  ceph_assert(kill_dirfrag_at != dirfrag_killpoint::FRAGMENT_STORED_POST_JOURNAL);
+
   if (info.notify_ack_waiting.empty()) {
     fragment_drop_locks(info);
   } else {
@@ -12227,6 +12241,8 @@ void MDCache::_fragment_stored(MDRequestRef& mdr)
 void MDCache::_fragment_committed(dirfrag_t basedirfrag, const MDRequestRef& mdr)
 {
   dout(10) << "fragment_committed " << basedirfrag << dendl;
+  ceph_assert(kill_dirfrag_at != dirfrag_killpoint::FRAGMENT_COMMITTED);
+
   if (mdr)
     mdr->mark_event("commit logged");
 
@@ -12265,6 +12281,8 @@ void MDCache::_fragment_committed(dirfrag_t basedirfrag, const MDRequestRef& mdr
 void MDCache::_fragment_old_purged(dirfrag_t basedirfrag, int bits, const MDRequestRef& mdr)
 {
   dout(10) << "fragment_old_purged " << basedirfrag << dendl;
+  ceph_assert(kill_dirfrag_at != dirfrag_killpoint::FRAGMENT_OLD_PURGED);
+
   if (mdr)
     mdr->mark_event("old frags purged");
 
@@ -12301,6 +12319,8 @@ void MDCache::fragment_drop_locks(fragment_info_t& info)
 
 void MDCache::fragment_maybe_finish(const fragment_info_iterator& it)
 {
+  ceph_assert(kill_dirfrag_at != dirfrag_killpoint::FRAGMENT_MAYBE_FINISH);
+
   if (!it->second.finishing)
     return;
 
@@ -12323,6 +12343,7 @@ void MDCache::fragment_maybe_finish(const fragment_info_iterator& it)
 void MDCache::handle_fragment_notify_ack(const cref_t<MMDSFragmentNotifyAck> &ack)
 {
   dout(10) << "handle_fragment_notify_ack " << *ack << " from " << ack->get_source() << dendl;
+  ceph_assert(kill_dirfrag_at != dirfrag_killpoint::FRAGMENT_HANDLE_NOTIFY_ACK);
   mds_rank_t from = mds_rank_t(ack->get_source().num());
 
   if (mds->get_state() < MDSMap::STATE_ACTIVE) {
@@ -12346,6 +12367,7 @@ void MDCache::handle_fragment_notify_ack(const cref_t<MMDSFragmentNotifyAck> &ac
 void MDCache::handle_fragment_notify(const cref_t<MMDSFragmentNotify> &notify)
 {
   dout(10) << "handle_fragment_notify " << *notify << " from " << notify->get_source() << dendl;
+  ceph_assert(kill_dirfrag_at != dirfrag_killpoint::FRAGMENT_HANDLE_NOTIFY);
   mds_rank_t from = mds_rank_t(notify->get_source().num());
 
   if (mds->get_state() < MDSMap::STATE_REJOIN) {
@@ -12393,6 +12415,7 @@ void MDCache::handle_fragment_notify(const cref_t<MMDSFragmentNotify> &notify)
     auto ack = make_message<MMDSFragmentNotifyAck>(notify->get_base_dirfrag(),
 					     notify->get_bits(), notify->get_tid());
     mds->send_message_mds(ack, from);
+    ceph_assert(kill_dirfrag_at != dirfrag_killpoint::FRAGMENT_HANDLE_NOTIFY_POSTACK);
   }
 }
 
