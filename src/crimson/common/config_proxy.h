@@ -55,12 +55,12 @@ class ConfigProxy : public seastar::peering_sharded_service<ConfigProxy>
       ObserverMgr<ConfigObserver>::rev_obs_map rev_obs;
       owner.values.reset(new_values);
       owner.obs_mgr.for_each_change(owner.values->changed, owner,
-                                    [&rev_obs](ConfigObserver *obs,
+                                    [&rev_obs](auto obs,
                                                const std::string &key) {
                                       rev_obs[obs].insert(key);
                                     }, nullptr);
       for (auto& [obs, keys] : rev_obs) {
-        obs->handle_conf_change(owner, keys);
+        (*obs)->handle_conf_change(owner, keys);
       }
 
       return seastar::parallel_for_each(boost::irange(1u, seastar::smp::count),
@@ -72,11 +72,11 @@ class ConfigProxy : public seastar::peering_sharded_service<ConfigProxy>
 
             ObserverMgr<ConfigObserver>::rev_obs_map rev_obs;
             proxy.obs_mgr.for_each_change(proxy.values->changed, proxy,
-              [&rev_obs](ConfigObserver *obs, const std::string& key) {
+              [&rev_obs](auto obs, const std::string& key) {
                 rev_obs[obs].insert(key);
               }, nullptr);
-            for (auto& obs_keys : rev_obs) {
-              obs_keys.first->handle_conf_change(proxy, obs_keys.second);
+            for (auto& [obs, keys] : rev_obs) {
+              (*obs)->handle_conf_change(proxy, keys);
             }
           });
         }).finally([new_values] {
