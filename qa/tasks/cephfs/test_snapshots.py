@@ -63,9 +63,6 @@ class TestSnapshots(CephFSTestCase):
         """
         check snaptable transcation
         """
-        if not isinstance(self.mount_a, FuseMount):
-            self.skipTest("Require FUSE client to forcibly kill mount")
-
         self.fs.set_allow_new_snaps(True);
         self.fs.set_max_mds(2)
         status = self.fs.wait_for_daemons()
@@ -123,8 +120,7 @@ class TestSnapshots(CephFSTestCase):
 
             self.fs.rank_signal(signal.SIGKILL, rank=1)
 
-            self.mount_a.kill()
-            self.mount_a.kill_cleanup()
+            self.mount_a.suspend_netns()
 
             self.fs.rank_fail(rank=0)
             self.fs.mds_restart(rank0['name'])
@@ -149,7 +145,13 @@ class TestSnapshots(CephFSTestCase):
                 else:
                     self.assertGreater(self._get_last_created_snap(rank=0), last_created)
 
-            self.mount_a.mount_wait()
+            self.mount_a.resume_netns()
+            try:
+                proc.wait()
+            except CommandFailedError as e:
+                pass
+            self.mount_a.remount()
+            self.fs.flush()
 
         self.mount_a.run_shell(["rmdir", Raw("d1/dir/.snap/*")])
 
@@ -169,8 +171,7 @@ class TestSnapshots(CephFSTestCase):
             self.wait_until_true(lambda: "laggy_since" in self.fs.get_rank(rank=1), timeout=self.fs.beacon_timeout);
             self.delete_mds_coredump(rank1['name']);
 
-            self.mount_a.kill()
-            self.mount_a.kill_cleanup()
+            self.mount_a.suspend_netns()
 
             if i in [3,4]:
                 self.assertEqual(len(self._get_pending_snap_update(rank=0)), 1)
@@ -190,7 +191,13 @@ class TestSnapshots(CephFSTestCase):
                 else:
                     self.assertGreater(self._get_last_created_snap(rank=0), last_created)
 
-            self.mount_a.mount_wait()
+            self.mount_a.resume_netns()
+            try:
+                proc.wait()
+            except CommandFailedError as e:
+                pass
+            self.mount_a.remount()
+            self.fs.flush()
 
         self.mount_a.run_shell(["rmdir", Raw("d1/dir/.snap/*")])
 
