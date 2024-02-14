@@ -926,7 +926,7 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
   mds_authority_t authority() const override;
 
   // -- auth pins --
-  bool can_auth_pin(int *err_ret=nullptr) const override;
+  bool can_auth_pin(int *err_ret=nullptr, bool bypassfreezing=false) const override;
   void auth_pin(void *by) override;
   void auth_unpin(void *by) override;
 
@@ -1024,7 +1024,7 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
 
   bool has_ephemeral_policy() const {
     return get_inode()->export_ephemeral_random_pin > 0.0 ||
-           get_inode()->export_ephemeral_distributed_pin;
+           get_inode()->get_ephemeral_distributed_pin();
   }
   bool is_ephemerally_pinned() const {
     return state_test(STATE_DISTEPHEMERALPIN) ||
@@ -1089,28 +1089,33 @@ class CInode : public MDSCacheObject, public InodeStoreBase, public Counter<CIno
   elist<CInode*>::item item_pop_lru;
 
   // -- locks --
-  static LockType versionlock_type;
-  static LockType authlock_type;
-  static LockType linklock_type;
-  static LockType dirfragtreelock_type;
-  static LockType filelock_type;
-  static LockType xattrlock_type;
-  static LockType snaplock_type;
-  static LockType nestlock_type;
-  static LockType flocklock_type;
-  static LockType policylock_type;
+  static const LockType versionlock_type;
+  static const LockType authlock_type;
+  static const LockType linklock_type;
+  static const LockType dirfragtreelock_type;
+  static const LockType filelock_type;
+  static const LockType xattrlock_type;
+  static const LockType snaplock_type;
+  static const LockType nestlock_type;
+  static const LockType flocklock_type;
+  static const LockType policylock_type;
+  static const LockType quiescelock_type;
 
-  // FIXME not part of mempool
-  LocalLockC  versionlock;
-  SimpleLock authlock;
-  SimpleLock linklock;
-  ScatterLock dirfragtreelock;
-  ScatterLock filelock;
-  SimpleLock xattrlock;
-  SimpleLock snaplock;
-  ScatterLock nestlock;
-  SimpleLock flocklock;
-  SimpleLock policylock;
+  /* Please consult doc/dev/mds_internals/quiesce.rst for information about the
+   * quiescelock.
+   */
+
+  SimpleLock quiescelock; // FIXME not part of mempool
+  LocalLockC versionlock; // FIXME not part of mempool
+  SimpleLock authlock; // FIXME not part of mempool
+  SimpleLock linklock; // FIXME not part of mempool
+  ScatterLock dirfragtreelock; // FIXME not part of mempool
+  ScatterLock filelock; // FIXME not part of mempool
+  SimpleLock xattrlock; // FIXME not part of mempool
+  SimpleLock snaplock; // FIXME not part of mempool
+  ScatterLock nestlock; // FIXME not part of mempool
+  SimpleLock flocklock; // FIXME not part of mempool
+  SimpleLock policylock; // FIXME not part of mempool
 
   // -- caps -- (new)
   // client caps
