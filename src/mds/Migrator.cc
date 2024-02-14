@@ -1003,7 +1003,7 @@ public:
   }
 };
 
-void Migrator::dispatch_export_dir(MDRequestRef& mdr, int count)
+void Migrator::dispatch_export_dir(const MDRequestRef& mdr, int count)
 {
   CDir *dir = mdr->more()->export_dir;
   dout(7) << *mdr << " " << *dir << dendl;
@@ -1067,7 +1067,7 @@ void Migrator::dispatch_export_dir(MDRequestRef& mdr, int count)
     }
     lov.add_rdlock(&dir->get_inode()->dirfragtreelock);
 
-    if (!mds->locker->acquire_locks(mdr, lov, nullptr, true)) {
+    if (!mds->locker->acquire_locks(mdr, lov, nullptr, {}, true)) {
       if (mdr->aborted)
 	export_try_cancel(dir);
       return;
@@ -1698,6 +1698,7 @@ void Migrator::finish_export_inode(CInode *in, mds_rank_t peer,
   in->snaplock.export_twiddle();
   in->flocklock.export_twiddle();
   in->policylock.export_twiddle();
+  in->quiescelock.export_twiddle();
   
   // mark auth
   ceph_assert(in->is_auth());
@@ -3247,6 +3248,10 @@ void Migrator::decode_import_inode(CDentry *dn, bufferlist::const_iterator& blp,
   if (in->policylock.is_stable() &&
       in->policylock.get_state() != LOCK_SYNC)
       mds->locker->try_eval(&in->policylock, NULL);
+
+  if (in->quiescelock.is_stable() &&
+      in->quiescelock.get_state() != LOCK_SYNC)
+      mds->locker->try_eval(&in->quiescelock, NULL);
 }
 
 void Migrator::decode_import_inode_caps(CInode *in, bool auth_cap,

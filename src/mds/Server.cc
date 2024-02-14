@@ -159,7 +159,7 @@ public:
   explicit ServerLogContext(Server *s) : server(s) {
     ceph_assert(server != NULL);
   }
-  explicit ServerLogContext(Server *s, MDRequestRef& r) : server(s), mdr(r) {
+  explicit ServerLogContext(Server *s, const MDRequestRef& r) : server(s), mdr(r) {
     ceph_assert(server != NULL);
   }
 };
@@ -1997,7 +1997,7 @@ void Server::force_clients_readonly()
 /*******
  * some generic stuff for finishing off requests
  */
-void Server::journal_and_reply(MDRequestRef& mdr, CInode *in, CDentry *dn, LogEvent *le, MDSLogContextBase *fin)
+void Server::journal_and_reply(const MDRequestRef& mdr, CInode *in, CDentry *dn, LogEvent *le, MDSLogContextBase *fin)
 {
   dout(10) << "journal_and_reply tracei " << in << " tracedn " << dn << dendl;
   ceph_assert(!mdr->has_completed);
@@ -2031,7 +2031,7 @@ void Server::journal_and_reply(MDRequestRef& mdr, CInode *in, CDentry *dn, LogEv
     mdlog->flush();
 }
 
-void Server::submit_mdlog_entry(LogEvent *le, MDSLogContextBase *fin, MDRequestRef& mdr,
+void Server::submit_mdlog_entry(LogEvent *le, MDSLogContextBase *fin, const MDRequestRef& mdr,
                                 std::string_view event)
 {
   if (mdr) {
@@ -2045,21 +2045,23 @@ void Server::submit_mdlog_entry(LogEvent *le, MDSLogContextBase *fin, MDRequestR
 /*
  * send response built from mdr contents and error code; clean up mdr
  */
-void Server::respond_to_request(MDRequestRef& mdr, int r)
+void Server::respond_to_request(const MDRequestRef& mdr, int r)
 {
+  mdr->result = r;
   if (mdr->client_request) {
     if (mdr->is_batch_head()) {
-      dout(20) << __func__ << " batch head " << *mdr << dendl;
+      dout(20) << __func__ << ": batch head " << *mdr << dendl;
       mdr->release_batch_op()->respond(r);
     } else {
      reply_client_request(mdr, make_message<MClientReply>(*mdr->client_request, r));
     }
   } else if (mdr->internal_op > -1) {
-    dout(10) << "respond_to_request on internal request " << mdr << dendl;
-    if (!mdr->internal_op_finish)
+    dout(10) << __func__ << ": completing with result " << cpp_strerror(r) << " on internal " << *mdr << dendl;
+    auto c = mdr->internal_op_finish;
+    if (!c)
       ceph_abort_msg("trying to respond to internal op without finisher");
-    mdr->internal_op_finish->complete(r);
     mdcache->request_finish(mdr);
+    c->complete(r);
   }
 }
 
@@ -2165,7 +2167,7 @@ void Server::perf_gather_op_latency(const cref_t<MClientRequest> &req, utime_t l
   logger->tinc(code, lat);   
 }
 
-void Server::early_reply(MDRequestRef& mdr, CInode *tracei, CDentry *tracedn)
+void Server::early_reply(const MDRequestRef& mdr, CInode *tracei, CDentry *tracedn)
 {
   if (!g_conf()->mds_early_reply)
     return;
@@ -2244,7 +2246,7 @@ void Server::early_reply(MDRequestRef& mdr, CInode *tracei, CDentry *tracedn)
  * include a trace to tracei
  * Clean up mdr
  */
-void Server::reply_client_request(MDRequestRef& mdr, const ref_t<MClientReply> &reply)
+void Server::reply_client_request(const MDRequestRef& mdr, const ref_t<MClientReply> &reply)
 {
   ceph_assert(mdr.get());
   const cref_t<MClientRequest> &req = mdr->client_request;
@@ -2358,7 +2360,7 @@ void Server::reply_client_request(MDRequestRef& mdr, const ref_t<MClientReply> &
  */
 void Server::set_trace_dist(const ref_t<MClientReply> &reply,
 			    CInode *in, CDentry *dn,
-			    MDRequestRef& mdr)
+			    const MDRequestRef& mdr)
 {
   // skip doing this for debugging purposes?
   if (g_conf()->mds_inject_traceless_reply_probability &&
@@ -2578,7 +2580,7 @@ void Server::handle_osd_map()
     });
 }
 
-void Server::dispatch_client_request(MDRequestRef& mdr)
+void Server::dispatch_client_request(const MDRequestRef& mdr)
 {
   // we shouldn't be waiting on anyone.
   ceph_assert(!mdr->has_more() || mdr->more()->waiting_on_peer.empty());
@@ -2595,7 +2597,8 @@ void Server::dispatch_client_request(MDRequestRef& mdr)
 	mdr->batch_op_map->erase(it);
 	return;
       }
-      mdr = std::move(new_batch_head);
+      mds->finisher->queue(new C_MDS_RetryRequest(mdcache, new_batch_head));
+      return;
     } else {
       return;
     }
@@ -2971,7 +2974,7 @@ void Server::handle_peer_request_reply(const cref_t<MMDSPeerRequest> &m)
   }
 }
 
-void Server::dispatch_peer_request(MDRequestRef& mdr)
+void Server::dispatch_peer_request(const MDRequestRef& mdr)
 {
   dout(7) << "dispatch_peer_request " << *mdr << " " << *mdr->peer_request << dendl;
 
@@ -3020,8 +3023,9 @@ void Server::dispatch_peer_request(MDRequestRef& mdr)
 	  replycode = MMDSPeerRequest::OP_WRLOCKACK;
 	  break;
 	}
-	
-	if (!mds->locker->acquire_locks(mdr, lov))
+
+        // don't add quiescelock, let the peer acquire that rdlock themselves
+	if (!mds->locker->acquire_locks(mdr, lov, nullptr, {}, false, true))
 	  return;
 	
 	// ack
@@ -3085,7 +3089,7 @@ void Server::dispatch_peer_request(MDRequestRef& mdr)
   }
 }
 
-void Server::handle_peer_auth_pin(MDRequestRef& mdr)
+void Server::handle_peer_auth_pin(const MDRequestRef& mdr)
 {
   dout(10) << "handle_peer_auth_pin " << *mdr << dendl;
 
@@ -3093,8 +3097,12 @@ void Server::handle_peer_auth_pin(MDRequestRef& mdr)
   list<MDSCacheObject*> objects;
   CInode *auth_pin_freeze = NULL;
   bool nonblocking = mdr->peer_request->is_nonblocking();
+  bool bypassfreezing = mdr->peer_request->is_bypassfreezing();
   bool fail = false, wouldblock = false, readonly = false;
   ref_t<MMDSPeerRequest> reply;
+
+  dout(15) << " nonblocking=" << nonblocking
+           << " bypassfreezing=" << bypassfreezing << dendl;
 
   if (mdcache->is_readonly()) {
     dout(10) << " read-only FS" << dendl;
@@ -3127,7 +3135,7 @@ void Server::handle_peer_auth_pin(MDRequestRef& mdr)
       }
       if (mdr->is_auth_pinned(obj))
 	continue;
-      if (!mdr->can_auth_pin(obj)) {
+      if (!mdr->can_auth_pin(obj, bypassfreezing)) {
 	if (nonblocking) {
 	  dout(10) << " can't auth_pin (freezing?) " << *obj << " nonblocking" << dendl;
 	  fail = true;
@@ -3211,7 +3219,7 @@ blocked:
   return;
 }
 
-void Server::handle_peer_auth_pin_ack(MDRequestRef& mdr, const cref_t<MMDSPeerRequest> &ack)
+void Server::handle_peer_auth_pin_ack(const MDRequestRef& mdr, const cref_t<MMDSPeerRequest> &ack)
 {
   dout(10) << "handle_peer_auth_pin_ack on " << *mdr << " " << *ack << dendl;
   mds_rank_t from = mds_rank_t(ack->get_source().num());
@@ -3288,7 +3296,7 @@ void Server::handle_peer_auth_pin_ack(MDRequestRef& mdr, const cref_t<MMDSPeerRe
  * by mask on the given inode, based on the capability in the mdr's
  * session.
  */
-bool Server::check_access(MDRequestRef& mdr, CInode *in, unsigned mask)
+bool Server::check_access(const MDRequestRef& mdr, CInode *in, unsigned mask)
 {
   if (mdr->session) {
     int r = mdr->session->check_access(
@@ -3310,7 +3318,7 @@ bool Server::check_access(MDRequestRef& mdr, CInode *in, unsigned mask)
  * check whether fragment has reached maximum size
  *
  */
-bool Server::check_fragment_space(MDRequestRef &mdr, CDir *dir)
+bool Server::check_fragment_space(const MDRequestRef& mdr, CDir *dir)
 {
   const auto size = dir->get_frag_size();
   const auto max = bal_fragment_size_max;
@@ -3329,7 +3337,7 @@ bool Server::check_fragment_space(MDRequestRef &mdr, CDir *dir)
  * check whether entries in a dir reached maximum size
  *
  */
-bool Server::check_dir_max_entries(MDRequestRef &mdr, CDir *in)
+bool Server::check_dir_max_entries(const MDRequestRef& mdr, CDir *in)
 {
   const uint64_t size = in->inode->get_projected_inode()->dirstat.nfiles +
                    in->inode->get_projected_inode()->dirstat.nsubdirs;
@@ -3342,7 +3350,7 @@ bool Server::check_dir_max_entries(MDRequestRef &mdr, CDir *in)
 }
 
 
-CDentry* Server::prepare_stray_dentry(MDRequestRef& mdr, CInode *in)
+CDentry* Server::prepare_stray_dentry(const MDRequestRef& mdr, CInode *in)
 {
   string straydname;
   in->name_stray_dentry(straydname);
@@ -3384,7 +3392,7 @@ CDentry* Server::prepare_stray_dentry(MDRequestRef& mdr, CInode *in)
  *
  * create a new inode.  set c/m/atime.  hit dir pop.
  */
-CInode* Server::prepare_new_inode(MDRequestRef& mdr, CDir *dir, inodeno_t useino, unsigned mode,
+CInode* Server::prepare_new_inode(const MDRequestRef& mdr, CDir *dir, inodeno_t useino, unsigned mode,
 				  const file_layout_t *layout)
 {
   CInode *in = new CInode(mdcache);
@@ -3514,7 +3522,7 @@ CInode* Server::prepare_new_inode(MDRequestRef& mdr, CDir *dir, inodeno_t useino
   return in;
 }
 
-void Server::journal_allocated_inos(MDRequestRef& mdr, EMetaBlob *blob)
+void Server::journal_allocated_inos(const MDRequestRef& mdr, EMetaBlob *blob)
 {
   dout(20) << "journal_allocated_inos sessionmapv " << mds->sessionmap.get_projected()
 	   << " inotablev " << mds->inotable->get_projected_version()
@@ -3527,7 +3535,7 @@ void Server::journal_allocated_inos(MDRequestRef& mdr, EMetaBlob *blob)
 		      mds->inotable->get_projected_version());
 }
 
-void Server::apply_allocated_inos(MDRequestRef& mdr, Session *session)
+void Server::apply_allocated_inos(const MDRequestRef& mdr, Session *session)
 {
   dout(10) << "apply_allocated_inos " << mdr->alloc_ino
 	   << " / " << mdr->prealloc_inos
@@ -3554,14 +3562,14 @@ void Server::apply_allocated_inos(MDRequestRef& mdr, Session *session)
 struct C_MDS_TryOpenInode : public ServerContext {
   MDRequestRef mdr;
   inodeno_t ino;
-  C_MDS_TryOpenInode(Server *s, MDRequestRef& r, inodeno_t i) :
+  C_MDS_TryOpenInode(Server *s, const MDRequestRef& r, inodeno_t i) :
     ServerContext(s), mdr(r), ino(i) {}
   void finish(int r) override {
     server->_try_open_ino(mdr, r, ino);
   }
 };
 
-void Server::_try_open_ino(MDRequestRef& mdr, int r, inodeno_t ino)
+void Server::_try_open_ino(const MDRequestRef& mdr, int r, inodeno_t ino)
 {
   dout(10) << "_try_open_ino " << mdr.get() << " ino " << ino << " r=" << r << dendl;
 
@@ -3586,7 +3594,7 @@ class C_MDS_TryFindInode : public ServerContext {
   MDCache *mdcache;
   inodeno_t ino;
 public:
-  C_MDS_TryFindInode(Server *s, MDRequestRef& r, MDCache *m, inodeno_t i) :
+  C_MDS_TryFindInode(Server *s, const MDRequestRef& r, MDCache *m, inodeno_t i) :
     ServerContext(s), mdr(r), mdcache(m), ino(i) {}
   void finish(int r) override {
     if (r == -CEPHFS_ESTALE) { // :( find_ino_peers failed
@@ -3618,7 +3626,7 @@ public:
 
 /* If this returns null, the request has been handled
  * as appropriate: forwarded on, or the client's been replied to */
-CInode* Server::rdlock_path_pin_ref(MDRequestRef& mdr,
+CInode* Server::rdlock_path_pin_ref(const MDRequestRef& mdr,
 				    bool want_auth,
 				    bool no_want_auth)
 {
@@ -3696,7 +3704,7 @@ CInode* Server::rdlock_path_pin_ref(MDRequestRef& mdr,
  * to ensure tail dentry and target inode are both auth in one mds. the tail dentry
  * will not be xlocked too if authexist and the target inode exists.
  */
-CDentry* Server::rdlock_path_xlock_dentry(MDRequestRef& mdr,
+CDentry* Server::rdlock_path_xlock_dentry(const MDRequestRef& mdr,
 					  bool create, bool okexist, bool authexist,
 					  bool want_layout)
 {
@@ -3806,7 +3814,7 @@ CDentry* Server::rdlock_path_xlock_dentry(MDRequestRef& mdr,
  *    order.
  */
 std::pair<CDentry*, CDentry*>
-Server::rdlock_two_paths_xlock_destdn(MDRequestRef& mdr, bool xlock_srcdn)
+Server::rdlock_two_paths_xlock_destdn(const MDRequestRef& mdr, bool xlock_srcdn)
 {
 
   const filepath& refpath = mdr->get_filepath();
@@ -3960,7 +3968,7 @@ Server::rdlock_two_paths_xlock_destdn(MDRequestRef& mdr, bool xlock_srcdn)
  * @param mdr request
  * @returns the pointer, or NULL if it had to be delayed (but mdr is taken care of)
  */
-CDir* Server::try_open_auth_dirfrag(CInode *diri, frag_t fg, MDRequestRef& mdr)
+CDir* Server::try_open_auth_dirfrag(CInode *diri, frag_t fg, const MDRequestRef& mdr)
 {
   CDir *dir = diri->get_dirfrag(fg);
 
@@ -4001,7 +4009,7 @@ CDir* Server::try_open_auth_dirfrag(CInode *diri, frag_t fg, MDRequestRef& mdr)
 // ===============================================================================
 // STAT
 
-void Server::handle_client_getattr(MDRequestRef& mdr, bool is_lookup)
+void Server::handle_client_getattr(const MDRequestRef& mdr, bool is_lookup)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
 
@@ -4140,7 +4148,7 @@ void Server::handle_client_getattr(MDRequestRef& mdr, bool is_lookup)
 
 struct C_MDS_LookupIno2 : public ServerContext {
   MDRequestRef mdr;
-  C_MDS_LookupIno2(Server *s, MDRequestRef& r) : ServerContext(s), mdr(r) {}
+  C_MDS_LookupIno2(Server *s, const MDRequestRef& r) : ServerContext(s), mdr(r) {}
   void finish(int r) override {
     server->_lookup_ino_2(mdr, r);
   }
@@ -4149,7 +4157,7 @@ struct C_MDS_LookupIno2 : public ServerContext {
 /*
  * filepath:  ino
  */
-void Server::handle_client_lookup_ino(MDRequestRef& mdr,
+void Server::handle_client_lookup_ino(const MDRequestRef& mdr,
 				      bool want_parent, bool want_dentry)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
@@ -4252,7 +4260,7 @@ void Server::handle_client_lookup_ino(MDRequestRef& mdr,
   }
 }
 
-void Server::_lookup_snap_ino(MDRequestRef& mdr)
+void Server::_lookup_snap_ino(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
 
@@ -4327,7 +4335,7 @@ void Server::_lookup_snap_ino(MDRequestRef& mdr)
   }
 }
 
-void Server::_lookup_ino_2(MDRequestRef& mdr, int r)
+void Server::_lookup_ino_2(const MDRequestRef& mdr, int r)
 {
   inodeno_t ino = mdr->client_request->get_filepath().get_ino();
   dout(10) << "_lookup_ino_2 " << mdr.get() << " ino " << ino << " r=" << r << dendl;
@@ -4350,7 +4358,7 @@ void Server::_lookup_ino_2(MDRequestRef& mdr, int r)
 
 
 /* This function takes responsibility for the passed mdr*/
-void Server::handle_client_open(MDRequestRef& mdr)
+void Server::handle_client_open(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   dout(7) << "open on " << req->get_filepath() << dendl;
@@ -4545,7 +4553,7 @@ class C_MDS_openc_finish : public ServerLogContext {
   CDentry *dn;
   CInode *newi;
 public:
-  C_MDS_openc_finish(Server *s, MDRequestRef& r, CDentry *d, CInode *ni) :
+  C_MDS_openc_finish(Server *s, const MDRequestRef& r, CDentry *d, CInode *ni) :
     ServerLogContext(s, r), dn(d), newi(ni) {}
   void finish(int r) override {
     ceph_assert(r == 0);
@@ -4575,7 +4583,7 @@ public:
 };
 
 /* This function takes responsibility for the passed mdr*/
-void Server::handle_client_openc(MDRequestRef& mdr)
+void Server::handle_client_openc(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   client_t client = mdr->get_client();
@@ -4751,7 +4759,7 @@ void Server::handle_client_openc(MDRequestRef& mdr)
 }
 
 
-void Server::_finalize_readdir(MDRequestRef& mdr,
+void Server::_finalize_readdir(const MDRequestRef& mdr,
                                CInode *diri,
                                CDir* dir,
                                bool start,
@@ -4793,7 +4801,7 @@ void Server::_finalize_readdir(MDRequestRef& mdr,
   respond_to_request(mdr, 0);
 }
 
-void Server::handle_client_readdir(MDRequestRef& mdr)
+void Server::handle_client_readdir(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   Session *session = mds->get_session(req);
@@ -4824,6 +4832,8 @@ void Server::handle_client_readdir(MDRequestRef& mdr)
       return;
   }
 
+  /* readdir can add dentries to cache: acquire the quiescelock */
+  lov.add_rdlock(&diri->quiescelock);
   lov.add_rdlock(&diri->filelock);
   lov.add_rdlock(&diri->dirfragtreelock);
 
@@ -5044,7 +5054,7 @@ class C_MDS_inode_update_finish : public ServerLogContext {
   CInode *in;
   bool truncating_smaller, changed_ranges, adjust_realm;
 public:
-  C_MDS_inode_update_finish(Server *s, MDRequestRef& r, CInode *i,
+  C_MDS_inode_update_finish(Server *s, const MDRequestRef& r, CInode *i,
 			    bool sm=false, bool cr=false, bool ar=false) :
     ServerLogContext(s, r), in(i),
     truncating_smaller(sm), changed_ranges(cr), adjust_realm(ar) { }
@@ -5078,7 +5088,7 @@ public:
   }
 };
 
-void Server::handle_client_file_setlock(MDRequestRef& mdr)
+void Server::handle_client_file_setlock(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   MutationImpl::LockOpVec lov;
@@ -5181,7 +5191,7 @@ void Server::handle_client_file_setlock(MDRequestRef& mdr)
   dout(10) << " state after lock change: " << *lock_state << dendl;
 }
 
-void Server::handle_client_file_readlock(MDRequestRef& mdr)
+void Server::handle_client_file_readlock(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   MutationImpl::LockOpVec lov;
@@ -5234,7 +5244,7 @@ void Server::handle_client_file_readlock(MDRequestRef& mdr)
   respond_to_request(mdr, 0);
 }
 
-void Server::handle_client_setattr(MDRequestRef& mdr)
+void Server::handle_client_setattr(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   MutationImpl::LockOpVec lov;
@@ -5430,7 +5440,7 @@ void Server::handle_client_setattr(MDRequestRef& mdr)
 }
 
 /* Takes responsibility for mdr */
-void Server::do_open_truncate(MDRequestRef& mdr, int cmode)
+void Server::do_open_truncate(const MDRequestRef& mdr, int cmode)
 {
   CInode *in = mdr->in[0];
   client_t client = mdr->get_client();
@@ -5495,7 +5505,7 @@ void Server::do_open_truncate(MDRequestRef& mdr, int cmode)
 
 
 /* This function cleans up the passed mdr */
-void Server::handle_client_setlayout(MDRequestRef& mdr)
+void Server::handle_client_setlayout(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   CInode *cur = rdlock_path_pin_ref(mdr, true);
@@ -5584,7 +5594,7 @@ void Server::handle_client_setlayout(MDRequestRef& mdr)
   journal_and_reply(mdr, cur, 0, le, new C_MDS_inode_update_finish(this, mdr, cur));
 }
 
-bool Server::xlock_policylock(MDRequestRef& mdr, CInode *in, bool want_layout, bool xlock_snaplock)
+bool Server::xlock_policylock(const MDRequestRef& mdr, CInode *in, bool want_layout, bool xlock_snaplock)
 {
   if (mdr->locking_state & MutationImpl::ALL_LOCKED)
     return true;
@@ -5611,7 +5621,7 @@ bool Server::xlock_policylock(MDRequestRef& mdr, CInode *in, bool want_layout, b
   return true;
 }
 
-CInode* Server::try_get_auth_inode(MDRequestRef& mdr, inodeno_t ino)
+CInode* Server::try_get_auth_inode(const MDRequestRef& mdr, inodeno_t ino)
 {
   CInode *in = mdcache->get_inode(ino);
   if (!in || in->state_test(CInode::STATE_PURGING)) {
@@ -5626,7 +5636,7 @@ CInode* Server::try_get_auth_inode(MDRequestRef& mdr, inodeno_t ino)
   return in;
 }
 
-void Server::handle_client_setdirlayout(MDRequestRef& mdr)
+void Server::handle_client_setdirlayout(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
 
@@ -5947,7 +5957,7 @@ void Server::create_quota_realm(CInode *in)
  * Return 0 on success, otherwise this function takes
  * responsibility for the passed mdr.
  */
-int Server::check_layout_vxattr(MDRequestRef& mdr,
+int Server::check_layout_vxattr(const MDRequestRef& mdr,
                                 string name,
                                 string value,
                                 file_layout_t *layout)
@@ -5999,7 +6009,7 @@ int Server::check_layout_vxattr(MDRequestRef& mdr,
   return 0;
 }
 
-void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
+void Server::handle_set_vxattr(const MDRequestRef& mdr, CInode *cur)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   MutationImpl::LockOpVec lov;
@@ -6123,6 +6133,57 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
 
     client_t exclude_ct = mdr->get_client();
     mdcache->broadcast_quota_to_client(cur, exclude_ct, true);
+  } else if (name == "ceph.quiesce.block"sv) {
+    bool val;
+    try {
+      val = boost::lexical_cast<bool>(value);
+    } catch (boost::bad_lexical_cast const&) {
+      dout(10) << "bad vxattr value, unable to parse bool for " << name << dendl;
+      respond_to_request(mdr, -CEPHFS_EINVAL);
+      return;
+    }
+
+    /* Verify it's not already marked with lighter weight
+     * rdlock.
+     */
+    if (!mdr->more()->rdonly_checks) {
+      if (!(mdr->locking_state & MutationImpl::ALL_LOCKED)) {
+        lov.add_rdlock(&cur->policylock);
+        if (!mds->locker->acquire_locks(mdr, lov))
+          return;
+        mdr->locking_state |= MutationImpl::ALL_LOCKED;
+      }
+      bool is_blocked = cur->get_projected_inode()->get_quiesce_block();
+      if (is_blocked == val) {
+        dout(20) << "already F_QUIESCE_BLOCK set" << dendl;
+        respond_to_request(mdr, 0);
+        return;
+      }
+      mdr->more()->rdonly_checks = true;
+    }
+
+    if ((mdr->locking_state & MutationImpl::ALL_LOCKED) && !mdr->is_xlocked(&cur->policylock)) {
+      /* drop the rdlock and acquire xlocks */
+      dout(20) << "dropping rdlocks" << dendl;
+      mds->locker->drop_locks(mdr.get());
+      if (!xlock_policylock(mdr, cur, false, true))
+        return;
+    }
+
+    /* repeat rdonly checks in case changed between rdlock -> xlock */
+    bool is_blocked = cur->get_projected_inode()->get_quiesce_block();
+    if (is_blocked == val) {
+      dout(20) << "already F_QUIESCE_BLOCK set" << dendl;
+      respond_to_request(mdr, 0);
+      return;
+    }
+
+    auto pi = cur->project_inode(mdr);
+    pi.inode->set_quiesce_block(val);
+    dout(20) << (val ? "setting" : "unsetting") << " F_QUIESCE_BLOCK on ino: " << cur->ino() << dendl;
+
+    mdr->no_early_reply = true;
+    pip = pi.inode.get();
   } else if (name == "ceph.dir.subvolume"sv) {
     if (!cur->is_dir()) {
       respond_to_request(mdr, -CEPHFS_EINVAL);
@@ -6296,7 +6357,7 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
   return;
 }
 
-void Server::handle_remove_vxattr(MDRequestRef& mdr, CInode *cur)
+void Server::handle_remove_vxattr(const MDRequestRef& mdr, CInode *cur)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   string name(req->get_path2());
@@ -6530,7 +6591,7 @@ void Server::mirror_info_removexattr_handler(CInode *cur, InodeStoreBase::xattr_
   xattr_rm(xattrs, Server::MirrorXattrInfo::FS_ID);
 }
 
-void Server::handle_client_setxattr(MDRequestRef& mdr)
+void Server::handle_client_setxattr(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   string name(req->get_path2());
@@ -6628,7 +6689,7 @@ void Server::handle_client_setxattr(MDRequestRef& mdr)
   journal_and_reply(mdr, cur, 0, le, new C_MDS_inode_update_finish(this, mdr, cur));
 }
 
-void Server::handle_client_removexattr(MDRequestRef& mdr)
+void Server::handle_client_removexattr(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   std::string name(req->get_path2());
@@ -6698,7 +6759,7 @@ void Server::handle_client_removexattr(MDRequestRef& mdr)
   journal_and_reply(mdr, cur, 0, le, new C_MDS_inode_update_finish(this, mdr, cur));
 }
 
-void Server::handle_client_getvxattr(MDRequestRef& mdr)
+void Server::handle_client_getvxattr(const MDRequestRef& mdr)
 {
   const auto& req = mdr->client_request;
   string xattr_name{req->get_path2()};
@@ -6824,13 +6885,15 @@ void Server::handle_client_getvxattr(MDRequestRef& mdr)
     } else {
       r = -CEPHFS_ENODATA; // no such attribute
     }
+  } else if (xattr_name == "ceph.quiesce.block"sv) {
+    *css << cur->get_projected_inode()->get_quiesce_block();
   } else if (xattr_name.substr(0, 12) == "ceph.dir.pin"sv) {
     if (xattr_name == "ceph.dir.pin"sv) {
       *css << cur->get_projected_inode()->export_pin;
     } else if (xattr_name == "ceph.dir.pin.random"sv) {
       *css << cur->get_projected_inode()->export_ephemeral_random_pin;
     } else if (xattr_name == "ceph.dir.pin.distributed"sv) {
-      *css << cur->get_projected_inode()->export_ephemeral_distributed_pin;
+      *css << cur->get_projected_inode()->get_ephemeral_distributed_pin();
     } else {
       // otherwise respond as invalid request
       // since we only handle ceph vxattrs here
@@ -6864,7 +6927,7 @@ class C_MDS_mknod_finish : public ServerLogContext {
   CDentry *dn;
   CInode *newi;
 public:
-  C_MDS_mknod_finish(Server *s, MDRequestRef& r, CDentry *d, CInode *ni) :
+  C_MDS_mknod_finish(Server *s, const MDRequestRef& r, CDentry *d, CInode *ni) :
     ServerLogContext(s, r), dn(d), newi(ni) {}
   void finish(int r) override {
     ceph_assert(r == 0);
@@ -6910,7 +6973,7 @@ public:
 };
 
 
-void Server::handle_client_mknod(MDRequestRef& mdr)
+void Server::handle_client_mknod(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   client_t client = mdr->get_client();
@@ -7013,7 +7076,7 @@ void Server::handle_client_mknod(MDRequestRef& mdr)
 
 // MKDIR
 /* This function takes responsibility for the passed mdr*/
-void Server::handle_client_mkdir(MDRequestRef& mdr)
+void Server::handle_client_mkdir(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
 
@@ -7108,7 +7171,7 @@ void Server::handle_client_mkdir(MDRequestRef& mdr)
 
 // SYMLINK
 
-void Server::handle_client_symlink(MDRequestRef& mdr)
+void Server::handle_client_symlink(const MDRequestRef& mdr)
 {
   const auto& req = mdr->client_request;
 
@@ -7176,7 +7239,7 @@ void Server::handle_client_symlink(MDRequestRef& mdr)
 
 // LINK
 
-void Server::handle_client_link(MDRequestRef& mdr)
+void Server::handle_client_link(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
 
@@ -7308,7 +7371,7 @@ class C_MDS_link_local_finish : public ServerLogContext {
   version_t tipv;
   bool adjust_realm;
 public:
-  C_MDS_link_local_finish(Server *s, MDRequestRef& r, CDentry *d, CInode *ti,
+  C_MDS_link_local_finish(Server *s, const MDRequestRef& r, CDentry *d, CInode *ti,
 			  version_t dnpv_, version_t tipv_, bool ar) :
     ServerLogContext(s, r), dn(d), targeti(ti),
     dnpv(dnpv_), tipv(tipv_), adjust_realm(ar) { }
@@ -7319,7 +7382,7 @@ public:
 };
 
 
-void Server::_link_local(MDRequestRef& mdr, CDentry *dn, CInode *targeti, SnapRealm *target_realm)
+void Server::_link_local(const MDRequestRef& mdr, CDentry *dn, CInode *targeti, SnapRealm *target_realm)
 {
   dout(10) << "_link_local " << *dn << " to " << *targeti << dendl;
 
@@ -7362,7 +7425,7 @@ void Server::_link_local(MDRequestRef& mdr, CDentry *dn, CInode *targeti, SnapRe
 		    new C_MDS_link_local_finish(this, mdr, dn, targeti, dnpv, tipv, adjust_realm));
 }
 
-void Server::_link_local_finish(MDRequestRef& mdr, CDentry *dn, CInode *targeti,
+void Server::_link_local_finish(const MDRequestRef& mdr, CDentry *dn, CInode *targeti,
 				version_t dnpv, version_t tipv, bool adjust_realm)
 {
   dout(10) << "_link_local_finish " << *dn << " to " << *targeti << dendl;
@@ -7402,7 +7465,7 @@ class C_MDS_link_remote_finish : public ServerLogContext {
   CInode *targeti;
   version_t dpv;
 public:
-  C_MDS_link_remote_finish(Server *s, MDRequestRef& r, bool i, CDentry *d, CInode *ti) :
+  C_MDS_link_remote_finish(Server *s, const MDRequestRef& r, bool i, CDentry *d, CInode *ti) :
     ServerLogContext(s, r), inc(i), dn(d), targeti(ti),
     dpv(d->get_projected_version()) {}
   void finish(int r) override {
@@ -7411,7 +7474,7 @@ public:
   }
 };
 
-void Server::_link_remote(MDRequestRef& mdr, bool inc, CDentry *dn, CInode *targeti)
+void Server::_link_remote(const MDRequestRef& mdr, bool inc, CDentry *dn, CInode *targeti)
 {
   dout(10) << "_link_remote " 
 	   << (inc ? "link ":"unlink ")
@@ -7485,7 +7548,7 @@ void Server::_link_remote(MDRequestRef& mdr, bool inc, CDentry *dn, CInode *targ
 		    new C_MDS_link_remote_finish(this, mdr, inc, dn, targeti));
 }
 
-void Server::_link_remote_finish(MDRequestRef& mdr, bool inc,
+void Server::_link_remote_finish(const MDRequestRef& mdr, bool inc,
 				 CDentry *dn, CInode *targeti,
 				 version_t dpv)
 {
@@ -7538,7 +7601,7 @@ class C_MDS_PeerLinkPrep : public ServerLogContext {
   CInode *targeti;
   bool adjust_realm;
 public:
-  C_MDS_PeerLinkPrep(Server *s, MDRequestRef& r, CInode *t, bool ar) :
+  C_MDS_PeerLinkPrep(Server *s, const MDRequestRef& r, CInode *t, bool ar) :
     ServerLogContext(s, r), targeti(t), adjust_realm(ar) { }
   void finish(int r) override {
     ceph_assert(r == 0);
@@ -7550,14 +7613,14 @@ class C_MDS_PeerLinkCommit : public ServerContext {
   MDRequestRef mdr;
   CInode *targeti;
 public:
-  C_MDS_PeerLinkCommit(Server *s, MDRequestRef& r, CInode *t) :
+  C_MDS_PeerLinkCommit(Server *s, const MDRequestRef& r, CInode *t) :
     ServerContext(s), mdr(r), targeti(t) { }
   void finish(int r) override {
     server->_commit_peer_link(mdr, r, targeti);
   }
 };
 
-void Server::handle_peer_link_prep(MDRequestRef& mdr)
+void Server::handle_peer_link_prep(const MDRequestRef& mdr)
 {
   dout(10) << "handle_peer_link_prep " << *mdr
 	   << " on " << mdr->peer_request->get_object_info()
@@ -7661,7 +7724,7 @@ void Server::handle_peer_link_prep(MDRequestRef& mdr)
   mdlog->flush();
 }
 
-void Server::_logged_peer_link(MDRequestRef& mdr, CInode *targeti, bool adjust_realm)
+void Server::_logged_peer_link(const MDRequestRef& mdr, CInode *targeti, bool adjust_realm)
 {
   dout(10) << "_logged_peer_link " << *mdr
 	   << " " << *targeti << dendl;
@@ -7695,13 +7758,13 @@ void Server::_logged_peer_link(MDRequestRef& mdr, CInode *targeti, bool adjust_r
 
 
 struct C_MDS_CommittedPeer : public ServerLogContext {
-  C_MDS_CommittedPeer(Server *s, MDRequestRef& m) : ServerLogContext(s, m) {}
+  C_MDS_CommittedPeer(Server *s, const MDRequestRef& m) : ServerLogContext(s, m) {}
   void finish(int r) override {
     server->_committed_peer(mdr);
   }
 };
 
-void Server::_commit_peer_link(MDRequestRef& mdr, int r, CInode *targeti)
+void Server::_commit_peer_link(const MDRequestRef& mdr, int r, CInode *targeti)
 {  
   dout(10) << "_commit_peer_link " << *mdr
 	   << " r=" << r
@@ -7724,7 +7787,7 @@ void Server::_commit_peer_link(MDRequestRef& mdr, int r, CInode *targeti)
   }
 }
 
-void Server::_committed_peer(MDRequestRef& mdr)
+void Server::_committed_peer(const MDRequestRef& mdr)
 {
   dout(10) << "_committed_peer " << *mdr << dendl;
 
@@ -7740,7 +7803,7 @@ void Server::_committed_peer(MDRequestRef& mdr)
 struct C_MDS_LoggedLinkRollback : public ServerLogContext {
   MutationRef mut;
   map<client_t,ref_t<MClientSnap>> splits;
-  C_MDS_LoggedLinkRollback(Server *s, MutationRef& m, MDRequestRef& r,
+  C_MDS_LoggedLinkRollback(Server *s, MutationRef& m, const MDRequestRef& r,
 			   map<client_t,ref_t<MClientSnap>>&& _splits) :
     ServerLogContext(s, r), mut(m), splits(std::move(_splits)) {
   }
@@ -7749,7 +7812,7 @@ struct C_MDS_LoggedLinkRollback : public ServerLogContext {
   }
 };
 
-void Server::do_link_rollback(bufferlist &rbl, mds_rank_t leader, MDRequestRef& mdr)
+void Server::do_link_rollback(bufferlist &rbl, mds_rank_t leader, const MDRequestRef& mdr)
 {
   link_rollback rollback;
   auto p = rbl.cbegin();
@@ -7829,7 +7892,7 @@ void Server::do_link_rollback(bufferlist &rbl, mds_rank_t leader, MDRequestRef& 
   mdlog->flush();
 }
 
-void Server::_link_rollback_finish(MutationRef& mut, MDRequestRef& mdr,
+void Server::_link_rollback_finish(MutationRef& mut, const MDRequestRef& mdr,
 				   map<client_t,ref_t<MClientSnap>>& splits)
 {
   dout(10) << "_link_rollback_finish" << dendl;
@@ -7850,7 +7913,7 @@ void Server::_link_rollback_finish(MutationRef& mut, MDRequestRef& mdr,
 }
 
 
-void Server::handle_peer_link_prep_ack(MDRequestRef& mdr, const cref_t<MMDSPeerRequest> &m)
+void Server::handle_peer_link_prep_ack(const MDRequestRef& mdr, const cref_t<MMDSPeerRequest> &m)
 {
   dout(10) << "handle_peer_link_prep_ack " << *mdr
 	   << " " << *m << dendl;
@@ -7882,7 +7945,7 @@ void Server::handle_peer_link_prep_ack(MDRequestRef& mdr, const cref_t<MMDSPeerR
 
 // UNLINK
 
-void Server::handle_client_unlink(MDRequestRef& mdr)
+void Server::handle_client_unlink(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   client_t client = mdr->get_client();
@@ -8039,7 +8102,7 @@ class C_MDS_unlink_local_finish : public ServerLogContext {
   CDentry *straydn;
   version_t dnpv;  // deleted dentry
 public:
-  C_MDS_unlink_local_finish(Server *s, MDRequestRef& r, CDentry *d, CDentry *sd) :
+  C_MDS_unlink_local_finish(Server *s, const MDRequestRef& r, CDentry *d, CDentry *sd) :
     ServerLogContext(s, r), dn(d), straydn(sd),
     dnpv(d->get_projected_version()) {}
   void finish(int r) override {
@@ -8048,7 +8111,7 @@ public:
   }
 };
 
-void Server::_unlink_local(MDRequestRef& mdr, CDentry *dn, CDentry *straydn)
+void Server::_unlink_local(const MDRequestRef& mdr, CDentry *dn, CDentry *straydn)
 {
   dout(10) << "_unlink_local " << *dn << dendl;
 
@@ -8138,7 +8201,7 @@ void Server::_unlink_local(MDRequestRef& mdr, CDentry *dn, CDentry *straydn)
   journal_and_reply(mdr, 0, dn, le, new C_MDS_unlink_local_finish(this, mdr, dn, straydn));
 }
 
-void Server::_unlink_local_finish(MDRequestRef& mdr,
+void Server::_unlink_local_finish(const MDRequestRef& mdr,
 				  CDentry *dn, CDentry *straydn,
 				  version_t dnpv) 
 {
@@ -8200,7 +8263,7 @@ void Server::_unlink_local_finish(MDRequestRef& mdr,
   }
 }
 
-bool Server::_rmdir_prepare_witness(MDRequestRef& mdr, mds_rank_t who, vector<CDentry*>& trace, CDentry *straydn)
+bool Server::_rmdir_prepare_witness(const MDRequestRef& mdr, mds_rank_t who, vector<CDentry*>& trace, CDentry *straydn)
 {
   if (mds->is_cluster_degraded() &&
       !mds->mdsmap->is_clientreplay_or_active_or_stopping(who)) {
@@ -8229,7 +8292,7 @@ bool Server::_rmdir_prepare_witness(MDRequestRef& mdr, mds_rank_t who, vector<CD
 
 struct C_MDS_PeerRmdirPrep : public ServerLogContext {
   CDentry *dn, *straydn;
-  C_MDS_PeerRmdirPrep(Server *s, MDRequestRef& r, CDentry *d, CDentry *st)
+  C_MDS_PeerRmdirPrep(Server *s, const MDRequestRef& r, CDentry *d, CDentry *st)
     : ServerLogContext(s, r), dn(d), straydn(st) {}
   void finish(int r) override {
     server->_logged_peer_rmdir(mdr, dn, straydn);
@@ -8239,14 +8302,14 @@ struct C_MDS_PeerRmdirPrep : public ServerLogContext {
 struct C_MDS_PeerRmdirCommit : public ServerContext {
   MDRequestRef mdr;
   CDentry *straydn;
-  C_MDS_PeerRmdirCommit(Server *s, MDRequestRef& r, CDentry *sd)
+  C_MDS_PeerRmdirCommit(Server *s, const MDRequestRef& r, CDentry *sd)
     : ServerContext(s), mdr(r), straydn(sd) { }
   void finish(int r) override {
     server->_commit_peer_rmdir(mdr, r, straydn);
   }
 };
 
-void Server::handle_peer_rmdir_prep(MDRequestRef& mdr)
+void Server::handle_peer_rmdir_prep(const MDRequestRef& mdr)
 {
   dout(10) << "handle_peer_rmdir_prep " << *mdr
 	   << " " << mdr->peer_request->srcdnpath
@@ -8333,7 +8396,7 @@ void Server::handle_peer_rmdir_prep(MDRequestRef& mdr)
   mdlog->flush();
 }
 
-void Server::_logged_peer_rmdir(MDRequestRef& mdr, CDentry *dn, CDentry *straydn)
+void Server::_logged_peer_rmdir(const MDRequestRef& mdr, CDentry *dn, CDentry *straydn)
 {
   dout(10) << "_logged_peer_rmdir " << *mdr << " on " << *dn << dendl;
   CInode *in = dn->get_linkage()->get_inode();
@@ -8373,7 +8436,7 @@ void Server::_logged_peer_rmdir(MDRequestRef& mdr, CDentry *dn, CDentry *straydn
   }
 }
 
-void Server::handle_peer_rmdir_prep_ack(MDRequestRef& mdr, const cref_t<MMDSPeerRequest> &ack)
+void Server::handle_peer_rmdir_prep_ack(const MDRequestRef& mdr, const cref_t<MMDSPeerRequest> &ack)
 {
   dout(10) << "handle_peer_rmdir_prep_ack " << *mdr
 	   << " " << *ack << dendl;
@@ -8395,7 +8458,7 @@ void Server::handle_peer_rmdir_prep_ack(MDRequestRef& mdr, const cref_t<MMDSPeer
     dout(10) << "still waiting on peers " << mdr->more()->waiting_on_peer << dendl;
 }
 
-void Server::_commit_peer_rmdir(MDRequestRef& mdr, int r, CDentry *straydn)
+void Server::_commit_peer_rmdir(const MDRequestRef& mdr, int r, CDentry *straydn)
 {
   dout(10) << "_commit_peer_rmdir " << *mdr << " r=" << r << dendl;
 
@@ -8429,14 +8492,14 @@ struct C_MDS_LoggedRmdirRollback : public ServerLogContext {
   metareqid_t reqid;
   CDentry *dn;
   CDentry *straydn;
-  C_MDS_LoggedRmdirRollback(Server *s, MDRequestRef& m, metareqid_t mr, CDentry *d, CDentry *st)
+  C_MDS_LoggedRmdirRollback(Server *s, const MDRequestRef& m, metareqid_t mr, CDentry *d, CDentry *st)
     : ServerLogContext(s, m), reqid(mr), dn(d), straydn(st) {}
   void finish(int r) override {
     server->_rmdir_rollback_finish(mdr, reqid, dn, straydn);
   }
 };
 
-void Server::do_rmdir_rollback(bufferlist &rbl, mds_rank_t leader, MDRequestRef& mdr)
+void Server::do_rmdir_rollback(bufferlist &rbl, mds_rank_t leader, const MDRequestRef& mdr)
 {
   // unlink the other rollback methods, the rmdir rollback is only
   // needed to record the subtree changes in the journal for inode
@@ -8507,7 +8570,7 @@ void Server::do_rmdir_rollback(bufferlist &rbl, mds_rank_t leader, MDRequestRef&
   mdlog->flush();
 }
 
-void Server::_rmdir_rollback_finish(MDRequestRef& mdr, metareqid_t reqid, CDentry *dn, CDentry *straydn)
+void Server::_rmdir_rollback_finish(const MDRequestRef& mdr, metareqid_t reqid, CDentry *dn, CDentry *straydn)
 {
   dout(10) << "_rmdir_rollback_finish " << reqid << dendl;
 
@@ -8538,7 +8601,7 @@ void Server::_rmdir_rollback_finish(MDRequestRef& mdr, metareqid_t reqid, CDentr
  * the unlocked varient this is a fastpath check.  we can't really be
  * sure until we rdlock the filelock.
  */
-bool Server::_dir_is_nonempty_unlocked(MDRequestRef& mdr, CInode *in)
+bool Server::_dir_is_nonempty_unlocked(const MDRequestRef& mdr, CInode *in)
 {
   dout(10) << "dir_is_nonempty_unlocked " << *in << dendl;
   ceph_assert(in->is_auth());
@@ -8563,7 +8626,7 @@ bool Server::_dir_is_nonempty_unlocked(MDRequestRef& mdr, CInode *in)
   return false;
 }
 
-bool Server::_dir_is_nonempty(MDRequestRef& mdr, CInode *in)
+bool Server::_dir_is_nonempty(const MDRequestRef& mdr, CInode *in)
 {
   dout(10) << "dir_is_nonempty " << *in << dendl;
   ceph_assert(in->is_auth());
@@ -8599,7 +8662,7 @@ class C_MDS_rename_finish : public ServerLogContext {
   CDentry *destdn;
   CDentry *straydn;
 public:
-  C_MDS_rename_finish(Server *s, MDRequestRef& r,
+  C_MDS_rename_finish(Server *s, const MDRequestRef& r,
 		      CDentry *sdn, CDentry *ddn, CDentry *stdn) :
     ServerLogContext(s, r),
     srcdn(sdn), destdn(ddn), straydn(stdn) { }
@@ -8624,7 +8687,7 @@ public:
  *
  * This function takes responsibility for the passed mdr.
  */
-void Server::handle_client_rename(MDRequestRef& mdr)
+void Server::handle_client_rename(const MDRequestRef& mdr)
 {
   const auto& req = mdr->client_request;
   dout(7) << "handle_client_rename " << *req << dendl;
@@ -9066,7 +9129,7 @@ void Server::handle_client_rename(MDRequestRef& mdr)
 }
 
 
-void Server::_rename_finish(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, CDentry *straydn)
+void Server::_rename_finish(const MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, CDentry *straydn)
 {
   dout(10) << "_rename_finish " << *mdr << dendl;
 
@@ -9114,7 +9177,7 @@ void Server::_rename_finish(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, 
 
 // helpers
 
-bool Server::_rename_prepare_witness(MDRequestRef& mdr, mds_rank_t who, set<mds_rank_t> &witnesse,
+bool Server::_rename_prepare_witness(const MDRequestRef& mdr, mds_rank_t who, set<mds_rank_t> &witnesse,
 				     vector<CDentry*>& srctrace, vector<CDentry*>& dsttrace, CDentry *straydn)
 {
   const auto& client_req = mdr->client_request;
@@ -9159,7 +9222,7 @@ bool Server::_rename_prepare_witness(MDRequestRef& mdr, mds_rank_t who, set<mds_
   return true;
 }
 
-version_t Server::_rename_prepare_import(MDRequestRef& mdr, CDentry *srcdn, bufferlist *client_map_bl)
+version_t Server::_rename_prepare_import(const MDRequestRef& mdr, CDentry *srcdn, bufferlist *client_map_bl)
 {
   version_t oldpv = mdr->more()->inode_import_v;
 
@@ -9228,7 +9291,7 @@ bool Server::_need_force_journal(CInode *diri, bool empty)
   return force_journal;
 }
 
-void Server::_rename_prepare(MDRequestRef& mdr,
+void Server::_rename_prepare(const MDRequestRef& mdr,
 			     EMetaBlob *metablob, bufferlist *client_map_bl,
 			     CDentry *srcdn, CDentry *destdn, std::string_view alternate_name,
                              CDentry *straydn)
@@ -9582,7 +9645,7 @@ void Server::_rename_prepare(MDRequestRef& mdr,
 }
 
 
-void Server::_rename_apply(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, CDentry *straydn)
+void Server::_rename_apply(const MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, CDentry *straydn)
 {
   dout(10) << "_rename_apply " << *mdr << " " << *srcdn << " " << *destdn << dendl;
   dout(10) << " pvs " << mdr->more()->pvmap << dendl;
@@ -9786,7 +9849,7 @@ void Server::_rename_apply(MDRequestRef& mdr, CDentry *srcdn, CDentry *destdn, C
 class C_MDS_PeerRenamePrep : public ServerLogContext {
   CDentry *srcdn, *destdn, *straydn;
 public:
-  C_MDS_PeerRenamePrep(Server *s, MDRequestRef& m, CDentry *sr, CDentry *de, CDentry *st) :
+  C_MDS_PeerRenamePrep(Server *s, const MDRequestRef& m, CDentry *sr, CDentry *de, CDentry *st) :
     ServerLogContext(s, m), srcdn(sr), destdn(de), straydn(st) {}
   void finish(int r) override {
     server->_logged_peer_rename(mdr, srcdn, destdn, straydn);
@@ -9797,7 +9860,7 @@ class C_MDS_PeerRenameCommit : public ServerContext {
   MDRequestRef mdr;
   CDentry *srcdn, *destdn, *straydn;
 public:
-  C_MDS_PeerRenameCommit(Server *s, MDRequestRef& m, CDentry *sr, CDentry *de, CDentry *st) :
+  C_MDS_PeerRenameCommit(Server *s, const MDRequestRef& m, CDentry *sr, CDentry *de, CDentry *st) :
     ServerContext(s), mdr(m), srcdn(sr), destdn(de), straydn(st) {}
   void finish(int r) override {
     server->_commit_peer_rename(mdr, r, srcdn, destdn, straydn);
@@ -9807,14 +9870,14 @@ public:
 class C_MDS_PeerRenameSessionsFlushed : public ServerContext {
   MDRequestRef mdr;
 public:
-  C_MDS_PeerRenameSessionsFlushed(Server *s, MDRequestRef& r) :
+  C_MDS_PeerRenameSessionsFlushed(Server *s, const MDRequestRef& r) :
     ServerContext(s), mdr(r) {}
   void finish(int r) override {
     server->_peer_rename_sessions_flushed(mdr);
   }
 };
 
-void Server::handle_peer_rename_prep(MDRequestRef& mdr)
+void Server::handle_peer_rename_prep(const MDRequestRef& mdr)
 {
   dout(10) << "handle_peer_rename_prep " << *mdr
 	   << " " << mdr->peer_request->srcdnpath
@@ -10053,7 +10116,7 @@ void Server::handle_peer_rename_prep(MDRequestRef& mdr)
   }
 }
 
-void Server::_logged_peer_rename(MDRequestRef& mdr,
+void Server::_logged_peer_rename(const MDRequestRef& mdr,
 				  CDentry *srcdn, CDentry *destdn, CDentry *straydn)
 {
   dout(10) << "_logged_peer_rename " << *mdr << dendl;
@@ -10131,7 +10194,7 @@ void Server::_logged_peer_rename(MDRequestRef& mdr,
   }
 }
 
-void Server::_commit_peer_rename(MDRequestRef& mdr, int r,
+void Server::_commit_peer_rename(const MDRequestRef& mdr, int r,
 				  CDentry *srcdn, CDentry *destdn, CDentry *straydn)
 {
   dout(10) << "_commit_peer_rename " << *mdr << " r=" << r << dendl;
@@ -10272,7 +10335,7 @@ struct C_MDS_LoggedRenameRollback : public ServerLogContext {
   CDentry *straydn;
   map<client_t,ref_t<MClientSnap>> splits[2];
   bool finish_mdr;
-  C_MDS_LoggedRenameRollback(Server *s, MutationRef& m, MDRequestRef& r,
+  C_MDS_LoggedRenameRollback(Server *s, MutationRef& m, const MDRequestRef& r,
 			     CDentry *sd, version_t pv, CDentry *dd, CDentry *st,
 			     map<client_t,ref_t<MClientSnap>> _splits[2], bool f) :
     ServerLogContext(s, r), mut(m), srcdn(sd), srcdnpv(pv), destdn(dd),
@@ -10286,7 +10349,7 @@ struct C_MDS_LoggedRenameRollback : public ServerLogContext {
   }
 };
 
-void Server::do_rename_rollback(bufferlist &rbl, mds_rank_t leader, MDRequestRef& mdr,
+void Server::do_rename_rollback(bufferlist &rbl, mds_rank_t leader, const MDRequestRef& mdr,
 				bool finish_mdr)
 {
   rename_rollback rollback;
@@ -10612,7 +10675,7 @@ void Server::do_rename_rollback(bufferlist &rbl, mds_rank_t leader, MDRequestRef
   }
 }
 
-void Server::_rename_rollback_finish(MutationRef& mut, MDRequestRef& mdr, CDentry *srcdn,
+void Server::_rename_rollback_finish(MutationRef& mut, const MDRequestRef& mdr, CDentry *srcdn,
 				     version_t srcdnpv, CDentry *destdn, CDentry *straydn,
 				     map<client_t,ref_t<MClientSnap>> splits[2], bool finish_mdr)
 {
@@ -10688,7 +10751,7 @@ void Server::_rename_rollback_finish(MutationRef& mut, MDRequestRef& mdr, CDentr
   mut->cleanup();
 }
 
-void Server::handle_peer_rename_prep_ack(MDRequestRef& mdr, const cref_t<MMDSPeerRequest> &ack)
+void Server::handle_peer_rename_prep_ack(const MDRequestRef& mdr, const cref_t<MMDSPeerRequest> &ack)
 {
   dout(10) << "handle_peer_rename_prep_ack " << *mdr
 	   << " witnessed by " << ack->get_source()
@@ -10734,7 +10797,7 @@ void Server::handle_peer_rename_prep_ack(MDRequestRef& mdr, const cref_t<MMDSPee
     dout(10) << "still waiting on peers " << mdr->more()->waiting_on_peer << dendl;
 }
 
-void Server::handle_peer_rename_notify_ack(MDRequestRef& mdr, const cref_t<MMDSPeerRequest> &ack)
+void Server::handle_peer_rename_notify_ack(const MDRequestRef& mdr, const cref_t<MMDSPeerRequest> &ack)
 {
   dout(10) << "handle_peer_rename_notify_ack " << *mdr << " from mds."
 	   << ack->get_source() << dendl;
@@ -10753,7 +10816,7 @@ void Server::handle_peer_rename_notify_ack(MDRequestRef& mdr, const cref_t<MMDSP
   }
 }
 
-void Server::_peer_rename_sessions_flushed(MDRequestRef& mdr)
+void Server::_peer_rename_sessions_flushed(const MDRequestRef& mdr)
 {
   dout(10) << "_peer_rename_sessions_flushed " << *mdr << dendl;
 
@@ -10771,7 +10834,7 @@ void Server::_peer_rename_sessions_flushed(MDRequestRef& mdr)
 
 // snaps
 /* This function takes responsibility for the passed mdr*/
-void Server::handle_client_lssnap(MDRequestRef& mdr)
+void Server::handle_client_lssnap(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
 
@@ -10871,7 +10934,7 @@ void Server::handle_client_lssnap(MDRequestRef& mdr)
 struct C_MDS_mksnap_finish : public ServerLogContext {
   CInode *diri;
   SnapInfo info;
-  C_MDS_mksnap_finish(Server *s, MDRequestRef& r, CInode *di, SnapInfo &i) :
+  C_MDS_mksnap_finish(Server *s, const MDRequestRef& r, CInode *di, SnapInfo &i) :
     ServerLogContext(s, r), diri(di), info(i) {}
   void finish(int r) override {
     server->_mksnap_finish(mdr, diri, info);
@@ -10879,7 +10942,7 @@ struct C_MDS_mksnap_finish : public ServerLogContext {
 };
 
 /* This function takes responsibility for the passed mdr*/
-void Server::handle_client_mksnap(MDRequestRef& mdr)
+void Server::handle_client_mksnap(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   // make sure we have as new a map as the client
@@ -11037,7 +11100,7 @@ void Server::handle_client_mksnap(MDRequestRef& mdr)
   mdlog->flush();
 }
 
-void Server::_mksnap_finish(MDRequestRef& mdr, CInode *diri, SnapInfo &info)
+void Server::_mksnap_finish(const MDRequestRef& mdr, CInode *diri, SnapInfo &info)
 {
   dout(10) << "_mksnap_finish " << *mdr << " " << info << dendl;
 
@@ -11068,7 +11131,7 @@ void Server::_mksnap_finish(MDRequestRef& mdr, CInode *diri, SnapInfo &info)
 struct C_MDS_rmsnap_finish : public ServerLogContext {
   CInode *diri;
   snapid_t snapid;
-  C_MDS_rmsnap_finish(Server *s, MDRequestRef& r, CInode *di, snapid_t sn) :
+  C_MDS_rmsnap_finish(Server *s, const MDRequestRef& r, CInode *di, snapid_t sn) :
     ServerLogContext(s, r), diri(di), snapid(sn) {}
   void finish(int r) override {
     server->_rmsnap_finish(mdr, diri, snapid);
@@ -11076,7 +11139,7 @@ struct C_MDS_rmsnap_finish : public ServerLogContext {
 };
 
 /* This function takes responsibility for the passed mdr*/
-void Server::handle_client_rmsnap(MDRequestRef& mdr)
+void Server::handle_client_rmsnap(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
 
@@ -11170,7 +11233,7 @@ void Server::handle_client_rmsnap(MDRequestRef& mdr)
   mdlog->flush();
 }
 
-void Server::_rmsnap_finish(MDRequestRef& mdr, CInode *diri, snapid_t snapid)
+void Server::_rmsnap_finish(const MDRequestRef& mdr, CInode *diri, snapid_t snapid)
 {
   dout(10) << "_rmsnap_finish " << *mdr << " " << snapid << dendl;
   snapid_t stid = mdr->more()->stid;
@@ -11199,7 +11262,7 @@ void Server::_rmsnap_finish(MDRequestRef& mdr, CInode *diri, snapid_t snapid)
 struct C_MDS_renamesnap_finish : public ServerLogContext {
   CInode *diri;
   snapid_t snapid;
-  C_MDS_renamesnap_finish(Server *s, MDRequestRef& r, CInode *di, snapid_t sn) :
+  C_MDS_renamesnap_finish(Server *s, const MDRequestRef& r, CInode *di, snapid_t sn) :
     ServerLogContext(s, r), diri(di), snapid(sn) {}
   void finish(int r) override {
     server->_renamesnap_finish(mdr, diri, snapid);
@@ -11207,7 +11270,7 @@ struct C_MDS_renamesnap_finish : public ServerLogContext {
 };
 
 /* This function takes responsibility for the passed mdr*/
-void Server::handle_client_renamesnap(MDRequestRef& mdr)
+void Server::handle_client_renamesnap(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
   if (req->get_filepath().get_ino() != req->get_filepath2().get_ino()) {
@@ -11315,7 +11378,7 @@ void Server::handle_client_renamesnap(MDRequestRef& mdr)
   mdlog->flush();
 }
 
-void Server::_renamesnap_finish(MDRequestRef& mdr, CInode *diri, snapid_t snapid)
+void Server::_renamesnap_finish(const MDRequestRef& mdr, CInode *diri, snapid_t snapid)
 {
   dout(10) << "_renamesnap_finish " << *mdr << " " << snapid << dendl;
 
@@ -11337,7 +11400,7 @@ void Server::_renamesnap_finish(MDRequestRef& mdr, CInode *diri, snapid_t snapid
   respond_to_request(mdr, 0);
 }
 
-void Server::handle_client_readdir_snapdiff(MDRequestRef& mdr)
+void Server::handle_client_readdir_snapdiff(const MDRequestRef& mdr)
 {
   const cref_t<MClientRequest>& req = mdr->client_request;
   Session* session = mds->get_session(req);
@@ -11523,7 +11586,7 @@ const bufferlist& Server::get_snap_trace(client_t client, SnapRealm *realm) cons
 
 void Server::_readdir_diff(
   utime_t now,
-  MDRequestRef& mdr,
+  const MDRequestRef& mdr,
   CInode* diri,
   CDir* dir,
   SnapRealm* realm,
@@ -11608,7 +11671,7 @@ void Server::_readdir_diff(
 }
 
 bool Server::build_snap_diff(
-  MDRequestRef& mdr,
+  const MDRequestRef& mdr,
   CDir* dir,
   int bytes_left,
   dentry_key_t* skip_key,

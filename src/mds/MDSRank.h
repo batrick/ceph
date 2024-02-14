@@ -306,7 +306,7 @@ class MDSRank {
 
     void send_message_mds(const ref_t<Message>& m, mds_rank_t mds);
     void send_message_mds(const ref_t<Message>& m, const entity_addrvec_t &addr);
-    void forward_message_mds(MDRequestRef& mdr, mds_rank_t mds);
+    void forward_message_mds(const MDRequestRef& mdr, mds_rank_t mds);
     void send_message_client_counted(const ref_t<Message>& m, client_t client);
     void send_message_client_counted(const ref_t<Message>& m, Session* session);
     void send_message_client_counted(const ref_t<Message>& m, const ConnectionRef& connection);
@@ -518,6 +518,7 @@ class MDSRank {
         std::ostream &ss);
     void command_openfiles_ls(Formatter *f);
     void command_dump_tree(const cmdmap_t &cmdmap, std::ostream &ss, Formatter *f);
+    int command_quiesce_path(Formatter *f, const cmdmap_t &cmdmap, std::ostream &ss);
     void command_dump_inode(Formatter *f, const cmdmap_t &cmdmap, std::ostream &ss);
     void command_cache_drop(uint64_t timeout, Formatter *f, Context *on_finish);
 
