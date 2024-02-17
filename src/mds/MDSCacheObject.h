@@ -210,7 +210,7 @@ class MDSCacheObject {
     ERR_FRAGMENTING_DIR,
     ERR_EXPORTING_INODE,
   };
-  virtual bool can_auth_pin(int *err_code=nullptr) const = 0;
+  virtual bool can_auth_pin(int *err_code=nullptr, bool bypassfreezing=false) const = 0;
   virtual void auth_pin(void *who) = 0;
   virtual void auth_unpin(void *who) = 0;
   virtual bool is_frozen() const = 0;
@@ -325,11 +325,6 @@ class MDSCacheObject {
   mempool::mds_co::compact_multimap<uint64_t, std::pair<uint64_t, MDSContext*>> waiting;
   static uint64_t last_wait_seq;
 };
-
-inline std::ostream& operator<<(std::ostream& out, const MDSCacheObject& o) {
-  o.print(out);
-  return out;
-}
 
 inline std::ostream& operator<<(std::ostream& out, const mdsco_db_line_prefix& o) {
   o.object->print_db_line_prefix(out);
