@@ -602,13 +602,24 @@ private:
       }
     }
     std::shared_ptr<QuiesceStatistics> qs = std::make_shared<QuiesceStatistics>();
-    std::chrono::milliseconds delay = 0ms;
-    bool splitauth = false;
     MDCache *cache;
     MDRequestRef mdr;
     Context* finisher = nullptr;
   };
   MDRequestRef quiesce_path(filepath p, C_MDS_QuiescePath* c, Formatter *f = nullptr, std::chrono::milliseconds delay = 0ms);
+  MDRequestRef get_quiesce_inode_op(CInode* in) {
+    if (in->is_quiesced()) {
+      auto mut = in->quiescelock.get_xlock_by();
+      ceph_assert(mut); /* that would be weird */
+      auto* mdr = dynamic_cast<MDRequestImpl*>(mut.get());
+      ceph_assert(mdr); /* also would be weird */
+      ceph_assert(mdr->internal_op == CEPH_MDS_OP_QUIESCE_INODE);
+      return MDRequestRef(mdr);
+    } else {
+      return MDRequestRef();
+    }
+  }
+  void add_quiesce(CInode* parent, CInode* in);
 
   void clean_open_file_lists();
   void dump_openfiles(Formatter *f);
@@ -1496,7 +1507,6 @@ private:
 
   uint64_t kill_shutdown_at = 0;
 
-  std::map<inodeno_t, MDRequestRef> quiesced_subvolumes;
   DecayCounter quiesce_counter;
   uint64_t quiesce_threshold;
   std::chrono::milliseconds quiesce_sleep;
