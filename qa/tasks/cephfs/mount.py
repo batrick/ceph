@@ -786,7 +786,11 @@ class CephFSMount(object):
                                       omit_sudo=omit_sudo, **kwargs)
 
     def run_shell_payload(self, payload, **kwargs):
-        kwargs['args'] = ["stdin-killer", "--", "bash", "-c", Raw(f"'{payload}'")]
+        timeout = kwargs.pop('timeout', None)
+        kwargs['args'] = ["stdin-killer"]
+        if timeout is not None:
+            kwargs['args'] += [f"--timeout={timeout}"]
+        kwargs['args'] += ["--", "bash", "-c", Raw(f"'{payload}'")]
         if kwargs.pop('sudo', False):
             kwargs['args'].insert(0, 'sudo')
             kwargs['omit_sudo'] = False
