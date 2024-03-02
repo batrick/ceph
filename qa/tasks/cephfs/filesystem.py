@@ -278,7 +278,8 @@ class CephCluster(RunCephCmd):
                 j = json.loads(response_data.replace('inf', 'Infinity'),
                             parse_constant=get_nonnumeric_values)
             except json.decoder.JSONDecodeError:
-                raise RuntimeError(response_data) # assume it is an error message, pass it up
+                log.error("could not decode: {}".format(out))
+                raise
             
             pretty = json.dumps(j, sort_keys=True, indent=2)
             log.debug(f"_json_asok output\n{pretty}")
@@ -1298,36 +1299,42 @@ class Filesystem(MDSCluster):
 
         return version
 
-    def mds_asok(self, command, mds_id=None, timeout=None):
+    def mds_asok(self, *args, mds_id=None, timeout=None):
         if mds_id is None:
-            return self.rank_asok(command, timeout=timeout)
+            return self.rank_asok(*args, timeout=timeout)
+        if len(args) == 1 and isinstance(args[0], (tuple, list)):
+            args = list(args[0])
 
-        return self.json_asok(command, 'mds', mds_id, timeout=timeout)
+        return self.json_asok(list(args), 'mds', mds_id, timeout=timeout)
 
-    def mds_tell(self, command, mds_id=None):
+    def mds_tell(self, *args, mds_id=None, timeout=None):
         if mds_id is None:
-            return self.rank_tell(command)
+            return self.rank_tell(*args)
+        if len(args) == 1 and isinstance(args[0], (tuple, list)):
+            args = list(args[0])
 
-        return json.loads(self.get_ceph_cmd_stdout("tell", f"mds.{mds_id}", *command))
-
-    def rank_asok(self, command, rank=0, status=None, timeout=None):
-        info = self.get_rank(rank=rank, status=status)
-        return self.json_asok(command, 'mds', info['name'], timeout=timeout)
-
-    def rank_tell(self, command, rank=0, status=None, timeout=120):
         try:
-            out = self.get_ceph_cmd_stdout("tell", f"mds.{self.id}:{rank}", *command, timeout=timeout)
+            out = self.get_ceph_cmd_stdout("tell", f"mds.{mds_id}", *args, timeout=timeout)
             return json.loads(out)
         except json.decoder.JSONDecodeError:
             log.error("could not decode: {}".format(out))
             raise
 
-    def ranks_tell(self, command, status=None):
+    def rank_asok(self, *args, rank=0, status=None, **kwargs):
+        info = self.get_rank(rank=rank, status=status)
+        return self.mds_asok(*args, mds_id=info['name'], **kwargs)
+
+    def rank_tell(self, *args, rank=None, status=None, timeout=120):
+        if rank is None:
+            rank = 0
+        return self.mds_tell(*args, mds_id=f"{self.id}:{rank}", timeout=timeout)
+
+    def ranks_tell(self, *args, status=None):
         if status is None:
             status = self.status()
         out = []
         for r in status.get_ranks(self.id):
-            result = self.rank_tell(command, rank=r['rank'], status=status)
+            result = self.rank_tell(*args, rank=r['rank'], status=status)
             out.append((r['rank'], result))
         return sorted(out)
 
@@ -1778,3 +1785,23 @@ class Filesystem(MDSCluster):
             return result
         else:
             return self.rank_tell(['damage', 'ls'], rank=rank)
+
+    def get_ops(self, locks=False, path=None, rank=None, status=None):
+        name = self.get_rank(rank=rank, status=status)['name']
+        cmd = ['ops']
+        if locks:
+            cmd.append('--flags=locks')
+        if path:
+            cmd.append(f'--path={path}')
+        J = self.rank_tell(cmd, rank=rank)
+        if path:
+            mds_remote = self.mon_manager.find_remote('mds', name)
+            blob = misc.get_file(mds_remote, path, sudo=True).decode('utf-8')
+            J = json.loads(blob)
+        return J
+
+    def get_op(self, reqid, rank=None):
+        return self.rank_tell(['op', 'get', reqid], rank=rank)
+
+    def kill_op(self, reqid, rank=None):
+        return self.rank_tell(['op', 'kill', reqid], rank=rank)
