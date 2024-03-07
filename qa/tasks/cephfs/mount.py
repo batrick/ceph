@@ -785,7 +785,7 @@ class CephFSMount(object):
                                       stdout=stdout, stderr=stderr,
                                       omit_sudo=omit_sudo, **kwargs)
 
-    def run_shell_payload(self, payload, **kwargs):
+    def run_shell_payload(self, payload, wait=True, **kwargs):
         timeout = kwargs.pop('timeout', None)
         kwargs['args'] = ["stdin-killer"]
         if timeout is not None:
@@ -794,7 +794,14 @@ class CephFSMount(object):
         if kwargs.pop('sudo', False):
             kwargs['args'].insert(0, 'sudo')
             kwargs['omit_sudo'] = False
-        return self.run_shell(**kwargs)
+        stdout = kwargs.pop('stdout', StringIO())
+        stderr = kwargs.pop('stderr', StringIO())
+        stdin = kwargs.pop('stdin', run.PIPE)
+        p = self.run_shell(stdin=stdin, stdout=stdout, stderr=stderr, wait=False, **kwargs)
+        if wait:
+            p.stdin.close()
+            p.wait()
+        return p
 
     def run_as_user(self, **kwargs):
         """
