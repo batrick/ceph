@@ -19,3 +19,10 @@ tasks:
       - ceph osd dump
 - fs.ready:
     timeout: 300
+- cephadm.shell:
+    mds.a:
+      - mount
+      - ls /home/
+      - ls /home/ubuntu
+      - ls /home/ubuntu/cephtest
+      - df -h /home/ubuntu/cephtest

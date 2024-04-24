@@ -1160,11 +1160,17 @@ def ceph_mdss(ctx, config):
             nodes.append(remote.shortname + '=' + id_)
             daemons[role] = (remote, id_)
     if nodes:
-        _shell(ctx, cluster_name, remote, [
-            'ceph', 'orch', 'apply', 'mds',
-            'all',
-            str(len(nodes)) + ';' + ';'.join(nodes)]
-        )
+        spec = f"""
+            service_type: mds
+            service_id: all
+            placement:
+              hosts: [{",".join(nodes)}]
+            extra_container_args:
+              - "-v /home/ubuntu/cephtest:/home/ubuntu/cephtest"
+        """
+        stdin = StringIO(spec)
+        args = ['ceph', 'orch', 'apply', '-i', '-']
+        _shell(ctx, cluster_name, remote, args, stdin=stdin)
     for role, i in daemons.items():
         remote, id_ = i
         ctx.daemons.register_daemon(
