@@ -99,7 +99,7 @@ class TestDeviceHealth(MgrTestCase):
                     pass
             return False
 
-        self.wait_until_true(all_dead, timeout=30)
+        self.wait_until_true(killpoint_dead, timeout=30)
         self.mgr_cluster.set_down()
 
         script = """
