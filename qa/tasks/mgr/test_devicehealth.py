@@ -38,6 +38,26 @@ class TestDeviceHealth(MgrTestCase):
         with self.assert_cluster_log("Unhandled exception from module 'devicehealth' while running", present=False):
             self.wait_until_true(lambda: self.mgr_cluster.get_active_id() is not None, timeout=60)
 
+    def _wait_for_killpoint_death(self):
+        # wait for killpoint trigger to kill a mgr
+        def killpoint_dead():
+            for mgr_id, mgr_daemon in self.mgr_cluster.mgr_daemons.items():
+                log.info(f"{mgr_id}")
+                try:
+                    s = mgr_daemon.check_status()
+                    if s is None:
+                        continue
+                    log.info(f"{s}")
+                except CommandFailedError as e:
+                    log.info(f"{e}")
+                    if e.exitstatus == 120:
+                        return True
+                    pass
+            return False
+
+        self.wait_until_true(killpoint_dead, timeout=30)
+        self.mgr_cluster.set_down()
+
     def test_sql_commit(self):
         """
         That commits work.
@@ -48,21 +68,7 @@ class TestDeviceHealth(MgrTestCase):
         self.remove_mgr_pool()
         self.mgr_cluster.set_down(yes='false')
 
-        # wait for killpoint trigger kills all mgrs
-        def all_dead():
-            for mgr_id, mgr_daemon in self.mgr_cluster.mgr_daemons.items():
-                log.info(f"{mgr_id}")
-                try:
-                    s = mgr_daemon.check_status()
-                    if s is None:
-                        return False
-                    log.info(f"{s}")
-                except CommandFailedError as e:
-                    log.info(f"{e}")
-                    pass
-            return True
-
-        self.wait_until_true(all_dead, timeout=30)
+        self._wait_for_killpoint_death()
 
         script = """
             export CEPH_ARGS='--id admin --no-log-to-stderr'
@@ -83,24 +89,7 @@ class TestDeviceHealth(MgrTestCase):
         self.remove_mgr_pool()
         self.mgr_cluster.set_down(yes='false')
 
-        # wait for killpoint trigger to kill a mgr
-        def killpoint_dead():
-            for mgr_id, mgr_daemon in self.mgr_cluster.mgr_daemons.items():
-                log.info(f"{mgr_id}")
-                try:
-                    s = mgr_daemon.check_status()
-                    if s is None:
-                        continue
-                    log.info(f"{s}")
-                except CommandFailedError as e:
-                    log.info(f"{e}")
-                    if e.exitstatus == 120:
-                        return True
-                    pass
-            return False
-
-        self.wait_until_true(killpoint_dead, timeout=30)
-        self.mgr_cluster.set_down()
+        self._wait_for_killpoint_death()
 
         script = """
             export CEPH_ARGS='--id admin --no-log-to-stderr'
