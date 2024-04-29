@@ -83,8 +83,8 @@ class TestDeviceHealth(MgrTestCase):
         self.remove_mgr_pool()
         self.mgr_cluster.set_down(yes='false')
 
-        # wait for killpoint trigger kills all mgrs
-        def all_dead():
+        # wait for killpoint trigger to kill a mgr
+        def killpoint_dead():
             for mgr_id, mgr_daemon in self.mgr_cluster.mgr_daemons.items():
                 log.info(f"{mgr_id}")
                 try:
@@ -94,10 +94,13 @@ class TestDeviceHealth(MgrTestCase):
                     log.info(f"{s}")
                 except CommandFailedError as e:
                     log.info(f"{e}")
+                    if e.exitstatus == 120:
+                        return True
                     pass
-            return True
+            return False
 
         self.wait_until_true(all_dead, timeout=30)
+        self.mgr_cluster.set_down()
 
         script = """
             export CEPH_ARGS='--id admin --no-log-to-stderr'
