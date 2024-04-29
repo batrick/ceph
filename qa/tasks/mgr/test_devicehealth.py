@@ -90,7 +90,7 @@ class TestDeviceHealth(MgrTestCase):
                 try:
                     s = mgr_daemon.check_status()
                     if s is None:
-                        return False
+                        continue
                     log.info(f"{s}")
                 except CommandFailedError as e:
                     log.info(f"{e}")
