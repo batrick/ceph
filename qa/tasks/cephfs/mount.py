@@ -548,7 +548,6 @@ class CephFSMountBase(object):
         verify_keys = [
           'client_id',
           'client_keyring_path',
-          'client_remote',
           'hostfs_mntpt',
           'cephfs_name',
           'cephfs_mntpt',
