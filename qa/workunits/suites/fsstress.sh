@@ -8,6 +8,7 @@ wget -q -O ltp-full.tgz http://download.ceph.com/qa/ltp-full-20091231.tgz
 tar xzf ltp-full.tgz
 pushd ltp-full-20091231/testcases/kernel/fs/fsstress
 make
+sleep 3600
 BIN=$(readlink -f fsstress)
 popd
 popd
