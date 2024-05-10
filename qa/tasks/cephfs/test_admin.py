@@ -1362,7 +1362,6 @@ class TestFsAuthorize(CephFSTestCase):
                           "needed to enforce root_squash MDS caps")
 
         self.mount_a.umount_wait()
-        self.mount_b.umount_wait()
 
         FS_AUTH_CAPS = (('/', 'rw', 'root_squash'),)
         keyring = self.fs.authorize(self.client_id, FS_AUTH_CAPS)
@@ -1392,7 +1391,6 @@ class TestFsAuthorize(CephFSTestCase):
                           "needed to enforce root_squash MDS caps")
 
         self.mount_a.umount_wait()
-        self.mount_b.umount_wait()
 
         FS_AUTH_CAPS = (('/', 'rw', 'root_squash'),)
         keyring = self.fs.authorize(self.client_id, FS_AUTH_CAPS)
