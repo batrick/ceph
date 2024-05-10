@@ -1337,7 +1337,7 @@ class TestFsAuthorize(CephFSTestCase):
         self.run_ceph_cmd(f'auth caps client.{self.mount_a.client_id} '
                           f'mon "allow r" '
                           f'osd "allow rw tag cephfs data={self.fs1.name}, allow rw tag cephfs data={self.fs2.name}" '
-                          f'mds "allow rwp fsname={self.fs1.name}, allow rw root_squash fsname={self.fs2.name}"')
+                          f'mds "allow rwp fsname={self.fs1.name}, allow rw fsname={self.fs2.name} root_squash"')
 
         CEPHFS_FEATURE_MDS_AUTH_CAPS_CHECK = 21
         # all but CEPHFS_FEATURE_MDS_AUTH_CAPS_CHECK
