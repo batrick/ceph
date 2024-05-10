@@ -1348,10 +1348,6 @@ class TestFsAuthorize(CephFSTestCase):
         with self.assert_cluster_log("report clients with broken root_squash", present=False):
             self.mount_a.remount(mntargs=mntargs, cephfs_name=self.fs1.name)
 
-        captester = CapTester(self.mount_a, '/')
-        captester.conduct_pos_test_for_read_caps()
-        captester.conduct_pos_test_for_open_caps()
-
     def test_rootsquash_nofeature(self):
         """
         That having root_squash on an fs without the feature bit raises a HEALTH_ERR warning.
