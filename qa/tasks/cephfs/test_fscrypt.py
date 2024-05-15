@@ -1,13 +1,67 @@
+from io import StringIO
+import random
+import string
+
 from logging import getLogger
 
-from io import StringIO
+from tasks.cephfs.cephfs_test_case import CephFSTestCase
 from tasks.cephfs.xfstests_dev import XFSTestsDev
-
 
 log = getLogger(__name__)
 
+class TestFSCrypt(CephFSTestCase):
+    CLIENTS_REQUIRED = 1
 
-class TestFscrypt(XFSTestsDev):
+    def setUp(self):
+        self.protector = ''.join(random.choice(string.ascii_letters) for _ in range(8))
+        self.key_file = "/tmp/key"
+        self.path = "dir/"
+
+        self.mount_a.run_shell_payload(f"sudo fscrypt setup --quiet")
+        self.mount_a.run_shell_payload(f"sudo fscrypt status")
+        self.mount_a.run_shell_payload(f"sudo fscrypt setup --quiet {self.mount_a.hostfs_mntpt}")
+        self.mount_a.run_shell_payload(f"sudo fscrypt status")
+        self.mount_a.run_shell_payload(f"sudo dd if=/dev/urandom of={self.key_file} bs=32 count=1")
+        self.mount_a.run_shell_payload(f"mkdir -p {self.path}")
+        self.mount_a.run_shell_payload(f"sudo fscrypt encrypt --quiet --source=raw_key --name={self.protector} --no-recovery --skip-unlock --key={self.key_file} {self.path}")
+        self.mount_a.run_shell_payload(f"sudo fscrypt unlock --quiet --key=/tmp/key {self.path}")
+
+    def tearDown(self):
+        self.mount_a.run_shell_payload(f"sudo fscrypt lock --quiet {self.path}")
+
+    def test_fscrypt_basic_mount(self):
+        """
+        That fscrypt can be setup and ingest files.
+        """
+
+        self.mount_a.run_shell_payload(f"cp -av /usr/bin {self.path}")
+
+class TestFSCryptRecovery(TestFSCrypt):
+
+    def test_fscrypt_journal_recovery(self):
+        """
+        That alternate_name can be recovered from the journal.
+        """
+
+        file = ''.join(random.choice(string.ascii_letters) for _ in range(255))
+
+        self.mount_a.run_shell_payload(f"cd {path} && dd if=/dev/urandom of={file} bs=512 count=1 && stat {file}")
+
+        # TODO: verify alternate_name is set
+        self.fs.read_cache("/dir", depth=0)
+
+        self.fs.fail()
+
+        self.fs.journal_tool(['event', 'recover_dentries', 'list'], 0)
+        self.fs.journal_tool(['journal', 'reset'], 0)
+
+        self.fs.set_joinable()
+        self.fs.wait_for_daemons()
+
+        self.mount_a.run_shell_payload(f"cd {path} && stat {file}")
+
+
+class TestFSCryptXFS(XFSTestsDev):
 
     def setup_xfsprogs_devs(self):
         self.install_xfsprogs = True

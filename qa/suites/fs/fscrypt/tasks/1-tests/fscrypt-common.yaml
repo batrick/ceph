@@ -1,4 +1,14 @@
+overrides:
+  install:
+    extra_system_packages:
+      rpm:
+        - fscrypt
+      deb:
+        - fscrypt
 tasks:
+  - full_sequential_finally:
+    - sleep:
+        duration: 3600
   - cephfs_test_runner:
       fail_on_skip: false
       modules:
