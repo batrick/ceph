@@ -551,6 +551,7 @@ class TestQuiesce(QuiesceTestCase):
         self.assertEqual(J['state']['inodes_blocked'], 1)
         self._verify_quiesce(root=self.subvolume)
 
+
     def test_quiesce_slow(self):
         """
         That a subvolume is quiesced when artificially slowed down.
@@ -853,6 +854,47 @@ class TestQuiesceMultiRank(QuiesceTestCase):
             op = self._wait_for_quiesce_complete(reqid, rank=rank, path=path, status=status)
         for rank, op, path in ops:
             self._verify_quiesce(root=path, rank=rank, status=status)
+
+    def test_quiesce_rename_witness(self):
+        """
+        """
+
+        #self.config_set('mds', 'mds_bal_replicate_threshold', '1')
+        self._configure_subvolume()
+        self.fs.set_max_mds(3)
+        status = self.fs.wait_for_daemons()
+
+        self.mount_a.run_shell_payload("mkdir -p dir1/dir2/dir0/dirX")
+
+        subtrees = []
+        self.mount_a.setfattr("dir1", "ceph.dir.pin", "1")
+        subtrees.append((self.mntpnt+"/dir1", 1))
+        self.mount_a.setfattr("dir1/dir2", "ceph.dir.pin", "2")
+        subtrees.append((self.mntpnt+"/dir1/dir2", 2))
+        self.mount_a.setfattr("dir1/dir2/dir0", "ceph.dir.pin", "0")
+        subtrees.append((self.mntpnt+"/dir1/dir2/dir0", 0))
+
+        status = self._wait_subtrees(subtrees, status=status, rank=0)
+
+        J = self.fs.rank_tell("quiesce", "path", self.subvolume, rank=2)
+        log.debug(f"{J}")
+        reqid = self._reqid_tostr(J['op']['reqid'])
+        self._wait_for_quiesce_complete(reqid, rank=2)
+
+        # okay, now rename
+        self.mount_a.run_shell_payload("mv dir1/dir2/dir0 dir1/")
+
+        J = self.fs.rank_tell("quiesce", "path", self.subvolume, rank=0)
+        log.debug(f"{J}")
+        reqid = self._reqid_tostr(J['op']['reqid'])
+        self._wait_for_quiesce_complete(reqid, rank=0)
+
+        J = self.fs.rank_tell("quiesce", "path", self.subvolume, rank=1)
+        log.debug(f"{J}")
+        reqid = self._reqid_tostr(J['op']['reqid'])
+        self._wait_for_quiesce_complete(reqid, rank=1)
+
+        self._verify_quiesce(rank=0, splitauth=True)
 
     def test_quiesce_block_replicated(self):
         """
