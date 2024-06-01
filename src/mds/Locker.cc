@@ -3354,6 +3354,16 @@ void Locker::handle_client_caps(const cref_t<MClientCaps> &m)
     return;
   }
 
+  // Check for bogus follows: https://tracker.ceph.com/issues/54546#note-7
+  // If we are in clientreplay/active/stopping, then snapclient should be sync'd
+  ceph_assert(mds->snapclient->is_synced());
+  // maybe get global snaprealm
+  auto next_snap = snapclient->get_last_seq()+1;
+  // XXX look at MDCache::journal_dirty_inode first handling
+  if (first > last || (snapclient->is_synced() && first > next_snap)) {
+
+  }
+
   if (mds->logger) mds->logger->inc(l_mdss_handle_client_caps);
   if (dirty) {
       if (mds->logger) mds->logger->inc(l_mdss_handle_client_caps_dirty);

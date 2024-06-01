@@ -2969,6 +2969,24 @@ TEST(BufferList, TestCopyAll) {
   ASSERT_EQ(memcmp(big.get(), big2.get(), BIG_SZ), 0);
 }
 
+/* test that b2 created from b1 is not affected by b1.clear() */
+TEST(BufferList, TestCopy) {
+  const static size_t BIG_SZ = 10737414;
+  std::shared_ptr <unsigned char> big(
+      (unsigned char*)malloc(BIG_SZ), free);
+  unsigned char c = 0;
+  for (size_t i = 0; i < BIG_SZ; ++i) {
+    big.get()[i] = c++;
+  }
+  bufferlist bl;
+  bl.append((const char*)big.get(), BIG_SZ);
+  bufferlist bl2 = std::as_const(bl);
+  ASSERT_EQ(bl2.length(), BIG_SZ);
+  bl.clear();
+  ASSERT_EQ(bl2.length(), BIG_SZ);
+}
+
+
 TEST(BufferList, InvalidateCrc) {
   const static size_t buffer_size = 262144;
   std::shared_ptr <unsigned char> big(
