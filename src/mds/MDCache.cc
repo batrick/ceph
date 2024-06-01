@@ -10437,7 +10437,7 @@ void MDCache::handle_discover(const cref_t<MDiscover> &dis)
     // delay processing request from survivor because we may not yet choose lock states.
     if (!mds->mdsmap->is_rejoin(from)) {
       dout(0) << "discover_reply not yet active(|still rejoining), delaying" << dendl;
-      mds->wait_for_replay(new C_MDS_RetryMessage(mds, dis));
+      mds->wait_for_clientreplay(new C_MDS_RetryMessage(mds, dis));
       return;
     }
   }

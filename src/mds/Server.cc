@@ -536,7 +536,7 @@ void Server::handle_client_reclaim(const cref_t<MClientReclaim> &m)
   }
 
   if (mds->get_state() < MDSMap::STATE_CLIENTREPLAY) {
-    mds->wait_for_replay(new C_MDS_RetryMessage(mds, m));
+    mds->wait_for_clientreplay(new C_MDS_RetryMessage(mds, m));
     return;
   }
 
@@ -591,7 +591,7 @@ void Server::handle_client_session(const cref_t<MClientSession> &m)
     }
   } else {
     if (mds->get_state() < MDSMap::STATE_CLIENTREPLAY) {
-      mds->wait_for_replay(new C_MDS_RetryMessage(mds, m));
+      mds->wait_for_clientreplay(new C_MDS_RetryMessage(mds, m));
       return;
     }
   }
@@ -2853,7 +2853,7 @@ void Server::handle_peer_request(const cref_t<MMDSPeerRequest> &m)
 
   if (!mds->is_clientreplay() && !mds->is_active() && !mds->is_stopping()) {
     dout(3) << "not clientreplay|active yet, waiting" << dendl;
-    mds->wait_for_replay(new C_MDS_RetryMessage(mds, m));
+    mds->wait_for_clientreplay(new C_MDS_RetryMessage(mds, m));
     return;
   }
 
@@ -2945,7 +2945,7 @@ void Server::handle_peer_request_reply(const cref_t<MMDSPeerRequest> &m)
       return;
     }
     dout(3) << "not clientreplay|active yet, waiting" << dendl;
-    mds->wait_for_replay(new C_MDS_RetryMessage(mds, m));
+    mds->wait_for_clientreplay(new C_MDS_RetryMessage(mds, m));
     return;
   }
 

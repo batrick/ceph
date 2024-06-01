@@ -2871,7 +2871,7 @@ void Locker::handle_inode_file_caps(const cref_t<MInodeFileCaps> &m)
   // nobody should be talking to us during recovery.
   if (mds->get_state() < MDSMap::STATE_CLIENTREPLAY) {
     if (mds->get_want_state() >= MDSMap::STATE_CLIENTREPLAY) {
-      mds->wait_for_replay(new C_MDS_RetryMessage(mds, m));
+      mds->wait_for_clientreplay(new C_MDS_RetryMessage(mds, m));
       return;
     }
     ceph_abort_msg("got unexpected message during recovery");
@@ -3350,7 +3350,7 @@ void Locker::handle_client_caps(const cref_t<MClientCaps> &m)
       mdcache->set_reconnected_dirty_caps(client, m->get_ino(), dirty,
 					  op == CEPH_CAP_OP_FLUSHSNAP);
     }
-    mds->wait_for_replay(new C_MDS_RetryMessage(mds, m));
+    mds->wait_for_clientreplay(new C_MDS_RetryMessage(mds, m));
     return;
   }
 
@@ -4194,7 +4194,7 @@ void Locker::handle_client_cap_release(const cref_t<MClientCapRelease> &m)
   dout(10) << "handle_client_cap_release " << *m << dendl;
 
   if (!mds->is_clientreplay() && !mds->is_active() && !mds->is_stopping()) {
-    mds->wait_for_replay(new C_MDS_RetryMessage(mds, m));
+    mds->wait_for_clientreplay(new C_MDS_RetryMessage(mds, m));
     return;
   }
 

@@ -340,8 +340,8 @@ class MDSRank {
     void wait_for_active(MDSContext *c) {
       waiting_for_active.push_back(c);
     }
-    void wait_for_replay(MDSContext *c) { 
-      waiting_for_replay.push_back(c); 
+    void wait_for_clientreplay(MDSContext *c) {
+      waiting_for_clientreplay.push_back(c);
     }
     void wait_for_rejoin(MDSContext *c) {
       waiting_for_rejoin.push_back(c);
@@ -616,7 +616,7 @@ class MDSRank {
 
     ceph_tid_t last_tid = 0;    // for mds-initiated requests (e.g. stray rename)
 
-    MDSContext::vec waiting_for_active, waiting_for_replay, waiting_for_rejoin,
+    MDSContext::vec waiting_for_active, waiting_for_clientreplay, waiting_for_rejoin,
 				waiting_for_reconnect, waiting_for_resolve;
     MDSContext::vec waiting_for_any_client_connection;
     MDSContext::que replay_queue;
