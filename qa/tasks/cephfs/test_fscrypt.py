@@ -54,7 +54,7 @@ class TestFSCryptRecovery(FSCryptTestCase):
 
         file = ''.join(random.choice(string.ascii_letters) for _ in range(255))
 
-        self.mount_a.run_shell_payload(f"cd {self.path} && dd if=/dev/urandom of={file} bs=512 count=1 conv=sync && stat {file}")
+        self.mount_a.run_shell_payload(f"cd {self.path} && dd if=/dev/urandom of={file} bs=512 count=1 oflag=sync && sync . && stat {file}")
 
         def verify_alternate_name():
             J = self.fs.read_cache("/dir", depth=0)
