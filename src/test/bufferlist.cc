@@ -2979,11 +2979,18 @@ TEST(BufferList, TestCopy) {
     big.get()[i] = c++;
   }
   bufferlist bl;
-  bl.append((const char*)big.get(), BIG_SZ);
-  bufferlist bl2 = std::as_const(bl);
-  ASSERT_EQ(bl2.length(), BIG_SZ);
-  bl.clear();
-  ASSERT_EQ(bl2.length(), BIG_SZ);
+  {
+    bufferlist bl2;
+    bl2.append((const char*)big.get(), BIG_SZ);
+    ASSERT_EQ(bl2.length(), BIG_SZ);
+    bl = std::as_const(bl2);
+    bl2.clear();
+  }
+  ASSERT_EQ(bl.length(), BIG_SZ);
+  std::shared_ptr <unsigned char> big2(
+      (unsigned char*)malloc(BIG_SZ), free);
+  bl.begin().copy(BIG_SZ, (char*)big2.get());
+  ASSERT_EQ(memcmp(big.get(), big2.get(), BIG_SZ), 0);
 }
 
 
