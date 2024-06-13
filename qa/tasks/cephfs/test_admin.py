@@ -185,12 +185,16 @@ class TestMdsLastSeen(CephFSTestCase):
 
         status = self.fs.status()
         r0 = self.fs.get_rank(0, status=status)
-        self.fs.mds_stop(mds_id=r0['name']) # mds sends down:dne when it exits
-        sleep(2)
-        s = self.get_ceph_cmd_stdout("--format=json", "mds", "last-seen", r0['name'])
-        J = json.loads(s)
-        seconds = int(re.match(r"^(\d+)s$", J['last-seen']).group(1))
-        self.assertGreater(seconds, 1)
+        self.fs.mds_stop(mds_id=r0['name'])
+        with safe_while(sleep=1, tries=self.fs.beacon_timeout, action='wait for last-seen >0') as proceed:
+            while proceed():
+                s = self.get_ceph_cmd_stdout("--format=json", "mds", "last-seen", r0['name'])
+                J = json.loads(s)
+                seconds = int(re.match(r"^(\d+)s$", J['last-seen']).group(1))
+                if seconds == 0:
+                    continue
+                self.assertGreater(seconds, 1)
+                break
 
     def test_gc(self):
         """
