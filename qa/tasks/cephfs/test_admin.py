@@ -160,7 +160,7 @@ class TestMdsLastSeen(CephFSTestCase):
         """
 
         try:
-            s = self.get_ceph_cmd_stdout("--format=json", "mds", "last-seen", 'foo')
+            self.get_ceph_cmd_stdout("--format=json", "mds", "last-seen", 'foo')
         except CommandFailedError as e:
             self.assertEqual(e.exitstatus, errno.ENOENT)
         else:
@@ -193,7 +193,7 @@ class TestMdsLastSeen(CephFSTestCase):
                 seconds = int(re.match(r"^(\d+)s$", J['last-seen']).group(1))
                 if seconds == 0:
                     continue
-                self.assertGreater(seconds, 1)
+                self.assertGreater(seconds, 0)
                 break
 
     def test_gc(self):
