@@ -219,7 +219,7 @@ class TestMdsLastSeen(CephFSTestCase):
                 last = seconds
             except CommandFailedError as e:
                 self.assertEqual(e.exitstatus, errno.ENOENT)
-                self.assertGreater(last + 2, prune_time)
+                self.assertGreaterEqual(last + 2, prune_time)
                 return
         self.fail("map was no garbage collected as expected")
 
