@@ -186,6 +186,7 @@ class TestMdsLastSeen(CephFSTestCase):
         status = self.fs.status()
         r0 = self.fs.get_rank(0, status=status)
         self.fs.mds_stop(mds_id=r0['name'])
+        sleep(2)
         with safe_while(sleep=1, tries=self.fs.beacon_timeout, action='wait for last-seen >0') as proceed:
             while proceed():
                 s = self.get_ceph_cmd_stdout("--format=json", "mds", "last-seen", r0['name'])
@@ -193,7 +194,7 @@ class TestMdsLastSeen(CephFSTestCase):
                 seconds = int(re.match(r"^(\d+)s$", J['last-seen']).group(1))
                 if seconds == 0:
                     continue
-                self.assertGreater(seconds, 0)
+                self.assertGreater(seconds, 1)
                 break
 
     def test_gc(self):
@@ -202,14 +203,15 @@ class TestMdsLastSeen(CephFSTestCase):
         """
 
         prune_time = 20
+        sleep_time = 2
         self.config_set('mon', 'mon_fsmap_prune_threshold', prune_time)
         status = self.fs.status()
         r0 = self.fs.get_rank(0, status=status)
         self.fs.mds_stop(mds_id=r0['name'])
         self.fs.rank_fail()
         last = 0
-        for i in range(prune_time):
-            sleep(2) # we will sleep twice prune_time
+        for i in range(prune_time//sleep_time):
+            sleep(sleep_time) # we will sleep twice prune_time
             try:
                 s = self.get_ceph_cmd_stdout("--format=json", "mds", "last-seen", r0['name'])
                 J = json.loads(s)
@@ -219,7 +221,7 @@ class TestMdsLastSeen(CephFSTestCase):
                 last = seconds
             except CommandFailedError as e:
                 self.assertEqual(e.exitstatus, errno.ENOENT)
-                self.assertGreaterEqual(last + 2, prune_time)
+                self.assertGreaterEqual(last + sleep_time + 1, prune_time) # rounding error add 1
                 return
         self.fail("map was no garbage collected as expected")
 
