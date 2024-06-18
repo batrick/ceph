@@ -210,7 +210,7 @@ class TestMdsLastSeen(CephFSTestCase):
         self.fs.mds_stop(mds_id=r0['name'])
         self.fs.rank_fail()
         last = 0
-        for i in range(prune_time//sleep_time):
+        for i in range(prune_time):
             sleep(sleep_time) # we will sleep twice prune_time
             try:
                 s = self.get_ceph_cmd_stdout("--format=json", "mds", "last-seen", r0['name'])
