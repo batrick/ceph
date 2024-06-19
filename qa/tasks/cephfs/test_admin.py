@@ -186,6 +186,7 @@ class TestMdsLastSeen(CephFSTestCase):
         status = self.fs.status()
         r0 = self.fs.get_rank(0, status=status)
         self.fs.mds_stop(mds_id=r0['name'])
+        self.fs.rank_fail()
         sleep(2)
         with safe_while(sleep=1, tries=self.fs.beacon_timeout, action='wait for last-seen >0') as proceed:
             while proceed():
