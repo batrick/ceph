@@ -6,13 +6,6 @@ teuthology:
       log.debug("overriding testing kernel with %s", kernel)
       yaml_fragment.kernel.client = kernel
     end
-# remove the default for non-client nodes:
-  postmerge:
-    - |
-      py_attrgetter(yaml.kernel).pop('branch', nil)
-      py_attrgetter(yaml.kernel).pop('flavor', nil)
-      py_attrgetter(yaml.kernel).pop('kdb', nil)
-      py_attrgetter(yaml.kernel).pop('sha1', nil)
 
 kernel:
   client:

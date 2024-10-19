@@ -1,0 +1,15 @@
+# When the --kernel option is given to teuthology-suite, the "default" kernel
+# is set for all nodes. We don't generally want to use a custom kernel for all
+# tests, so unset it. The k-testing.yaml will set it, if given, for only the
+# client nodes.
+#
+# Allow overriding this by using a branch ending in "-all".
+
+teuthology:
+  postmerge:
+    - |
+      local branch = yaml.kernel.branch
+      if branch and not yaml.kernel.branch:find "-all$" then
+        log.debug("removing default kernel specification: %s", yaml.kernel)
+        py_attrgetter(yaml.kernel).clear()
+      end
