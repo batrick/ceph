@@ -1,19 +1,29 @@
 meta:
-- desc: |
-   install ceph/reef latest
+- desc: install ceph/reef HEAD
 tasks:
 - install:
     branch: reef
     exclude_packages:
-      - librados3
-      - ceph-mgr-dashboard
-      - ceph-mgr-diskprediction-local
-      - ceph-mgr-rook
-      - ceph-mgr-cephadm
       - cephadm
+      - ceph-mgr-cephadm
+      - ceph-immutable-object-cache
+      - python3-rados
+      - python3-rgw
+      - python3-rbd
+      - python3-cephfs
       - ceph-volume
-    extra_packages: ['librados2']
-- print: "**** done installing reef"
+    extra_packages:
+      - python-rados
+      - python-rgw
+      - python-rbd
+      - python-cephfs
+    extra_system_packages:
+      - elfutils-libelf-devel
+      - openssl-devel
+      - NetworkManager
+      - iproute
+      - util-linux
+- print: "**** done installing reef HEAD"
 - ceph:
     log-ignorelist:
       - overall HEALTH_
