@@ -811,7 +811,7 @@ class TestDataScan(CephFSTestCase):
         mds0_id = active_mds_names[0]
         mds1_id = active_mds_names[1]
 
-        self.mount_a.run_shell_payload("mkdir dir1/dir2")
+        self.mount_a.run_shell_payload("mkdir -p dir1/dir2")
         dir_ino = self.mount_a.path_to_ino("dir1")
         self.mount_a.setfattr("dir1", "ceph.dir.pin", "1")
         self._wait_subtrees([('/dir1', 1)], rank=1)
