@@ -516,6 +516,7 @@ class TestDataScan(CephFSTestCase):
         self.run_ceph_cmd('mds', 'repaired', '0')
 
         # Start the MDS
+        self.fs.set_joinable() # necessary for some tests without damage
         self.fs.wait_for_daemons()
         log.info(str(self.mds_cluster.status()))
 
