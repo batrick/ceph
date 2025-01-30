@@ -179,6 +179,8 @@ class NestedDirWorkload(Workload):
         self._filesystem.radosm(["rm", dirfrag_obj])
 
     def is_damaged(self):
+        # workload runner expects MDS to be offline
+        self._filesystem.fail()
         return True
 
     def validate(self):
@@ -203,6 +205,8 @@ class NestedDirWorkloadRename(Workload):
         self._filesystem.radosm(["rm", dirfrag_obj])
 
     def is_damaged(self):
+        # workload runner expects MDS to be offline
+        self._filesystem.fail()
         return True
 
     def validate(self):
@@ -234,6 +238,8 @@ class NestedDoubleDirWorkloadRename(Workload):
             self._filesystem.radosm(["rm", dirfrag_obj])
 
     def is_damaged(self):
+        # workload runner expects MDS to be offline
+        self._filesystem.fail()
         return True
 
     def validate(self):
