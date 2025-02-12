@@ -1,3 +1,7 @@
+# charmap is only supported by the userspace Client at this time
+teuthology:
+  postmerge:
+  - if not is_fuse() then reject() end
 tasks:
   - cephfs_test_runner:
       fail_on_skip: false
