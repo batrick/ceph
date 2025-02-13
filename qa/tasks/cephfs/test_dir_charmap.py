@@ -284,7 +284,7 @@ class TestNormalization(CephFSTestCase, CharMapMixin):
         self.mount_a.setfattr("foo/", "ceph.dir.normalization", "nfd") # default
 
         self.mount_a.run_shell_payload(f"mkdir foo/{dname}")
-        c = self.fs.read_cache("foo")
+        c = self.fs.read_cache("foo", depth=0)
 
         self.assertEqual(len(c), 1)
         frags = c[0]['dirfrags']
@@ -318,7 +318,7 @@ class TestEncoding(CephFSTestCase, CharMapMixin):
         self.mount_a.setfattr("foo/", "ceph.dir.encoding", "utf8")
 
         self.mount_a.run_shell_payload(f"mkdir foo/{dname}")
-        c = self.fs.read_cache("foo")
+        c = self.fs.read_cache("foo", depth=0)
 
         self.assertEqual(len(c), 1)
         frags = c[0]['dirfrags']
@@ -349,7 +349,7 @@ class TestCaseFolding(CephFSTestCase, CharMapMixin):
         self.mount_a.setfattr("foo/", "ceph.dir.casesensitive", "0")
 
         self.mount_a.run_shell_payload(f"mkdir foo/{dname}")
-        c = self.fs.read_cache("foo")
+        c = self.fs.read_cache("foo", depth=0)
 
         self.assertEqual(len(c), 1)
         frags = c[0]['dirfrags']
