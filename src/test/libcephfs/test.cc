@@ -3726,9 +3726,9 @@ TEST(LibCephFS, FsCrypt) {
   ASSERT_GT(fd, 0);
 
   //should fail with not supported, as vxattr exists but is read only
-  ASSERT_EQ(-CEPHFS_EOPNOTSUPP, ceph_fsetxattr(cmount, fd, "ceph.fscrypt.auth", "foo", 3, CEPH_XATTR_CREATE));
+  ASSERT_EQ(-EOPNOTSUPP, ceph_fsetxattr(cmount, fd, "ceph.fscrypt.auth", "foo", 3, CEPH_XATTR_CREATE));
   //should fail with EINVAL as vxattr is not exposed
-  ASSERT_EQ(-CEPHFS_EINVAL, ceph_fsetxattr(cmount, fd, "ceph.fscrypt.file", "foo", 3, CEPH_XATTR_CREATE));
+  ASSERT_EQ(-EINVAL, ceph_fsetxattr(cmount, fd, "ceph.fscrypt.file", "foo", 3, CEPH_XATTR_CREATE));
 
   ASSERT_EQ(0, ceph_close(cmount, fd));
   ASSERT_EQ(0, ceph_unmount(cmount));
