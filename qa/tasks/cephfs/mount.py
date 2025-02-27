@@ -1600,16 +1600,19 @@ class CephFSMountBase(object):
         if kwargs.pop('sudo', False):
             kwargs['args'].insert(0, 'sudo')
             kwargs['omit_sudo'] = False
-        kwargs['wait'] = False
+        wait = kwargs.setdefault('wait', False)
+        if wait:
+            kwargs['wait'] = False
         p = self.run_shell(**kwargs)
         try:
-            p.wait()
+            if wait:
+                p.wait()
         except CommandFailedError as e:
             if helpfulexception:
                 return self._convert_attr_error(p, e)
             else:
                 raise
-        return str(p.stdout.getvalue())
+        return p
 
     def setfattr(self, path, key, val, helpfulexception=False, **kwargs):
         """
@@ -1624,16 +1627,19 @@ class CephFSMountBase(object):
         if kwargs.pop('sudo', False):
             kwargs['args'].insert(0, 'sudo')
             kwargs['omit_sudo'] = False
-        kwargs['wait'] = False
+        wait = kwargs.setdefault('wait', False)
+        if wait:
+            kwargs['wait'] = False
         p = self.run_shell(**kwargs)
         try:
-            p.wait()
+            if wait:
+                p.wait()
         except CommandFailedError as e:
             if helpfulexception:
                 return self._convert_attr_error(p, e)
             else:
                 raise
-        return str(p.stdout.getvalue())
+        return p
 
 
     def getfattr(self, path, attr, helpfulexception=False, **kwargs):
@@ -1647,10 +1653,15 @@ class CephFSMountBase(object):
         if kwargs.pop('sudo', False):
             kwargs['args'].insert(0, 'sudo')
             kwargs['omit_sudo'] = False
-        kwargs['wait'] = False
+        wait = kwargs.setdefault('wait', False)
+        if wait:
+            kwargs['wait'] = False
         p = self.run_shell(**kwargs)
         try:
-            p.wait()
+            if wait:
+                p.wait()
+            else:
+                return p
         except CommandFailedError as e:
             if helpfulexception:
                 return self._convert_attr_error(p, e)
