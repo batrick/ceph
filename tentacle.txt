@@ -1,0 +1,1033 @@
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Tue Jul 29 15:56:14 2025 -0400
+
+    auth: extend crypto API to support multiple usages per key
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Adam King <adking@redhat.com>
+Date:   Wed May 14 13:16:43 2025 -0400
+
+    mgr/cephadm: rotate keyring for core ceph daemons during upgrade
+    
+    Specifically, this causes us to rotate the mgr, mon, OSD,
+    and mds keyrings. The mgr and mon keyring are done as soon
+    as we see all the mons have been upgraded and OSD/mds happens
+    when we reach them in the upgrade order.
+    
+    NOTE: This patch alone is not enough to get this working
+    for encrypted OSDs
+    
+    Signed-off-by: Adam King <adking@redhat.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Sep 16 16:02:05 2025 -0400
+
+    auth: remove superfluous error log message
+    
+    It's also possible that _refresh_config can be called multiple times before the
+    keyring config has been set (by an arg/env for instance). This would pollute
+    the log with erroneous error warnings.
+    
+    MonClient::authenticate already warns about this.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Aug 19 21:42:14 2025 -0400
+
+    mon/MonClient: add assertions for monc lock in MonConnection
+    
+    When handling auth, we want to be sure these methods hold the monc_lock
+    which protects, in particular, the client authorizer.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@redhat.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Aug 19 21:36:34 2025 -0400
+
+    auth: add debugging for client cephx methods
+    
+    In particular, to see when an auth helper is created/destroyed.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@redhat.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Aug 19 21:35:24 2025 -0400
+
+    auth: add debugging for keyring methods
+    
+    In particular, to see when a rotating key ring is created/destroyed.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@redhat.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Aug 19 17:01:18 2025 -0400
+
+    auth: use explicit default destructor
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@redhat.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri Aug 29 09:35:15 2025 -0400
+
+    msg/async: move v1 member init to header
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@redhat.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Aug 19 17:27:29 2025 -0400
+
+    msg: use MessageRef to manage pointer lifetime
+    
+    To simplify reasoning about upcoming changes to incoming/pending
+    messages.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@redhat.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Wed Aug 20 12:22:50 2025 -0400
+
+    msg/DispatchQueue: add debugging for queue discard
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@redhat.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Aug 19 17:28:41 2025 -0400
+
+    msg/Connection: move destructor to object file
+    
+    To ensure vtable is embedded in Connection object file.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@redhat.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Aug 19 17:02:24 2025 -0400
+
+    mds: move messages to be sent
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@redhat.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Jul 29 22:31:05 2025 -0400
+
+    PendingReleaseNotes: add note for cephx upgrade
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Jul 29 22:33:14 2025 -0400
+
+    doc: update cephx details for upgrade procedure
+    
+    And add miscellaneous clarity / wording improvements.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+    
+    Conflicts:
+            doc/architecture.rst: minor doc differences
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Jul 29 22:38:21 2025 -0400
+
+    auth/AuthRegistry: refresh config on startup
+    
+    I don't think this makes a functional difference but these configs should be
+    loaded at startup otherwise it relies on obs startup to load them.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Jul 22 16:51:32 2025 -0400
+
+    common/options: remove auth_supported
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+    
+    Conflicts:
+            src/common/options/global.yaml.in: doc change
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jul 7 15:10:31 2025 -0400
+
+    qa: check health warnings in cephx upgrade
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jul 7 15:19:55 2025 -0400
+
+    qa/tasks/ceph: allow configuring key settings for initial monmap
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jul 7 15:18:38 2025 -0400
+
+    qa/tasks/ceph.key_rotate: provide mechanism to rotate client keys
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jul 7 15:15:31 2025 -0400
+
+    qa/tasks/ceph.healthy: indicate expected failing checks
+    
+    We will want to confirm the cluster is healthy despite some checks that we
+    expect to be failing.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jul 7 15:11:55 2025 -0400
+
+    qa/tasks/ceph: add key pruning task
+    
+    To remove keys we don't care about and will raise warnings if left behind.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jul 21 22:50:47 2025 -0400
+
+    msg: constify getter
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jul 21 22:50:01 2025 -0400
+
+    auth/cephx: do not special case caps for mons
+    
+    Yes, the mons always fill in the caps with what is in its KeyServer but it's
+    confusing to see this special case.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jun 9 11:20:44 2025 -0400
+
+    tools/monmaptool: enable configuring monmap ciphers
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jun 23 23:27:31 2025 -0400
+
+    mon: provide emergency mechanism to rescue allowed_ciphers
+    
+    If the administrator accidentally revokes auth to client.admin, they cannot fix
+    it because the setting is stored in the monmap. Provide a config to restore
+    access in such an emergency.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri Jun 6 15:51:53 2025 -0400
+
+    mon: convert auth configs to monmap settings
+    
+    This serves a few purposes:
+    
+    - Makes sure mons agreen on these settings (cannot have differing configs)
+    - Allows us to set secure defaults for a brand new cluster.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+    
+     Conflicts:
+            src/auth/cephx/CephxKeyServer.h: include changes
+            src/mon/Monitor.cc: command switch differences
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jun 23 22:34:30 2025 -0400
+
+    doc: add new cephx health warnings
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 12:02:38 2025 -0400
+
+    qa: add upgrade suite for cephx
+    
+    To test upgrade paths for "aes" key type to "aes256k" including the expected
+    flows for service key updates and entity rotation.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 12:11:49 2025 -0400
+
+    qa/tasks/ceph: add task to rotate entity keys
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 12:11:22 2025 -0400
+
+    qa/tasks/ceph: allow cluster to be brought up with particular cephx key type
+    
+    For testing cephx upgrades from older key types.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon May 19 15:02:48 2025 -0400
+
+    qa/tasks/radosbench: add extra_args conf
+    
+    So we can easily add extra debug flags or whatever.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Mar 25 13:49:13 2025 -0400
+
+    qa/tasks/radosbench: add auth_exit_on_failure arg
+    
+    To cause `rados bench` to exit immediately when an auth failure occurs.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Mar 25 21:53:08 2025 -0400
+
+    qa: add sequential_yield task
+    
+    This is identical to the sequential task except it yields after entering each
+    sub-task.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jun 23 22:36:30 2025 -0400
+
+    auth/Crypto: update type to entity_type_t
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jun 23 22:37:16 2025 -0400
+
+    include/encoding: add encoder helpers for sized ints
+    
+    When the raw type may not match the required encoded size, this helper makes
+    intent clear and avoids a common verbose pattern:
+    
+        intX_t t = val;
+        encode(t, bl);
+    
+    and
+    
+        intX_t t;
+        decode(t, p);
+        val = t;
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Sat May 31 20:54:30 2025 -0400
+
+    mon: add health checks for insecure keys
+    
+    This commit prompted the previous refactor as it was inconvenient to check for
+    health warnings as part of AuthMonitor::tick and then pass those up via
+    PaxosService::encode_health.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri May 30 14:47:07 2025 -0400
+
+    mon: cleanup for loop
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Jun 24 12:21:55 2025 -0400
+
+    mon/HealthMonitor: refactor quorum_checks/leader_checks as PaxosMap
+    
+    To codify protocol and catch bugs.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Sat May 31 20:53:55 2025 -0400
+
+    mon: refactor health check map through PaxosMap
+    
+    This was motivated by confusing persistence of some health warnings during
+    testing of health warnings for cephx upgrades. Some services are only doing
+    health checks during ::encode_pending and others during ::tick. Make it
+    consistent.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Jun 24 12:14:19 2025 -0400
+
+    mon/PaxosMap: add map template for managing Paxos structures
+    
+    To protect access and codify protocol. Based loosely on PaxosFSMap which can be
+    refactored to use this later.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jul 7 14:55:57 2025 -0400
+
+    auth: improve programmability of key dumps
+    
+    Notably:
+    
+    - improve names (avoid repeated "keys")
+    - output type_str
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri Jun 13 16:52:23 2025 -0400
+
+    common/entity_name: dump type name as string
+    
+    For easier selection without hard-coded constants.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Mon Jul 7 14:02:05 2025 -0400
+
+    common/entity_name: remove dead method
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Sat May 31 19:52:33 2025 -0400
+
+    common/entity_name: cleanup entity_name::type
+    
+    This should use the entity_type_t from the msg headers. The only awkwardness is
+    that the encode/decode of the type needs to continue using a uint32_t.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+    
+    Conflicts:
+            src/common/entity_name.cc: header changes
+            src/common/entity_name.h: header changes
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 12:01:41 2025 -0400
+
+    cephx: add note to address technical debt
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 11:57:55 2025 -0400
+
+    auth: check service key is valid before decryption
+    
+    CryptoKey::empty is the correct mechanism to check for an invalid key (and this
+    is codified elsewhere, fixed in this commit). Decryption would fail with an
+    abort if the key handler was unset. This would happen after rotating the "mon."
+    key and then restarting one of the mons.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 11:57:13 2025 -0400
+
+    auth: add more debugging for service tickets
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 11:53:04 2025 -0400
+
+    auth/cephx: set error message when decryption fails
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 11:52:34 2025 -0400
+
+    auth/cephx: provide more debugging when sig checks fail
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 11:04:00 2025 -0400
+
+    mon: provide emergency mechanism to use mon keyring
+    
+    If they key is lost for the `mon.` credential, it's very inconvenient to get it
+    out of the "auth" database in the mon store. So, allow the operator to create a
+    new keyring for the mons and use it instead to get mons in quorum again.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 10:13:40 2025 -0400
+
+    mon: cycle through keyring or key_server for auth with mons
+    
+    After commit `mon: use key_server for looking up mon key`, the mons will now
+    use the key_server to lookup the `mon.` key when a mon connects.  We need to
+    make the mons prefer using that key with authenticating during probing other
+    mons. However, the protocol doesn't allow falling back to another key. This is
+    necessary if what's in the key_server database is out-of-date due to an earlier
+    loss of quorum. In that case, the operator should update the local keyring file
+    and the mon should give that a try if auth fails.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 10:07:52 2025 -0400
+
+    mon: use key_server for looking up mon key
+    
+    Note: the key_server is already configured to fallback (via
+    KeyServerData::extra_secrets) to the Monitor::keyring which is sourced from the
+    mon's keyring file.
+    
+    Using the Monitor::key_server allows us to maintain the mon's secret in the
+    auth database alongside all other secrets. This makes rotating the mons' keys
+    the same as all other entities in Ceph. Before this, to rotate the mons' key
+    you would need to turn off all montitors and then rotate the key files
+    manually. This is obviously disruptive since it's not a rolling upgrade.
+    
+    If the key is sourced from the Monitor::key_server, then the key can be rotated
+    and all mons are aware of the new key. The mons can then proceed to restart as
+    needed in a non-disruptive fashion.
+    
+    A followup commit will cleanup the monitor to try either its local keyring key
+    or the key in the key_server (if present) when authenticating with other mons.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 10:05:55 2025 -0400
+
+    mon: dout chosen addrs after startup
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Wed May 14 19:33:43 2025 -0400
+
+    mon/MonClient: improve error message when failing to auth
+    
+    Currently you just see:
+    
+        2025-05-14T23:07:37.244+0000 7f00dedd1640 -1 monclient(hunting): handle_auth_bad_method server allowed_methods [2] but i only support [2]
+    
+    which is terrible at communicating the problem.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Mar 25 22:02:26 2025 -0400
+
+    auth,mon: add _exit config when auth fails
+    
+    This is largely for testing: we want a client to exit immediately if auth
+    failures occur. Presently, those clients will try to reconnect forever.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Mar 25 22:05:09 2025 -0400
+
+    tools/ceph_authtool: allow configuring a preferred cipher
+    
+    This makes testing easier as we can configure all keys in the cluster to be the
+    given "old" type without modifying each location that ceph-authtool is used.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue May 13 12:28:39 2025 -0400
+
+    mon/AuthMonitor: shutdown session connection on auth failure
+    
+    Currently the mons will allow the session to persist even though an auth
+    failure has occurred, probably while trying to obtain new tickets.
+    
+    A sequence to easily trigger this:
+    
+        ceph auth rotate osd.0
+        ceph auth wipe-rotating-service-keys
+    
+    The osd.0 will continue interacting with the mons until restart or a network
+    interruption occurs.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue May 13 12:26:48 2025 -0400
+
+    msg: add interface to shutdown Connection
+    
+    Unfortunately this doesn't work as-is because I couldn't find primitives to
+    flush the out_queue. It's left as a to-do for now.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Matan Breizman <mbreizma@redhat.com>
+Date:   Thu Jun 12 09:23:37 2025 +0000
+
+    crimson/mon/MonClient: call _wipe_secrets_and_tickets when needed
+    
+    Signed-off-by: Matan Breizman <mbreizma@redhat.com>
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Matan Breizman <mbreizma@redhat.com>
+Date:   Thu Jun 12 09:22:22 2025 +0000
+
+    crimson/mon/MonClient: refacor Client::handle_monmap
+    
+    Use coroutines, should help with future changes.
+    
+    Signed-off-by: Matan Breizman <mbreizma@redhat.com>
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Matan Breizman <mbreizma@redhat.com>
+Date:   Wed Jun 11 12:28:26 2025 +0000
+
+    crimson/mon/MonClient: introduce handle_auth_failure
+    
+    Signed-off-by: Matan Breizman <mbreizma@redhat.com>
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Matan Breizman <mbreizma@redhat.com>
+Date:   Wed Jun 11 12:26:59 2025 +0000
+
+    crimson/mon/MonClient: add asock TODO comment
+    
+    Signed-off-by: Matan Breizman <mbreizma@redhat.com>
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Matan Breizman <mbreizma@redhat.com>
+Date:   Wed Jun 11 09:38:59 2025 +0000
+
+    crimson/osd/MonClient: Introduce Client::_wipe_secrets_and_tickets())
+    
+    Similar to MonClient::_wipe_secrets_and_tickets())
+    
+    Signed-off-by: Matan Breizman <mbreizma@redhat.com>
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Matan Breizman <mbreizma@redhat.com>
+Date:   Wed Jun 11 09:34:30 2025 +0000
+
+    crimson/mon/MonClient: imitate Classic's _check_auth_tickets
+    
+    Imitating this interface from Classicals MonClient::_check_auth_tickets()
+    should make it easier to understand Crimson's counterpart.
+    
+    Signed-off-by: Matan Breizman <mbreizma@redhat.com>
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Matan Breizman <mbreizma@redhat.com>
+Date:   Wed Jun 11 09:33:20 2025 +0000
+
+    crimson/mon/MonClient: cleanup redundant private
+    
+    Signed-off-by: Matan Breizman <mbreizma@redhat.com>
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri May 9 14:56:10 2025 -0400
+
+    mon/MonClient: wipe secrets and invalidate tickets on auth epoch change
+    
+    * This causes service daemons to drop all known service tickets and request new
+      ones from the auth server.
+    
+    * This causes the clients (and service daemons) to request new tickets from the
+      auth server which will include tickets signed with the new service keys.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri May 9 14:54:47 2025 -0400
+
+    mon/AuthMonitor: bump auth epoch when wiping service keys
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri May 9 14:19:18 2025 -0400
+
+    mon/MonmapMonitor: wire up interface to bump auth epoch
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri May 9 14:15:09 2025 -0400
+
+    mon/MonMap: add auth epoch
+    
+    This will be used to indicate to clients / service daemons that the auth
+    service keys have been rotated. Clients and service daemons are expected to
+    invalidate their tickets and reauth. Service daemons should wipe their service
+    keys.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Mar 25 21:59:34 2025 -0400
+
+    mon/AuthMonitor: add dump-keys and wipe-rotating-service-keys
+    
+    `auth dump-keys` allows examining the key types for each entity and also the
+    rotating session keys. This lets us confirm key upgrades are done as expected.
+    
+    `wipe-rotating-service-keys` clears out existing non-auth service keys so that we do not
+    need to wait for the rotating key expiration. It is not disruptive so long as clients
+    renew their tickets when prompted by the auth epoch change.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri Mar 21 12:56:06 2025 -0400
+
+    mon/AuthMonitor: add key-type switch
+    
+    So it's possible to test with various key-types.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri Mar 21 12:57:25 2025 -0400
+
+    common/cmdparse: add another template cmd_getval_or helper
+    
+    To mimic the conventional signature where you pass the lvalue you want to set.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri May 9 14:16:55 2025 -0400
+
+    mon/Monitor: perfect forward universal ref of lambda
+    
+    This method doesn't currently work for std::move of a lambda.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri May 9 14:19:56 2025 -0400
+
+    mon/Monitor: add debugging for monmap handling
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri Jun 13 15:14:55 2025 -0400
+
+    mon: notify_new_monmap via MonmapMonitor::init
+    
+    Otherwise, configurations are not updated during startup.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 11:11:43 2025 -0400
+
+    doc/man: document new --key-type option for ceph-authtool
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri Mar 21 12:54:33 2025 -0400
+
+    tools/ceph_authtool: add help message for key-type switch
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri Mar 21 12:53:38 2025 -0400
+
+    common/buffer: accept "-" as stdin
+    
+    These methods are used for reading files from tools like "authtool". Read from
+    stdin if the conventional "-" filename is passed.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 10:01:37 2025 -0400
+
+    auth/cephx: make some parameters const
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue May 27 19:25:42 2025 -0400
+
+    auth: cleanup error message formatting
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Mar 25 22:04:20 2025 -0400
+
+    auth,mon: lookup ticket ttl at runtime
+    
+    and improve debugging.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri May 9 14:52:52 2025 -0400
+
+    auth: add API to invalidate all tickets
+    
+    This will prompt the client to request new ones from the auth server.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Fri May 9 14:52:13 2025 -0400
+
+    auth: add API to wipe rotating secrets
+    
+    This is for the service daemon's store of rotating service secrets.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Mar 25 21:55:22 2025 -0400
+
+    auth/cephx: enforce sorted config keys
+    
+    Makes future additions avoid conflicts.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Mar 18 16:04:02 2025 -0400
+
+    auth/cephx: update get_tracked_keys signature
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Sun Mar 23 22:42:53 2025 -0400
+
+    auth: fix return type
+    
+    key type is an unsigned.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 29 08:58:08 2025 -0400
+
+    common: break print template into separate header
+    
+    To avoid pulling in all the debug includes for some primitive headers.
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Tue Jun 3 11:26:04 2025 -0400
+
+    common: remove dead option
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Patrick Donnelly <pdonnell@ibm.com>
+Date:   Thu May 15 13:29:55 2025 -0400
+
+    test: fix compiler error
+    
+    Signed-off-by: Patrick Donnelly <pdonnell@ibm.com>
+
+Author: Matan Breizman <mbreizma@redhat.com>
+Date:   Mon Jun 9 16:37:21 2025 +0000
+
+    auth,*: remove conflicting fwd declarations
+    
+    Signed-off-by: Matan Breizman <mbreizma@redhat.com>
+    
+    Conflicts:
+            src/auth/Auth.h: include movement
+
+Author: Matan Breizman <mbreizma@redhat.com>
+Date:   Mon Jun 9 12:07:49 2025 +0000
+
+    include/common_fwd: Include Crypto classes
+    
+    CryptoManager::cct is now used in CephContext ctor. To provide this
+    defintion
+    any ceph_context.cc target must also include Crypto.cc.
+    
+    crimson-alien-common library which only had ceph_context.cc must now
+    also include Crypto.cc.
+    However, the fact that crimson-common also includes Crypto.cc would
+    cause multiple defintions
+    to any Crypto classes methods.
+    
+    To resolve this, let's wrap all Crypto classes with TOPNSPC::common that
+    would be forwarded using common_fwd logic.
+    
+    Signed-off-by: Matan Breizman <mbreizma@redhat.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Wed May 28 15:51:19 2025 -0400
+
+    cephx: sign messages using hmac_sha256
+    
+    if key type is newer than the original AES, calculate message
+    hash by using HMAC-SHA256.
+    We cannot use plain aes256k like we do with the aes key because
+    of the confounder. The other option would be to inject a
+    confounder, but that would weaken the cipher.
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Wed May 28 15:50:15 2025 -0400
+
+    auth: create slice api for calculating hmac_sha256
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Tue Mar 18 06:53:44 2025 -0400
+
+    test/auth: more aes256krb5 tests
+    
+     - DecryptNoBl
+     - multiple test vectos per each test
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Mon Mar 17 07:44:30 2025 -0400
+
+    auth: test slice interface for aes256k
+    
+    AES256KRB5 uses the default slice encryption implementation, testing that
+    it works correctly.
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Mon Mar 17 03:57:42 2025 -0400
+
+    test/crypto: more aes256krb5 tests
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Mon Mar 17 03:57:21 2025 -0400
+
+    auth: add usage param to crypto handler
+    
+    Allow different usage for crypto handler users. Currently being used
+    in the crypto unitest to match the test vectors.
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+    
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Mon Mar 17 02:56:32 2025 -0400
+
+    auth: aes256krb5: add confounder config for unitests
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Fri Mar 7 16:35:36 2025 -0500
+
+    cephx: add configurable to set allowed ciphers
+    
+    cephx allowed ciphers: a list of ciphers that  sets what type
+    of keys are allowed to be used to authenticate
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+    
+    Conflicts:
+            src/auth/cephx/CephxServiceHandler.cc: header include movement
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Fri Mar 7 13:21:44 2025 -0500
+
+    auth: remove unused code
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Fri Mar 7 13:20:58 2025 -0500
+
+    auth: add a configurable to control rotating keys cipher type
+    
+    auth_service_cipher: a mon configurable that determines what type of cipher
+    the rotating keys are using. The configurable can change at runtime. Note
+    that the change does not invalidate existing keys, these would expire
+    based on their ttl.
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Thu Mar 6 09:23:34 2025 -0500
+
+    auth/cephx: session key type is set to client key type
+    
+    This ensures that the client supports the specific key type.
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Thu Feb 27 17:09:26 2025 -0500
+
+    auth/cephx: switch default cipher to AES256KRB5
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Thu Feb 27 16:14:06 2025 -0500
+
+    auth/cephx: modify client + server challenges hashing
+    
+    This applies when using ciphers that are not the original
+    AES-128 one. Use the hmac-sha256 hash now. With AES256KRB5
+    the original method of encrypting the combined challenges
+    doesn't work as the confounder randomizes the result.
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Thu Feb 27 11:55:37 2025 -0500
+
+    ceph-authtool: support --key-type param
+    
+    Also move the encryption handlers out of the ceph_context.
+    Handlers are now returned as a shared_ptr, to support the
+    creation of new handlers with different params (such as
+    the usage param).
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Fri Feb 21 16:18:58 2025 -0500
+
+    auth/crypto: add support for aes256-hmac384-192
+    
+    Using the encryption standard set in RFC 8009. This is the
+    encryption that is used in Kerberos 5, so naming this variation
+    as AES256KRB5.
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
+
+Author: Yehuda Sadeh <ysadehwe@ibm.com>
+Date:   Mon Feb 24 16:31:42 2025 -0500
+
+    auth: propagate ceph context to encrypt/decrypt
+    
+    Signed-off-by: Yehuda Sadeh <ysadehwe@ibm.com>
