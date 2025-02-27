@@ -1600,7 +1600,7 @@ class CephFSMountBase(object):
         if kwargs.pop('sudo', False):
             kwargs['args'].insert(0, 'sudo')
             kwargs['omit_sudo'] = False
-        wait = kwargs.setdefault('wait', False)
+        wait = kwargs.setdefault('wait', True)
         if wait:
             kwargs['wait'] = False
         p = self.run_shell(**kwargs)
@@ -1627,7 +1627,7 @@ class CephFSMountBase(object):
         if kwargs.pop('sudo', False):
             kwargs['args'].insert(0, 'sudo')
             kwargs['omit_sudo'] = False
-        wait = kwargs.setdefault('wait', False)
+        wait = kwargs.setdefault('wait', True)
         if wait:
             kwargs['wait'] = False
         p = self.run_shell(**kwargs)
@@ -1653,7 +1653,7 @@ class CephFSMountBase(object):
         if kwargs.pop('sudo', False):
             kwargs['args'].insert(0, 'sudo')
             kwargs['omit_sudo'] = False
-        wait = kwargs.setdefault('wait', False)
+        wait = kwargs.setdefault('wait', True)
         if wait:
             kwargs['wait'] = False
         p = self.run_shell(**kwargs)
