@@ -7814,6 +7814,11 @@ int Client::path_walk(InodeRef dirinode, const filepath& origpath, walk_dentry_r
       caps = CEPH_CAP_AUTH_SHARED;
     }
 
+    if (is_inode_locked(diri)) {
+      rc = -ENOKEY;
+      goto out;
+    }
+
     // N.B.: we don't validate alternate_name we generate during wrapping
     // matches the dentry. We probably should!
     if (!_wrap_name(*diri, dname, alternate_name)) {
