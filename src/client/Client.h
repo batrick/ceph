@@ -1995,7 +1995,7 @@ private:
   int get_keyhandler(FSCryptContextRef fscrypt_ctx, FSCryptKeyHandlerRef& kh);
   bool is_inode_locked(const InodeRef& to_check);
   int _rename(Inode *olddir, const char *oname, Inode *ndir, const char *nname, const UserPerm& perm, std::string alternate_name);
-  int _mkdir(Inode *dir, const char *name, mode_t mode, const UserPerm& perm,
+  int _mkdir(const walk_dentry_result& wdr, mode_t mode, const UserPerm& perm,
 	     InodeRef *inp = 0, const std::map<std::string, std::string> &metadata={},
              std::string alternate_name="");
   int _rmdir(Inode *dir, const char *name, const UserPerm& perms, bool check_perms=true);
