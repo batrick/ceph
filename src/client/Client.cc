@@ -12960,14 +12960,13 @@ int Client::chdir(const char *relpath, std::string &new_cwd,
     return rc;
   }
 
-  if (!(in.get()->is_dir()))
+  if (!in->is_dir())
     return -ENOTDIR;
 
-  if (cwd != in)
-    cwd.swap(in);
+  cwd = std::move(in);
+
   ldout(cct, 3) << "chdir(" << relpath << ")  cwd now " << cwd->ino << dendl;
 
-  _getcwd(new_cwd, perms);
   return 0;
 }
 
