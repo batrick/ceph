@@ -201,7 +201,7 @@ COMMAND("auth commit-pending "
 COMMAND("fs authorize "
         " name=filesystem,type=CephString "
         " name=entity,type=CephString "
-	" name=caps,type=CephString,n=N",
+	" name=caps,type=CephString,n=N"
 	" name=type,type=CephString,req=false",
 	"add auth for <entity> to access file system <filesystem> based on following directory and permissions pairs",
 	"auth", "rwx")
