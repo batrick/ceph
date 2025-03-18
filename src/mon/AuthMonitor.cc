@@ -1453,8 +1453,15 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
 
     std::string key_string_type;
     cmd_getval(cmdmap, "type", key_string_type, "recommended");
-    auto&& cryptomgr = cct->get_crypto_manager();
-    auto key_type = cryptomgr->get_key_type(cipher);
+    auto key_type = CryptoManager::get_key_type(cipher);
+    auto&& secure_key_types = CryptoManager::get_secure_key_types();
+    if (!secure_key_types.contains(key_type)) {
+      if (!cct->_conf.get_val<bool>("mon_auth_allow_insecure_key")) {
+        ss << "creating key with insecure key type (\"" << key_string_type << ") not allowed";
+        err = -EPERM;
+        goto done;
+      }
+    }
 
     KeyRing new_keyring;
     if (has_keyring) {
@@ -1518,7 +1525,7 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
     if (!has_keyring) {
       dout(10) << "AuthMonitor::prepare_command generating random key for "
         << auth_inc.name << dendl;
-      new_inc.key.create(g_ceph_context, CEPH_CRYPTO_AES256KRB5);
+      new_inc.key.create(g_ceph_context, key_type);
     }
     new_inc.caps = encoded_caps;
 
