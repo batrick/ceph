@@ -1451,6 +1451,9 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
     bufferlist bl = m->get_data();
     bool has_keyring = (bl.length() > 0);
 
+    auto&& cryptomgr = cct->get_crypto_manager();
+    auto key_type = cryptomgr->get_key_type(cipher);
+
     KeyRing new_keyring;
     if (has_keyring) {
       auto iter = bl.cbegin();
