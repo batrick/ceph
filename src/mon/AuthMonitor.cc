@@ -1452,8 +1452,7 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
     bufferlist bl = m->get_data();
     bool has_keyring = (bl.length() > 0);
 
-    std::string key_string_type;
-    cmd_getval(cmdmap, "type", key_string_type, "recommended");
+    std::string key_string_type = cmd_getval(cmdmap, "type"sv, key_string_type, "recommended"sv);
     auto key_type = CryptoManager::get_key_type(cipher);
     auto&& secure_key_types = CryptoManager::get_secure_key_types();
     if (!secure_key_types.contains(key_type)) {
