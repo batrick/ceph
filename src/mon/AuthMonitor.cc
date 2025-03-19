@@ -1364,8 +1364,6 @@ bool AuthMonitor::valid_caps(const map<string, string>& caps, ostream *out)
   return true;
 }
 
-You could email the sepia list but I really don't think an
-
 int AuthMonitor::get_cipher_type(const cmdmap_t& cmdmap, std::ostream& ss) const
 {
   std::string key_string_type;
@@ -1479,20 +1477,6 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
     if (key_type < 0) {
       goto done;
     }
-
-#if 0
-    std::string key_string_type;
-    cmd_getval_or<std::string>(cmdmap, "key_type"sv, key_string_type, "recommended"s);
-    auto key_type = CryptoManager::get_key_type(key_string_type);
-    auto&& secure_key_types = CryptoManager::get_secure_key_types();
-    if (!secure_key_types.contains(key_type)) {
-      if (!cct->_conf.get_val<bool>("mon_auth_allow_insecure_key")) {
-        ss << "creating key with insecure key type (\"" << key_string_type << "\") not allowed";
-        err = -EPERM;
-        goto done;
-      }
-    }
-#endif
 
     KeyRing new_keyring;
     if (has_keyring) {
@@ -1662,6 +1646,11 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
       goto done;
     }
 
+    int key_type = get_cipher_type(cmdmap, ss);
+    if (key_type < 0) {
+      goto done;
+    }
+
     // do we have it?
     EntityAuth entity_auth;
     if (mon.key_server.get_auth(entity, entity_auth)) {
@@ -1737,6 +1726,11 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
     string mon_cap_string = "allow r";
     string mds_cap_string, osd_cap_string;
     string osd_cap_wanted = "r";
+
+    int key_type = get_cipher_type(cmdmap, ss);
+    if (key_type < 0) {
+      goto done;
+    }
 
     const Filesystem* fs = nullptr;
     if (filesystem != "*" && filesystem != "all") {
@@ -1873,6 +1867,11 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
     if (entity_name.empty()) {
       ss << "bad entity name";
       err = -EINVAL;
+      goto done;
+    }
+
+    int key_type = get_cipher_type(cmdmap, ss);
+    if (key_type < 0) {
       goto done;
     }
 

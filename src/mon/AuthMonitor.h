@@ -175,6 +175,8 @@ private:
   bool prep_auth(MonOpRequestRef op, bool paxos_writable);
 
   bool preprocess_command(MonOpRequestRef op);
+
+  int get_cipher_type(const cmdmap_t& cmdmap, std::ostream& ss) const;
   bool prepare_command(MonOpRequestRef op);
 
   void _encode_keyring(KeyRing& kr, const EntityName& entity,

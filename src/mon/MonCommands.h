@@ -205,7 +205,7 @@ COMMAND("auth commit-pending "
 	"name=entity,type=CephString",
 	"rotate pending key into active position",
 	"auth", "rwx")
-COMMAND("fs authorize "
+COMMAND("fs authorize"
         " name=filesystem,type=CephString"
         " name=entity,type=CephString"
 	" name=caps,type=CephString,n=N"
