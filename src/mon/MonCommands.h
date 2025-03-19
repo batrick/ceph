@@ -162,28 +162,35 @@ COMMAND("auth ls", "list authentication state", "auth", "rx")
 COMMAND("auth import", "auth import: read keyring file from -i <file>",
 	"auth", "rwx")
 COMMAND("auth add"
-	" name=entity,type=CephString "
+	" name=entity,type=CephString"
 	" name=caps,type=CephString,n=N,req=false"
-	" name=type,type=CephString,req=false",
+        " --"
+	" name=key_type,type=CephString,req=false"
+        ,
 	"add auth info for <entity> from input file, or random key if no "
         "input is given, and/or any caps specified in the command",
 	"auth", "rwx")
 COMMAND("auth rotate"
 	" name=entity,type=CephString"
-	" name=type,type=CephString,req=false"
-	" name=type,type=CephString,req=false",
+        " --"
+	" name=key_type,type=CephString,req=false"
+        ,
 	"rotate entity key",
 	"auth", "rwx")
 COMMAND("auth get-or-create-key"
-	" name=entity,type=CephString "
+	" name=entity,type=CephString"
 	" name=caps,type=CephString,n=N,req=false"
-	" name=type,type=CephString,req=false",
+        " --"
+	" name=key_type,type=CephString,req=false"
+        ,
 	"get, or add, key for <name> from system/caps pairs specified in the command.  If key already exists, any given caps must match the existing caps for that key.",
 	"auth", "rwx")
 COMMAND("auth get-or-create "
-	" name=entity,type=CephString "
+	" name=entity,type=CephString"
 	" name=caps,type=CephString,n=N,req=false"
-	" name=type,type=CephString,req=false",
+        " --"
+	" name=key_type,type=CephString,req=false"
+        ,
 	"add auth info for <entity> from input file, or random key if no input given, and/or any caps specified in the command",
 	"auth", "rwx")
 COMMAND("auth get-or-create-pending "
@@ -199,10 +206,12 @@ COMMAND("auth commit-pending "
 	"rotate pending key into active position",
 	"auth", "rwx")
 COMMAND("fs authorize "
-        " name=filesystem,type=CephString "
-        " name=entity,type=CephString "
+        " name=filesystem,type=CephString"
+        " name=entity,type=CephString"
 	" name=caps,type=CephString,n=N"
-	" name=type,type=CephString,req=false",
+        " --"
+	" name=key_type,type=CephString,req=false"
+        ,
 	"add auth for <entity> to access file system <filesystem> based on following directory and permissions pairs",
 	"auth", "rwx")
 COMMAND("auth caps "

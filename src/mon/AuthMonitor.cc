@@ -38,6 +38,11 @@
 #include "mgr/MgrCap.h"
 #include "osd/OSDCap.h"
 
+#include <string>
+#include <string_view>
+using namespace std::literals::string_view_literals;
+using namespace std::literals::string_literals;
+
 #define dout_subsys ceph_subsys_mon
 #undef dout_prefix
 #define dout_prefix _prefix(_dout, mon, get_last_committed())
@@ -1452,8 +1457,9 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
     bufferlist bl = m->get_data();
     bool has_keyring = (bl.length() > 0);
 
-    std::string key_string_type = cmd_getval(cmdmap, "type"sv, key_string_type, "recommended"sv);
-    auto key_type = CryptoManager::get_key_type(cipher);
+    std::string key_string_type;
+    cmd_getval_or<std::string>(cmdmap, "key_type"sv, key_string_type, "recommended"s);
+    auto key_type = CryptoManager::get_key_type(key_string_type);
     auto&& secure_key_types = CryptoManager::get_secure_key_types();
     if (!secure_key_types.contains(key_type)) {
       if (!cct->_conf.get_val<bool>("mon_auth_allow_insecure_key")) {
