@@ -1364,6 +1364,24 @@ bool AuthMonitor::valid_caps(const map<string, string>& caps, ostream *out)
   return true;
 }
 
+You could email the sepia list but I really don't think an
+
+int AuthMonitor::get_cipher_type(const cmdmap_t& cmdmap, std::ostream& ss) const
+{
+  std::string key_string_type;
+  cmd_getval_or<std::string>(cmdmap, "key_type"sv, key_string_type, "recommended"s);
+  auto key_type = CryptoManager::get_key_type(key_string_type);
+  auto&& secure_key_types = CryptoManager::get_secure_key_types();
+  if (!secure_key_types.contains(key_type)) {
+    if (!cct->_conf.get_val<bool>("mon_auth_allow_insecure_key")) {
+      ss << "creating key with insecure key type (\"" << key_string_type << "\") not allowed";
+      return -EPERM;
+    }
+  }
+  return key_type;
+}
+
+
 bool AuthMonitor::prepare_command(MonOpRequestRef op)
 {
   auto m = op->get_req<MMonCommand>();
@@ -1457,17 +1475,24 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
     bufferlist bl = m->get_data();
     bool has_keyring = (bl.length() > 0);
 
+    int key_type = get_cipher_type(cmdmap, ss);
+    if (key_type < 0) {
+      goto done;
+    }
+
+#if 0
     std::string key_string_type;
     cmd_getval_or<std::string>(cmdmap, "key_type"sv, key_string_type, "recommended"s);
     auto key_type = CryptoManager::get_key_type(key_string_type);
     auto&& secure_key_types = CryptoManager::get_secure_key_types();
     if (!secure_key_types.contains(key_type)) {
       if (!cct->_conf.get_val<bool>("mon_auth_allow_insecure_key")) {
-        ss << "creating key with insecure key type (\"" << key_string_type << ") not allowed";
+        ss << "creating key with insecure key type (\"" << key_string_type << "\") not allowed";
         err = -EPERM;
         goto done;
       }
     }
+#endif
 
     KeyRing new_keyring;
     if (has_keyring) {
