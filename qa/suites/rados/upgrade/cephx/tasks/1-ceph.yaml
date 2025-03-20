@@ -1,2 +1,6 @@
 tasks:
 - ceph:
+    conf:
+      mon_auth_allow_insecure_key: true
+    cephx:
+      key_type: aes
