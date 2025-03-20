@@ -801,7 +801,7 @@ def cluster(ctx, config):
     ]
     ctx.cluster.only(firstmon).run(
         args=[
-            *authtool
+            *authtool,
             '--create-keyring',
             keyring_path,
         ],
