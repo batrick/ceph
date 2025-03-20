@@ -1613,6 +1613,67 @@ def suppress_mon_health_to_clog(ctx, config):
         yield
 
 @contextlib.contextmanager
+def key_rotate(ctx, config):
+    """
+   rotate keys on ceph daemons
+
+   For example::
+      tasks:
+      - ceph.key_rotate: [all]
+
+   For example::
+      tasks:
+      - ceph.key_rotate:
+          daemons: [osd.0, mon.1, mds.*]
+          key_type: recommended
+
+    :param ctx: Context
+    :param config: Configuration
+    """
+    if config is None:
+        config = {}
+    elif isinstance(config, list):
+        config = {'daemons': config}
+
+    key_type = config.setdefault('key_type', 'recommended')
+
+    cluster_name = config.setdefault('cluster', 'ceph')
+    manager = ctx.managers[cluster_name]
+
+    authtool = [
+        'sudo',
+        'adjust-ulimits',
+        'ceph-coverage',
+        coverage_dir,
+        'ceph-authtool',
+    ]
+
+    daemons = ctx.daemons.resolve_role_list(config.get('daemons', None), CEPH_ROLE_TYPES, True)
+    clusters = set()
+
+    for role in daemons:
+        cluster, type_, id_ = teuthology.split_role(role)
+        daemon = ctx.daemons.get_daemon(type_, id_, cluster)
+        daemon.stop()
+        if type_ == 'osd':
+            manager.mark_down_osd(id_)
+
+        new_key = manager.ceph(f"auth rotate --key-type={key_type} {type_}.{id_}")
+
+        daemon_dir = DATA_PATH.format(type_=type_, cluster=cluster_name, id_=id_)
+        authimport = [
+          *authtool,
+          '--import-keyring',
+          '-',
+          os.path.join(daemon_dir, 'keyring')
+        ]
+        manager.controller.run(args=authimport, stdin=StringIO(new_key))
+        daemon.restart()
+
+    yield
+
+
+@contextlib.contextmanager
 def restart(ctx, config):
     """
    restart ceph daemons
