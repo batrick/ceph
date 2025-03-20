@@ -42,6 +42,7 @@ void usage()
        << "                                existing keyringfile\n"
        << "  -g, --gen-key                 will generate a new secret key for the\n"
        << "                                specified entityname\n"
+       << "  -t, --key-type KEY_TYPE       set the key-type\n"
        << "  --gen-print-key               will generate a new secret key without set it\n"
        << "                                to the keyringfile, prints the secret to stdout\n"
        << "  --import-keyring FILE         will import the content of a given keyring\n"
@@ -66,7 +67,7 @@ int main(int argc, const char **argv)
   map<string,bufferlist> caps;
   std::string fn;
 
-  int key_type = CEPH_CRYPTO_AES256KRB5;
+  int key_type = CryptoManager::get_key_type("recommended");
 
   if (args.empty()) {
     cerr << argv[0] << ": -h or --help for usage" << std::endl;
