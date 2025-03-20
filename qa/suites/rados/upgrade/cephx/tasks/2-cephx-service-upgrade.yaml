@@ -1,0 +1,6 @@
+tasks:
+- exec:
+    mon.a:
+      - ceph config dump
+      - ceph auth ls
+- ceph.key_rotate:
