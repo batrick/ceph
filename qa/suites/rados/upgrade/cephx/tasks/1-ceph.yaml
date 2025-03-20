@@ -1,10 +1,7 @@
 tasks:
 - ceph:
     cluster-conf:
-      mon_auth_allow_insecure_key: true
+      mon:
+        mon_auth_allow_insecure_key: true
     cephx:
       key_type: aes
-- exec:
-    mon.a:
-      - ceph config dump
-      - ceph auth ls
