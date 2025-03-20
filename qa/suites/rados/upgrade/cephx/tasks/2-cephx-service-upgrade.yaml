@@ -4,3 +4,5 @@ tasks:
       - ceph config dump
       - ceph auth ls
 - ceph.key_rotate:
+    daemons: [mon.*, osd.*, mds.*]
+    key_type: aes256k
