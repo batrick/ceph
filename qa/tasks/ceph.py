@@ -1671,8 +1671,8 @@ def key_rotate(ctx, config):
         if type_ == 'osd':
             manager.mark_down_osd(id_)
 
-        new_key = manager.ceph(f"auth rotate --key-type={key_type} {type_}.{id_}")
-        new_key = new_key.strip()
+        p = manager.ceph(f"auth rotate --key-type={key_type} {type_}.{id_}")
+        new_key = p.stdout.getvalue().strip()
 
         log.info("generated new key %s", new_key)
 
