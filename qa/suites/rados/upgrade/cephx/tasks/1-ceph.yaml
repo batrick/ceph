@@ -4,6 +4,8 @@ tasks:
       global:
         auth service cipher: aes
         debug auth: 30
+        auth mon ticket ttl: 30
+        auth service ticket ttl: 30
       mon:
         mon auth allow insecure key: true
     cephx:

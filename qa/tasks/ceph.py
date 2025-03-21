@@ -942,27 +942,7 @@ def cluster(ctx, config):
         for role in teuthology.cluster_roles_of_type(roles_for_host, 'osd', cluster_name):
             _, _, id_ = teuthology.split_role(role)
 
-            osd_dir = DATA_PATH.format(type_='osd', cluster=cluster_name, id_=id_)
-            remote.run(
-                args=[
-                    'sudo',
-                    'mkdir',
-                    '-p',
-                    osd_dir,
-                    run.Raw('&&'),
-                    *authtool,
-                    '--create-keyring',
-                    '--gen-key',
-                    '--name=osd.{id}'.format(id=id_),
-                    osd_dir + '/keyring',
-                ],
-            )
-            remote.run(args=[
-                'sudo', 'chown', '-R', 'ceph:ceph', osd_dir
-            ])
-
-            mnt_point = DATA_PATH.format(
-                type_='osd', cluster=cluster_name, id_=id_)
+            mnt_point = osd_dir
             remote.run(
                 args=[
                     'sudo',
@@ -1045,6 +1025,18 @@ def cluster(ctx, config):
 
         for role in teuthology.cluster_roles_of_type(roles_for_host, 'osd', cluster_name):
             _, _, id_ = teuthology.split_role(role)
+
+            osd_dir = DATA_PATH.format(type_='osd', cluster=cluster_name, id_=id_)
+            remote.run(
+                args=[
+                    *authtool,
+                    '--create-keyring',
+                    '--gen-key',
+                    '--name=osd.{id}'.format(id=id_),
+                    osd_dir + '/keyring',
+                ],
+            )
+
             try:
                 args = ['sudo',
                         'MALLOC_CHECK_=3',
