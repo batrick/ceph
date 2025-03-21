@@ -1,0 +1,6 @@
++ Add AuthMonitor routines for generating a deprecated key type for testing with "old"/not-upgraded clients.
+- Add tests for expected service key upgrades by MON/OSD/MDS.
+- Add warnings if the service key is still using the insecure/old key type. With tests.
+- Add (silenceable) warnings if a service daemon is still authenticating with an insecure/old key type.
+- Add (silenceable) warnings if clients are authenticating with insecure/old key types. With tests.
+- Documentation for how to rotate authentication keys (for service or client). Also how to restrict key types allowed for service or authentication keys. (This will be done via a Ceph config.)
