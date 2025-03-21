@@ -942,7 +942,7 @@ def cluster(ctx, config):
         for role in teuthology.cluster_roles_of_type(roles_for_host, 'osd', cluster_name):
             _, _, id_ = teuthology.split_role(role)
 
-            mnt_point = osd_dir
+            mnt_dir = DATA_PATH.format(type_='osd', cluster=cluster_name, id_=id_)
             remote.run(
                 args=[
                     'sudo',
