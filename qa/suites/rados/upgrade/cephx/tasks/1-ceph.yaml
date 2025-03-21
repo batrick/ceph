@@ -2,8 +2,9 @@ tasks:
 - ceph:
     cluster-conf:
       global:
-        auth_service_cipher: aes
+        auth service cipher: aes
+        debug auth: 30
       mon:
-        mon_auth_allow_insecure_key: true
+        mon auth allow insecure key: true
     cephx:
       key_type: aes

@@ -1680,6 +1680,9 @@ def key_rotate(ctx, config):
             manager.mark_down_osd(id_)
 
         new_key = manager.ceph(f"auth rotate --key-type={key_type} {type_}.{id_}")
+        new_key = new_key.strip()
+
+        log.info("generated new key %s", new_key)
 
         daemon_dir = DATA_PATH.format(type_=type_, cluster=cluster_name, id_=id_)
         authimport = [
