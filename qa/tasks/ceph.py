@@ -941,6 +941,26 @@ def cluster(ctx, config):
 
         for role in teuthology.cluster_roles_of_type(roles_for_host, 'osd', cluster_name):
             _, _, id_ = teuthology.split_role(role)
+
+            osd_dir = DATA_PATH.format(type_='osd', cluster=cluster_name, id_=id_)
+            remote.run(
+                args=[
+                    'sudo',
+                    'mkdir',
+                    '-p',
+                    osd_dir,
+                    run.Raw('&&'),
+                    *authtool,
+                    '--create-keyring',
+                    '--gen-key',
+                    '--name=osd.{id}'.format(id=id_),
+                    osd_dir + '/keyring',
+                ],
+            )
+            remote.run(args=[
+                'sudo', 'chown', '-R', 'ceph:ceph', osd_dir
+            ])
+
             mnt_point = DATA_PATH.format(
                 type_='osd', cluster=cluster_name, id_=id_)
             remote.run(
@@ -1034,7 +1054,6 @@ def cluster(ctx, config):
                         '--no-mon-config',
                         '--cluster', cluster_name,
                         '--mkfs',
-                        '--mkkey',
                         '-i', id_,
                         '--monmap', monmap_path]
                 log_path = f'/var/log/ceph/{cluster_name}-osd.{id_}.log'
@@ -1056,7 +1075,6 @@ def cluster(ctx, config):
                         '--cluster',
                         cluster_name,
                         '--mkfs',
-                        '--mkkey',
                         '-i', id_,
                     '--monmap', monmap_path,
                     ],
@@ -1635,7 +1653,10 @@ def key_rotate(ctx, config):
     elif isinstance(config, list):
         config = {'daemons': config}
 
+    testdir = teuthology.get_testdir(ctx)
+
     key_type = config.setdefault('key_type', 'recommended')
+    coverage_dir = f'{testdir}/archive/coverage'
 
     cluster_name = config.setdefault('cluster', 'ceph')
     manager = ctx.managers[cluster_name]
