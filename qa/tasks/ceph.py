@@ -1683,7 +1683,7 @@ def key_rotate(ctx, config):
           '-',
           os.path.join(daemon_dir, 'keyring')
         ]
-        manager.controller.run(args=authimport, stdin=StringIO(new_key))
+        daemon.remote.run(args=authimport, stdin=StringIO(new_key))
         daemon.restart()
 
     yield
