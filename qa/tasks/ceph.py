@@ -1686,11 +1686,11 @@ def key_rotate(ctx, config):
           importme,
           os.path.join(daemon_dir, 'keyring')
         ]
-        daemon.remote.run(args=['cat', importme])
-        daemon.remote.run(args=['cat', os.path.join(daemon_dir, 'keyring')])
+        daemon.remote.run(args=['sudo', 'cat', importme])
+        daemon.remote.run(args=['sudo', 'cat', os.path.join(daemon_dir, 'keyring')])
         #daemon.remote.run(args=authimport, stdin=StringIO(new_key))
         daemon.remote.run(args=authimport)
-        daemon.remote.run(args=['cat', os.path.join(daemon_dir, 'keyring')])
+        daemon.remote.run(args=['sudo', 'cat', os.path.join(daemon_dir, 'keyring')])
         daemon.restart()
 
     yield
