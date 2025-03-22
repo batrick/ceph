@@ -1674,22 +1674,22 @@ def key_rotate(ctx, config):
         p = manager.ceph(f"auth rotate --key-type={key_type} {type_}.{id_}")
         new_key = p.stdout.getvalue()
 
-        importme = '/tmp/importme'
+        #importme = '/tmp/importme'
         log.info("generated new key %s", new_key)
-        daemon.remote.write_file(importme, BytesIO(new_key.encode()))
+        #daemon.remote.write_file(importme, BytesIO(new_key.encode()))
 
         daemon_dir = DATA_PATH.format(type_=type_, cluster=cluster_name, id_=id_)
         authimport = [
           *authtool,
           '--import-keyring',
-          #'-',
-          importme,
+          '-',
+          #importme,
           os.path.join(daemon_dir, 'keyring')
         ]
-        daemon.remote.run(args=['sudo', 'cat', importme])
+        #daemon.remote.run(args=['sudo', 'cat', importme])
         daemon.remote.run(args=['sudo', 'cat', os.path.join(daemon_dir, 'keyring')])
-        #daemon.remote.run(args=authimport, stdin=StringIO(new_key))
-        daemon.remote.run(args=authimport)
+        daemon.remote.run(args=authimport, stdin=StringIO(new_key))
+        #daemon.remote.run(args=authimport)
         daemon.remote.run(args=['sudo', 'cat', os.path.join(daemon_dir, 'keyring')])
         daemon.restart()
 
