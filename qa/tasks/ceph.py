@@ -1683,7 +1683,7 @@ def key_rotate(ctx, config):
           *authtool,
           '--import-keyring',
           #'-',
-          importme
+          importme,
           os.path.join(daemon_dir, 'keyring')
         ]
         daemon.remote.run(args=['cat', importme])
