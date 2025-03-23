@@ -865,6 +865,7 @@ bool AuthMonitor::preprocess_command(MonOpRequestRef op)
   cmd_getval(cmdmap, "prefix", prefix);
   if (prefix == "auth add" ||
       prefix == "auth rotate" ||
+      prefix == "auth dump-rotating" ||
       prefix == "auth del" ||
       prefix == "auth rm" ||
       prefix == "auth get-or-create" ||
@@ -1898,7 +1899,8 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
     f->open_object_section("keys");
     mon.key_server.dump(f.get());
     f->close_section();
-    return false;
+    f->flush(ds);
+    goto done;
   }
 done:
   rdata.append(ds);

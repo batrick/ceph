@@ -53,11 +53,13 @@ bool KeyServerData::get_service_secret(CephContext *cct, uint32_t service_id,
   secret_id = riter->first;
   secret = riter->second.key;
 
+  double const auth_mon_ticket_ttl = cct->_conf.get_val<double>("auth_mon_ticket_ttl");
+  double const auth_service_ticket_ttl= cct->_conf.get_val<double>("auth_service_ticket_ttl");
+
   // ttl may have just been increased by the user
   // cap it by expiration of "next" key to prevent handing out a ticket
   // with a bogus, possibly way into the future, validity
-  ttl = service_id == CEPH_ENTITY_TYPE_AUTH ?
-      cct->_conf->auth_mon_ticket_ttl : cct->_conf->auth_service_ticket_ttl;
+  ttl = service_id == CEPH_ENTITY_TYPE_AUTH ? auth_mon_ticket_ttl : auth_service_ticket_ttl;
   ttl = std::min(ttl, static_cast<double>(
 		     secrets.secrets.rbegin()->second.expiration - now));
 
@@ -152,11 +154,12 @@ int KeyServer::start_server()
   return 0;
 }
 
-void KeyServer::dump() const
+void KeyServer::dump()
 {
   _dump_rotating_secrets();
 }
 
+#if 0
 void KeyServer::dump(Formatter* f) const
 {
   ldout(cct, 30) << __func__ << dendl;
@@ -177,8 +180,9 @@ void KeyServer::dump(Formatter* f) const
   }
   f->close_section();
 }
+#endif
 
-void KeyServer::_dump_rotating_secrets() const
+void KeyServer::_dump_rotating_secrets()
 {
   ldout(cct, 30) << "_dump_rotating_secrets" << dendl;
   for (auto iter = data.rotating_secrets.begin();
@@ -200,11 +204,11 @@ int KeyServer::_rotate_secret(uint32_t service_id, KeyServerData &pending_data)
   int added = 0;
   utime_t now = ceph_clock_now();
 
-  double const auth_mon_ticket_ttl = cct->_conf.get_val<double>("auth_mon_ticket_ttl")
-  double const auth_service_ticket_ttl= cct->_conf.get_val<double>("auth_service_ticket_ttl")
+  double const auth_mon_ticket_ttl = cct->_conf.get_val<double>("auth_mon_ticket_ttl");
+  double const auth_service_ticket_ttl= cct->_conf.get_val<double>("auth_service_ticket_ttl");
   auto const auth_service_cipher = cct->_conf.get_val<string>("auth_service_cipher");
 
-  dout(10) << __func__
+  ldout(cct, 10) << __func__
           << ": auth_mon_ticket_ttl=" << auth_mon_ticket_ttl
           << ", auth_service_ticket_ttl=" << auth_service_ticket_ttl
           << ", auth_service_cipher" << auth_service_cipher
@@ -526,7 +530,7 @@ int KeyServer::build_session_auth_info(uint32_t service_id,
   info.secret_id = secret_id;
 
   std::scoped_lock l{lock};
-  return _build_session_auth_info(service_id, parent_ticket, key_type, info,
-				  cct->_conf->auth_service_ticket_ttl);
+  double const auth_service_ticket_ttl= cct->_conf.get_val<double>("auth_service_ticket_ttl");
+  return _build_session_auth_info(service_id, parent_ticket, key_type, info, auth_service_ticket_ttl);
 }
 

@@ -219,7 +219,7 @@ class KeyServer : public KeyStore {
   mutable ceph::mutex lock;
 
   int _rotate_secret(uint32_t service_id, KeyServerData &pending_data);
-  void _dump_rotating_secrets() const;
+  void _dump_rotating_secrets();
   int _build_session_auth_info(uint32_t service_id, 
 			       const AuthTicket& parent_ticket,
                                std::optional<int> key_type,
@@ -245,8 +245,7 @@ public:
   int start_server();
   void rotate_timeout(double timeout);
 
-  void dump() const;
-  void dump(Formatter* f) const;
+  void dump();
   
   int build_session_auth_info(uint32_t service_id,
 			      const AuthTicket& parent_ticket,
