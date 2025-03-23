@@ -1894,6 +1894,11 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
     wait_for_commit(op, new Monitor::C_Command(mon, op, 0, rs, rdata,
                                               get_last_committed() + 1));
     return true;
+  } else if (prefix == "auth dump-rotating") {
+    f->open_object_section("keys");
+    mon.key_server.dump(f.get());
+    f->close_section();
+    return false;
   }
 done:
   rdata.append(ds);

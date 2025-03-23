@@ -177,6 +177,9 @@ COMMAND("auth rotate"
         ,
 	"rotate entity key",
 	"auth", "rwx")
+COMMAND("auth dump-rotating",
+	"dump rotating keys",
+	"auth", "rwx")
 COMMAND("auth get-or-create-key"
 	" name=entity,type=CephString"
 	" name=caps,type=CephString,n=N,req=false"
