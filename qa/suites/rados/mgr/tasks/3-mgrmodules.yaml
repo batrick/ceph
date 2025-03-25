@@ -8,4 +8,4 @@ tasks:
       - mgrmodules
       - exec:
           mon.a:
-            - ceph tell mgr.x status
+            - ceph tell mgr status
