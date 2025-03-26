@@ -363,7 +363,7 @@ void KeyServer::encode_plaintext(bufferlist &bl)
   bl.append(os.str());
 }
 
-bool KeyServer::prepare_rotating_update(bufferlist& rotating_bl)
+bool KeyServer::prepare_rotating_update(bufferlist& rotating_bl, bool wipe)
 {
   std::scoped_lock l{lock};
   ldout(cct, 20) << __func__ << " before: data.rotating_ver=" << data.rotating_ver
@@ -371,7 +371,9 @@ bool KeyServer::prepare_rotating_update(bufferlist& rotating_bl)
 
   KeyServerData pending_data(nullptr);
   pending_data.rotating_ver = data.rotating_ver + 1;
-  pending_data.rotating_secrets = data.rotating_secrets;
+  if (!wipe) {
+    pending_data.rotating_secrets = data.rotating_secrets;
+  }
 
   int added = 0;
   added += _rotate_secret(CEPH_ENTITY_TYPE_AUTH, pending_data);
