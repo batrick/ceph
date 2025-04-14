@@ -6562,10 +6562,6 @@ void Server::handle_client_setvxattr(const MDRequestRef& mdr, CInode *cur)
       respond_to_request(mdr, -ENOTEMPTY);
       return;
     }
-    if (cur->snaprealm && cur->snaprealm->srnode.snaps.size()) {
-      respond_to_request(mdr, -ENOTEMPTY);
-      return;
-    }
 
     if (is_rmxattr) {
       if (!cur->get_projected_inode()->has_charmap()) {
@@ -6591,10 +6587,6 @@ void Server::handle_client_setvxattr(const MDRequestRef& mdr, CInode *cur)
       return;
 
     if (_dir_is_nonempty(mdr, cur)) {
-      respond_to_request(mdr, -ENOTEMPTY);
-      return;
-    }
-    if (cur->snaprealm && cur->snaprealm->srnode.snaps.size()) {
       respond_to_request(mdr, -ENOTEMPTY);
       return;
     }
@@ -6631,10 +6623,6 @@ void Server::handle_client_setvxattr(const MDRequestRef& mdr, CInode *cur)
       respond_to_request(mdr, -ENOTEMPTY);
       return;
     }
-    if (cur->snaprealm && cur->snaprealm->srnode.snaps.size()) {
-      respond_to_request(mdr, -ENOTEMPTY);
-      return;
-    }
 
     auto pi = cur->project_inode(mdr);
     pip = pi.inode.get();
@@ -6656,10 +6644,6 @@ void Server::handle_client_setvxattr(const MDRequestRef& mdr, CInode *cur)
       return;
 
     if (_dir_is_nonempty(mdr, cur)) {
-      respond_to_request(mdr, -ENOTEMPTY);
-      return;
-    }
-    if (cur->snaprealm && cur->snaprealm->srnode.snaps.size()) {
       respond_to_request(mdr, -ENOTEMPTY);
       return;
     }
