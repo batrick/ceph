@@ -228,6 +228,53 @@ class TestCharMapVxattr(CephFSTestCase, CharMapMixin):
                 stderr = p.stderr.getvalue()
                 self.fail("command failed:\n%s", stderr)
 
+    def test_cs_snaps_set_insensitive(self):
+        """
+        That setting a charmap succeeds for an empty directory with snaps.
+        """
+
+        attrs = {
+          "ceph.dir.casesensitive": False,
+          "ceph.dir.normalization": "nfc",
+          "ceph.dir.encoding": "utf8",
+        }
+
+        self.mount_a.run_shell_payload("mkdir -p foo/dir; mkdir foo/.snap/one; rmdir foo/dir")
+        changes = {}
+        for attr, v in attrs.items():
+            try:
+                self.mount_a.setfattr("foo/", attr, v, helpfulexception=True)
+            except DirectoryNotEmptyError:
+                self.fail("should not fail")
+            changes[attr[attr.rfind('.')+1:]] = v
+            try:
+                self.check_cs("foo", **changes)
+            except NoSuchAttributeError:
+                self.fail("should not fail")
+
+    def test_cs_parent_snaps_set_insensitive(self):
+        """
+        That setting a charmap succeeds for an empty directory with parent snaps.
+        """
+
+        attrs = {
+          "ceph.dir.casesensitive": False,
+          "ceph.dir.normalization": "nfc",
+          "ceph.dir.encoding": "utf8",
+        }
+
+        self.mount_a.run_shell_payload("mkdir -p foo/{trash,bar}; mkdir foo/.snap/one; rmdir foo/trash;")
+        changes = {}
+        for attr, v in attrs.items():
+            try:
+                self.mount_a.setfattr("foo/bar", attr, v, helpfulexception=True)
+            except DirectoryNotEmptyError:
+                self.fail("should not fail")
+            changes[attr[attr.rfind('.')+1:]] = v
+            try:
+                self.check_cs("foo/bar", **changes)
+            except NoSuchAttributeError:
+                self.fail("should not fail")
 
     def test_cs_remount(self):
         """
@@ -413,3 +460,57 @@ class TestCaseFolding(CephFSTestCase, CharMapMixin):
         altn_bin = base64.b64decode(altn)
         expected = base64.b64decode("R3LDvMOfZW4=") # 8 chars, not 9
         self.assertIn(expected, altn_bin)
+
+
+    def test_casefolding_snap(self):
+        """
+        That a case folding works for a snapshotted directory.
+        """
+
+        dname = "Grüßen"
+        ldname = "grüßen"
+        self.mount_a.run_shell_payload("mkdir foo/")
+        self.mount_a.setfattr("foo/", "ceph.dir.casesensitive", "0")
+
+        self.mount_a.run_shell_payload(f"touch foo/{dname}")
+
+        self.mount_a.run_shell_payload("mkdir foo/.snap/one")
+        self.mount_a.run_shell_payload("find foo/ -type f -delete")
+        self.mount_a.run_shell_payload(f"stat foo/.snap/one/{ldname}")
+        self.mount_a.setfattr("foo/", "ceph.dir.casesensitive", "1")
+
+        self.mount_a.umount_wait()
+        self.mount_a.mount()
+
+        self.mount_a.run_shell_payload(f"stat foo/.snap/one/{dname}")
+        self.mount_a.run_shell_payload(f"stat foo/.snap/one/{ldname}")
+
+    def test_casefolding_snap_nocharmap(self):
+        """
+        That a case folding works for directory with snapshots without charmap.
+        """
+
+        dname = "Grüßen"
+        ldname = "grüßen"
+        self.mount_a.run_shell_payload(f"mkdir foo; touch foo/{dname}")
+
+        self.mount_a.run_shell_payload("mkdir foo/.snap/one")
+        self.mount_a.run_shell_payload("find foo/ -type f -delete")
+        self.mount_a.run_shell_payload(f"stat foo/.snap/one/{dname}")
+        self.mount_a.setfattr("foo/", "ceph.dir.casesensitive", "0")
+
+        self.mount_a.umount_wait()
+        self.mount_a.mount()
+
+        self.mount_a.run_shell_payload(f"touch foo/{dname}")
+        self.mount_a.run_shell_payload(f"stat foo/{dname} && stat foo/{ldname}")
+
+        self.mount_a.run_shell_payload(f"stat foo/.snap/one/{dname}")
+        try:
+            p = self.mount_a.run_shell_payload(f"stat foo/.snap/one/{ldname}", wait=False)
+            p.wait()
+        except CommandFailedError:
+            stderr = p.stderr.getvalue()
+            self.assertIn("does not exist", stderr)
+        else:
+            self.fail("should fail")
