@@ -1622,6 +1622,15 @@ def suppress_mon_health_to_clog(ctx, config):
     else:
         yield
 
+def _wait_for_up_and_clean(ctx, manager):
+    manager.wait_for_all_osds_up(timeout=300)
+
+    try:
+        manager.flush_all_pg_stats()
+    except (run.CommandFailedError, Exception) as e:
+        log.info('ignoring flush pg stats error, probably testing upgrade: %s', e)
+    manager.wait_for_clean()
+
 @contextlib.contextmanager
 def key_rotate(ctx, config):
     """
@@ -1689,6 +1698,7 @@ def key_rotate(ctx, config):
         daemon.remote.run(args=['sudo', 'cat', os.path.join(daemon_dir, 'keyring')])
         daemon.remote.run(args=authimport)
         daemon.remote.run(args=['sudo', 'cat', os.path.join(daemon_dir, 'keyring')])
+
         daemon.restart()
 
     yield
