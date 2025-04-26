@@ -6,6 +6,7 @@ import logging
 
 from teuthology.orchestra import run
 from teuthology import misc as teuthology
+from teuthology.exceptions import CommandFailedError
 
 
 log = logging.getLogger(__name__)
