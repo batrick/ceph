@@ -20,3 +20,4 @@ overrides:
       - FS_DEGRADED
       - OSDMAP_FLAGS
       - OSD_UPGRADE_FINISHED
+      - OSD_HOST_DOWN
