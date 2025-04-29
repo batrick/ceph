@@ -41,6 +41,10 @@ tasks:
     - \(MON_DOWN\)
     - \(SLOW_OPS\)
     - slow request
+- full_sequential_finally:
+  - exec:
+      mon.a:
+        - sleep 1h
 - workunit:
     clients:
       all:
