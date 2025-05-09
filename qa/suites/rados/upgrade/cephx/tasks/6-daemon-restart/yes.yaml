@@ -1,0 +1,5 @@
+tasks:
+- ceph.restart:
+    daemons: [mon.*, mgr.*, mds.*, osd.*]
+    mon-health-to-clog: false
+    wait-for-healthy: true
