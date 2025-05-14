@@ -40,10 +40,6 @@ class OSDService(CephService):
 
         async def create_from_spec_one(host: str, drive_selection: DriveSelection) -> Optional[str]:
             # skip this host if there has been no change in inventory
-            if not self.mgr.cache.osdspec_needs_apply(host, drive_group):
-                self.mgr.log.debug("skipping apply of %s on %s (no change)" % (
-                    host, drive_group))
-                return None
             # skip this host if we cannot schedule here
             if self.mgr.inventory.has_label(host, SpecialHostLabels.DRAIN_DAEMONS):
                 return None
