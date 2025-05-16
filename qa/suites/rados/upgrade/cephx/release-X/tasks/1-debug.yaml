@@ -10,4 +10,3 @@ tasks:
       - ceph tell mon.c config diff
       - ceph config dump
       - ceph auth ls
-      - ceph auth --format=json dump-keys
