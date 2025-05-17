@@ -15,6 +15,7 @@ tasks:
     daemons: [osd.*]
     mon-health-to-clog: false
     wait-for-osds-up: true
+    wait-for-healthy: false
 - exec:
     mon.a:
       - ceph versions
