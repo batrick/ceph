@@ -2,7 +2,7 @@ tasks:
 - full_sequential_finally:
   - exec:
       mon.a:
-        - sleep 1h
+        - sleep 5m
 - exec:
     mon.a:
       - ceph --debug_ms=5 --debug_auth=30 --debug_monc=30 tell mon.a config diff
