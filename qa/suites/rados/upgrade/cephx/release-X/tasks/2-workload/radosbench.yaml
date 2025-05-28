@@ -1,7 +1,7 @@
 teuthology:
   postmerge:
   - |
-    if yaml.teuthology.variables.wipe_service_keys then
+    if false and yaml.teuthology.variables.wipe_service_keys then
         yaml.radosbench.sequential_yield[0].radosbench.auth_exit_on_failure = 99
         yaml.radosbench.sequential_yield[0].radosbench.expected_rc = 99
     end
