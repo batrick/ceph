@@ -105,7 +105,7 @@ struct KeyServerData {
     rotating_secrets.clear();
   }
 
-  void add_auth(const EntityName& name, EntityAuth& auth) {
+  void add_auth(const EntityName& name, const EntityAuth& auth) {
     secrets[name] = auth;
   }
 
@@ -315,7 +315,7 @@ public:
     data.version = ver;
   }
 
-  void add_auth(const EntityName& name, EntityAuth& auth) {
+  void add_auth(const EntityName& name, const EntityAuth& auth) {
     std::scoped_lock l{lock};
     data.add_auth(name, auth);
   }
