@@ -744,7 +744,6 @@ void OSDMonitor::update_from_paxos(bool *need_bootstrap)
     mapping_job.reset();
   }
 
-  load_health();
 
   /*
    * We will possibly have a stashed latest that *we* wrote, and we will
@@ -2075,9 +2074,8 @@ void OSDMonitor::encode_pending(MonitorDBStore::TransactionRef t)
   }
 
   // health
-  health_check_map_t next;
+  auto& next = get_health_checks_pending_writeable();
   tmp.check_health(cct, &next);
-  encode_health(next, t);
 }
 
 int OSDMonitor::load_metadata(int osd, map<string, string>& m, ostream *err)
