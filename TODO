@@ -1,0 +1,8 @@
+* https://g.co/gemini/share/438310f72c14
+* https://github.com/ceph/ceph-private/commit/fc210fe3dea7a7470072ab15e37109ba3ba82b2b#r162932476
+* kernel rbd workload
+* cephadm cephx upgrade procedure / key rotation
+- test need way to rescue if auth_allowed_ciphers is borked, some kind of config override
+- test for new mon switch to use keyring as authority
+- test upgrade tests and general tests
+- ProtocolV2 changes to reauth or close
