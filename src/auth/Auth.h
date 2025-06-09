@@ -20,6 +20,7 @@
 #include "common/entity_name.h"
 #include "common/Formatter.h"
 #include "include/buffer.h"
+#include "include/common_fwd.h"
 
 #include <cstdint>
 #include <iostream>
