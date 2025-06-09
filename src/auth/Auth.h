@@ -22,6 +22,7 @@
 #include "common/Formatter.h"
 #include "include/buffer.h"
 #include "include/ceph_fs.h" // for CEPH_AUTH_UNKNOWN
+#include "include/common_fwd.h"
 
 #include <cstdint>
 #include <iostream>
