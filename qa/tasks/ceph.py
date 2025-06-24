@@ -788,10 +788,12 @@ def cluster(ctx, config):
 
     default_keyring = '/etc/ceph/{cluster}.keyring'.format(cluster=cluster_name)
     keyring_path = config.get('keyring_path', default_keyring)
+    ctx.ceph[cluster_name].keyring = keyring_path
 
     coverage_dir = '{tdir}/archive/coverage'.format(tdir=testdir)
 
     firstmon = teuthology.get_first_mon(ctx, config, cluster_name)
+    (ctx.ceph[cluster_name].admin, ) = ctx.cluster.only(firstmon).remotes.keys()
 
     log.info('Setting up %s...' % firstmon)
     authtool = [
@@ -802,14 +804,14 @@ def cluster(ctx, config):
         'ceph-authtool',
         *auth_tool_extra_args,
     ]
-    ctx.cluster.only(firstmon).run(
+    ctx.ceph[cluster_name].admin.run(
         args=[
             *authtool,
             '--create-keyring',
             keyring_path,
         ],
     )
-    ctx.cluster.only(firstmon).run(
+    ctx.ceph[cluster_name].admin.run(
         args=[
             *authtool,
             '--gen-key',
@@ -817,7 +819,7 @@ def cluster(ctx, config):
             keyring_path,
         ],
     )
-    ctx.cluster.only(firstmon).run(
+    ctx.ceph[cluster_name].admin.run(
         args=[
             'sudo',
             'chmod',
@@ -825,12 +827,11 @@ def cluster(ctx, config):
             keyring_path,
         ],
     )
-    (mon0_remote,) = ctx.cluster.only(firstmon).remotes.keys()
     monmap_path = '{tdir}/{cluster}.monmap'.format(tdir=testdir,
                                                    cluster=cluster_name)
     fsid = create_simple_monmap(
         ctx,
-        mon0_remote,
+        ctx.ceph[cluster_name].admin,
         conf,
         mons,
         monmaptool_extra_args,
@@ -862,8 +863,8 @@ def cluster(ctx, config):
     )
 
     log.info('Copying monmap to all nodes...')
-    keyring = mon0_remote.read_file(keyring_path)
-    monmap = mon0_remote.read_file(monmap_path)
+    keyring = ctx.ceph[cluster_name].admin.read_file(keyring_path)
+    monmap = ctx.ceph[cluster_name].admin.read_file(monmap_path)
 
     for rem in ctx.cluster.remotes.keys():
         # copy mon key and initial monmap
@@ -1187,8 +1188,6 @@ def cluster(ctx, config):
         ctx.summary['success'] = False
         raise
     finally:
-        (mon0_remote,) = ctx.cluster.only(firstmon).remotes.keys()
-
         log.info('Checking cluster log for badness...')
 
         def first_in_ceph_log(pattern, excludes):
@@ -1210,7 +1209,7 @@ def cluster(ctx, config):
             args.extend([
                 run.Raw('|'), 'head', '-n', '1',
             ])
-            r = mon0_remote.run(
+            r = ctx.ceph[cluster_name].admin.run(
                 stdout=BytesIO(),
                 args=args,
                 stderr=StringIO(),
@@ -1541,6 +1540,7 @@ def healthy(ctx, config):
     """
     config = config if isinstance(config, dict) else dict()
     cluster_name = config.get('cluster', 'ceph')
+    expected_checks = config.get('expected_checks', [])
     log.info('Waiting until %s daemons up and pgs clean...', cluster_name)
     manager = ctx.managers[cluster_name]
     try:
@@ -1558,7 +1558,7 @@ def healthy(ctx, config):
 
     if config.get('wait-for-healthy', True):
         log.info('Waiting until ceph cluster %s is healthy...', cluster_name)
-        manager.wait_until_healthy(timeout=300)
+        manager.wait_until_healthy(timeout=300, expected_checks=expected_checks)
 
     if ctx.cluster.only(teuthology.is_type('mds', cluster_name)).remotes:
         # Some MDSs exist, wait for them to be healthy
@@ -1635,18 +1635,60 @@ def _wait_for_up_and_clean(ctx, manager):
         log.info('ignoring flush pg stats error, probably testing upgrade: %s', e)
     manager.wait_for_clean()
 
+import fnmatch
+
+@contextlib.contextmanager
+def key_prune(ctx, config):
+    """
+   prune keys
+
+   For example::
+      tasks:
+      - ceph.key_prune: [client.bootstrap-.*]
+
+    :param ctx: Context
+    :param config: Configuration
+    """
+    if config is None:
+        config = {}
+    elif isinstance(config, list):
+        config = {'keys': config}
+
+    testdir = teuthology.get_testdir(ctx)
+
+    cluster_name = config.setdefault('cluster', 'ceph')
+    manager = ctx.managers[cluster_name]
+
+    for key_glob in config['keys']:
+        log.info("removing keys matching {}", key_glob)
+
+        p = manager.ceph("auth ls --format=json")
+        credentials = json.loads(p.stdout.getvalue())
+        entities = [c['entity'] for c in credentials['auth_dump']]
+
+        log.debug("entities: {}", entities)
+
+        matches = fnmatch.filter(entities, key_glob)
+
+        for m in matches:
+            log.info("removing key {}", m)
+            manager.ceph(f"auth rm {m}")
+
+    yield
+
 @contextlib.contextmanager
 def key_rotate(ctx, config):
     """
-   rotate keys on ceph daemons
+    rotate keys on ceph daemons
 
-   For example::
+    For example::
       tasks:
       - ceph.key_rotate: [all]
 
-   For example::
+    For example::
       tasks:
       - ceph.key_rotate:
+          clients: [client.admin, ...]
           daemons: [mon.*, mds.*, osd.0]
           key_type: recommended
 
@@ -1661,6 +1703,7 @@ def key_rotate(ctx, config):
     testdir = teuthology.get_testdir(ctx)
 
     key_type = config.setdefault('key_type', 'recommended')
+    log.info("key_type is %s", key_type)
     coverage_dir = f'{testdir}/archive/coverage'
 
     cluster_name = config.setdefault('cluster', 'ceph')
@@ -1679,6 +1722,7 @@ def key_rotate(ctx, config):
 
     new_mon_key = None
     for role in daemons:
+        log.debug("daemon role is: %s", role)
         cluster, type_, id_ = teuthology.split_role(role)
         daemon = ctx.daemons.get_daemon(type_, id_, cluster)
         daemon.stop()
@@ -1698,7 +1742,7 @@ def key_rotate(ctx, config):
             new_key = p.stdout.getvalue()
 
         importme = '/tmp/importme'
-        log.info("generated new key %s", new_key)
+        log.info("generated new daemon key %s", new_key)
         daemon.remote.write_file(importme, BytesIO(new_key.encode()))
 
         daemon_dir = DATA_PATH.format(type_=type_, cluster=cluster_name, id_=id_)
@@ -1714,6 +1758,53 @@ def key_rotate(ctx, config):
         daemon.remote.run(args=['sudo', 'cat', os.path.join(daemon_dir, 'keyring')])
 
         daemon.restart()
+
+    clients = config.get('clients', [])
+    firstmon = teuthology.get_first_mon(ctx, config, cluster_name)
+    keyring = ctx.ceph[cluster_name].keyring
+    for client in clients:
+        if client == 'all':
+            client_roles = [ "client." + x for x in teuthology.all_roles_of_type(ctx.cluster, 'client')]
+            client_roles.append("client.admin")
+        else:
+            client_roles = [client]
+        log.info("client roles: %s", client_roles)
+        for role in client_roles:
+            _, _, id_ = teuthology.split_role(role)
+            keyrings = [ctx.ceph[cluster_name].keyring]
+            if role == "client.admin":
+                remote = ctx.ceph[cluster_name].admin
+            else:
+                (remote, ) = ctx.cluster.only(role).remotes.keys()
+                keyrings.append(f"/etc/ceph/ceph.client.{id_}.keyring")
+
+            log.info("rotating %s on %s", role, remote)
+
+            p = manager.ceph(f"auth rotate --key-type={key_type} {role}")
+            new_key = p.stdout.getvalue()
+
+            importme = '/tmp/importme'
+            log.info("generated new client key %s", new_key)
+            remote.write_file(importme, BytesIO(new_key.encode()))
+
+            authimport = [
+                *authtool,
+                '--import-keyring',
+                importme,
+            ]
+            remote.run(args=['sudo', 'cat', importme])
+            for keyring in keyrings:
+                try:
+                    out = remote.read_file(keyring, sudo=True)
+                    log.info("keyring before:\n%s", out)
+                except FileNotFoundError:
+                    log.warning("skipping keyring {}", keyring)
+                    pass
+                args = list(authimport)
+                args.append(keyring)
+                remote.run(args=args)
+                out = remote.read_file(keyring, sudo=True)
+                log.info("keyring after:\n%s", out)
 
     yield
 
@@ -2045,8 +2136,7 @@ def task(ctx, config):
             )
         )
 
-    if 'cluster' not in config:
-        config['cluster'] = 'ceph'
+    cluster_name = config.setdefault('cluster', 'ceph')
 
     validate_config(ctx, config)
 
@@ -2069,7 +2159,7 @@ def task(ctx, config):
             skip_mgr_daemons=config.get('skip_mgr_daemons', False),
             log_ignorelist=config.get('log-ignorelist', []),
             cpu_profile=set(config.get('cpu_profile', []),),
-            cluster=config['cluster'],
+            cluster=cluster_name,
             mon_bind_msgr2=config.get('mon_bind_msgr2', True),
             mon_bind_addrvec=config.get('mon_bind_addrvec', True),
             cephx=config.get('cephx', {}),
@@ -2093,30 +2183,29 @@ def task(ctx, config):
     with contextutil.nested(*subtasks):
         try:
             if config.get('wait-for-healthy', True):
-                healthy(ctx=ctx, config=dict(cluster=config['cluster']))
+                healthy(ctx=ctx, config=dict(cluster=cluster_name))
 
             yield
         finally:
             # set pg_num_targets back to actual pg_num, so we don't have to
             # wait for pending merges (which can take a while!)
             if not config.get('skip_stop_pg_num_changes', True):
-                ctx.managers[config['cluster']].stop_pg_num_changes()
+                ctx.managers[cluster_name].stop_pg_num_changes()
 
             if config.get('wait-for-scrub', True):
                 # wait for pgs to become active+clean in case any
                 # recoveries were triggered since the last health check
-                ctx.managers[config['cluster']].wait_for_clean()
+                ctx.managers[cluster_name].wait_for_clean()
                 osd_scrub_pgs(ctx, config)
 
             # stop logging health to clog during shutdown, or else we generate
             # a bunch of scary messages unrelated to our actual run.
-            firstmon = teuthology.get_first_mon(ctx, config, config['cluster'])
-            (mon0_remote,) = ctx.cluster.only(firstmon).remotes.keys()
-            mon0_remote.run(
+            firstmon = teuthology.get_first_mon(ctx, config, cluster_name)
+            ctx.ceph[cluster_name].admin.run(
                 args=[
                     'sudo',
                     'ceph',
-                    '--cluster', config['cluster'],
+                    '--cluster', cluster_name,
                     'config', 'set', 'global',
                     'mon_health_to_clog', 'false',
                 ],
