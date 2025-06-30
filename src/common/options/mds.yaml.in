@@ -793,6 +793,13 @@ options:
   services:
   - mds
   with_legacy: true
+- name: mds_allow_batched_ops
+  type: bool
+  level: advanced
+  desc: allow MDS to batch lookup/getattr RPCs
+  default: true
+  services:
+  - mds
 # multiple of size_max that triggers immediate split
 - name: mds_bal_fragment_fast_factor
   type: float
