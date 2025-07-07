@@ -10,5 +10,4 @@ overrides:
         auth service ticket ttl: 120
       mon:
         debug mon: 30
-        debug paxos: 30
         debug ms: 5
