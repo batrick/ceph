@@ -247,6 +247,8 @@ int Client::CommandHook::call(
       m_client->_kick_stale_sessions();
     else if (command == "status")
       m_client->dump_status(f);
+    else if (command == "dump_subvolume_metrics")
+      m_client->dump_subvolume_metrics(f);
     else
       ceph_abort_msg("bad command registered");
   }
@@ -400,7 +402,8 @@ Client::Client(Messenger *m, MonClient *mc, Objecter *objecter_)
     async_ino_releasor(m->cct),
     objecter_finisher(m->cct),
     m_command_hook(this),
-    fscid(0)
+    fscid(0),
+    subvolume_tracker{std::make_unique<SubvolumeTracker>(cct, whoami)}
 {
   /* We only use the locale for normalization/case folding. That is unaffected
    * by the locale but required by the API.
@@ -626,6 +629,10 @@ void Client::dump_status(Formatter *f)
   }
 }
 
+void Client::dump_subvolume_metrics(Formatter* f) {
+  subvolume_tracker->dump(f);
+}
+
 void Client::_pre_init()
 {
   timer.init();
@@ -715,6 +722,13 @@ void Client::_finish_init()
     lderr(cct) << "error registering admin socket command: "
 	       << cpp_strerror(-ret) << dendl;
   }
+  ret = admin_socket->register_command("dump_subvolume_metrics_aggr",
+    				       &m_command_hook,
+    				       "dump aggregated subvolume metrics");
+    if (ret < 0) {
+      lderr(cct) << "error registering admin socket command: "
+  	       << cpp_strerror(-ret) << dendl;
+    }
 }
 
 void Client::shutdown() 
@@ -853,6 +867,9 @@ void Client::update_io_stat_write(utime_t latency) {
   logger->tset(l_c_wr_avg, avg);
   logger->set(l_c_wr_sqsum, n_sqsum);
   logger->set(l_c_wr_ops, nr_write_request);
+}
+
+void Client::update_subvolume_metric(bool write, utime_t start, utime_t end, uint64_t size, Inode *in) {
 }
 
 // ===================
@@ -1740,6 +1757,10 @@ Inode* Client::insert_trace(MetaRequest *request, MetaSession *session)
 
     in = add_update_inode(&ist, request->sent_stamp, session,
 			  request->perms);
+    if (ist.subvolume_id) {
+      ldout(cct, 20) << __func__ << " subv_metric adding " << in->ino << "-" << ist.subvolume_id << dendl;
+      subvolume_tracker->add_inode(in->ino, ist.subvolume_id);
+    }
   }
 
   Inode *diri = NULL;
@@ -3718,14 +3739,14 @@ private:
   Client *client;
   InodeRef inode;
 public:
-  C_Client_FlushComplete(Client *c, Inode *in) : client(c), inode(in) { }
+  C_Client_FlushComplete(Client *c, Inode *in) : client(c), inode(in) {}
   void finish(int r) override {
     ceph_assert(ceph_mutex_is_locked_by_me(client->client_lock));
     if (r != 0) {
       client_t const whoami = client->whoami;  // For the benefit of ldout prefix
       ldout(client->cct, 1) << "I/O error from flush on inode " << inode
-        << " 0x" << std::hex << inode->ino << std::dec
-        << ": " << r << "(" << cpp_strerror(r) << ")" << dendl;
+                            << " 0x" << std::hex << inode->ino << std::dec
+                            << ": " << r << "(" << cpp_strerror(r) << ")" << dendl;
       inode->set_async_err(r);
     }
   }
@@ -5528,6 +5549,12 @@ void Client::handle_caps(const MConstRef<MClientCaps>& m)
 
   got_mds_push(session.get());
 
+  // check whether the current inode is under subvolume for metrics collection
+  if (m->subvolume_id > 0) {
+    ldout(cct, 10) << __func__ << " adding " << m->get_ino() << " to subvolume tracker " << m->subvolume_id << dendl;
+    subvolume_tracker->add_inode(m->get_ino(), m->subvolume_id);
+  }
+
   bool do_cap_release = false;
   Inode *in;
   vinodeno_t vino(m->get_ino(), CEPH_NOSNAP);
@@ -7200,8 +7227,13 @@ void Client::flush_cap_releases()
   for (auto &p : mds_sessions) {
     auto session = p.second;
     if (session->release && mdsmap->is_clientreplay_or_active_or_stopping(
-          p.first)) {
+            p.first)) {
       nr_caps += session->release->caps.size();
+      for (const auto &cap: session->release->caps) {
+        ldout(cct, 10) << __func__ << " removing " << static_cast<inodeno_t>(cap.ino) <<
+        " from subvolume tracker" << dendl;
+        subvolume_tracker->remove_inode(static_cast<inodeno_t>(cap.ino));
+      }
       if (cct->_conf->client_inject_release_failure) {
         ldout(cct, 20) << __func__ << " injecting failure to send cap release message" << dendl;
       } else {
@@ -7435,6 +7467,18 @@ void Client::collect_and_send_global_metrics() {
     metric = ClientMetricMessage(WriteIoSizesPayload(total_write_ops,
                                                      total_write_size));
     message.push_back(metric);
+  }
+
+  // subvolume metrics
+  if (_collect_and_send_global_metrics ||
+        session->mds_metric_flags.test(CLIENT_METRIC_TYPE_SUBVOLUME_METRICS)) {
+    auto metrics = subvolume_tracker->aggregate(true);
+    if (!metrics.empty()) {
+      for (auto m: metrics)
+        ldout(cct, 20) << " sending subv_metric " << m << dendl;
+      metric = ClientMetricMessage(SubvolumeMetricsPayload(metrics));
+      message.push_back(metric);
+    }
   }
 
   session->con->send_message2(make_message<MClientMetrics>(std::move(message)));
@@ -10972,6 +11016,7 @@ void Client::C_Read_Finisher::finish_io(int r)
     
     lat = ceph_clock_now();
     lat -= start;
+    clnt->subvolume_tracker->add_metric(in->ino, SimpleIOMetric{false, lat, static_cast<uint32_t>(r)});
     ++clnt->nr_read_request;
     clnt->update_io_stat_read(lat);
   }
@@ -11058,7 +11103,7 @@ void Client::C_Read_Sync_NonBlocking::finish(int r)
 success:
 
   r = read;
-
+  clnt->subvolume_tracker->add_metric(in->ino, SimpleIOMetric(false, ceph_clock_now() - start_time, r));
 error:
 
   onfinish->complete(r);
@@ -11217,7 +11262,7 @@ retry:
 
     C_Read_Sync_NonBlocking *crsa =
       new C_Read_Sync_NonBlocking(this, iofinish.release(), f, in, f->pos,
-                                  offset, size, bl, filer.get(), have);
+                                  offset, size, bl, filer.get(), have, ceph_clock_now());
       crf.release();
 
       // Now make first attempt at performing _read_sync
@@ -11267,7 +11312,7 @@ success:
   
   lat = ceph_clock_now();
   lat -= start;
-
+  subvolume_tracker->add_metric(in->ino, SimpleIOMetric{false, lat, bl->length()});
   ++nr_read_request;
   update_io_stat_read(lat);
 
@@ -11282,8 +11327,8 @@ done:
   return rc;
 }
 
-Client::C_Readahead::C_Readahead(Client *c, Fh *f) :
-    client(c), f(f) {
+Client::C_Readahead::C_Readahead(Client *c, Fh *f, utime_t start) :
+    client(c), f(f), start_time(start){
   f->get();
   f->readahead.inc_pending();
 }
@@ -11298,17 +11343,18 @@ void Client::C_Readahead::finish(int r) {
   client->put_cap_ref(f->inode.get(), CEPH_CAP_FILE_RD | CEPH_CAP_FILE_CACHE);
   if (r > 0) {
     client->update_read_io_size(r);
+    client->subvolume_tracker->add_metric(f->inode->ino, SimpleIOMetric(false, ceph_clock_now()-start_time, r));
   }
 }
 
-void Client::do_readahead(Fh *f, Inode *in, uint64_t off, uint64_t len)
+void Client::do_readahead(Fh *f, Inode *in, uint64_t off, uint64_t len, utime_t start_time)
 {
   if(f->readahead.get_min_readahead_size() > 0) {
     pair<uint64_t, uint64_t> readahead_extent = f->readahead.update(off, len, in->size);
     if (readahead_extent.second > 0) {
       ldout(cct, 20) << "readahead " << readahead_extent.first << "~" << readahead_extent.second
 		     << " (caller wants " << off << "~" << len << ")" << dendl;
-      Context *onfinish2 = new C_Readahead(this, f);
+      Context *onfinish2 = new C_Readahead(this, f, start_time);
       int r2 = objectcacher->file_read(&in->oset, &in->layout, in->snapid,
 				       readahead_extent.first, readahead_extent.second,
 				       NULL, 0, onfinish2);
@@ -11327,7 +11373,7 @@ void Client::C_Read_Async_Finisher::finish(int r)
 {
   // Do read ahead as long as we aren't completing with 0 bytes
   if (r != 0)
-    clnt->do_readahead(f, in, off, len);
+    clnt->do_readahead(f, in, off, len, start_time);
 
   onfinish->complete(r);
 }
@@ -11349,7 +11395,7 @@ int Client::_read_async(Fh *f, uint64_t off, uint64_t len, bufferlist *bl,
 
   if (onfinish != nullptr) {
     io_finish.reset(new C_Read_Async_Finisher(this, onfinish, f, in,
-                                              f->pos, off, len));
+                                              f->pos, off, len, ceph_clock_now()));
   }
 
   // trim read based on file size?
@@ -11390,6 +11436,7 @@ int Client::_read_async(Fh *f, uint64_t off, uint64_t len, bufferlist *bl,
     io_finish.reset(io_finish_cond);
   }
 
+  auto start_time = ceph_clock_now();
   r = objectcacher->file_read(&in->oset, &in->layout, in->snapid,
 			      off, len, bl, 0, io_finish.get());
 
@@ -11415,11 +11462,12 @@ int Client::_read_async(Fh *f, uint64_t off, uint64_t len, bufferlist *bl,
     client_lock.lock();
     put_cap_ref(in, CEPH_CAP_FILE_CACHE);
     update_read_io_size(bl->length());
+    subvolume_tracker->add_metric(in->ino, SimpleIOMetric{false, ceph_clock_now() - start_time, bl->length()});
   } else {
     put_cap_ref(in, CEPH_CAP_FILE_CACHE);
   }
 
-  do_readahead(f, in, off, len);
+  do_readahead(f, in, off, len, ceph_clock_now());
 
   return r;
 }
@@ -11627,6 +11675,7 @@ int64_t Client::_write_success(Fh *f, utime_t start, uint64_t fpos,
   lat = ceph_clock_now();
   lat -= start;
 
+  subvolume_tracker->add_metric(in->ino, SimpleIOMetric{true, lat, static_cast<uint32_t>(size)});
   ++nr_write_request;
   update_io_stat_write(lat);
 
@@ -11780,7 +11829,7 @@ int64_t Client::_write(Fh *f, int64_t offset, uint64_t size, bufferlist bl,
        (uint64_t)(offset+size) > in->size ) { //exceeds filesize 
       return -EFBIG;              
 	}
-  //ldout(cct, 7) << "write fh " << fh << " size " << size << " offset " << offset << dendl;
+  ldout(cct, 7) << "_write fh " << f << " size " << size << " offset " << offset << dendl;
 
   if (objecter->osdmap_pool_full(in->layout.pool_id)) {
     return -ENOSPC;
@@ -11911,6 +11960,7 @@ int64_t Client::_write(Fh *f, int64_t offset, uint64_t size, bufferlist bl,
     get_cap_ref(in, CEPH_CAP_FILE_BUFFER);
 
     // async, caching, non-blocking.
+    ldout(cct, 10) << " _write_oc " << dendl;
     r = objectcacher->file_write(&in->oset, &in->layout,
 				 in->snaprealm->get_snap_context(),
 				 offset, size, bl, ceph::real_clock::now(),
@@ -11947,6 +11997,7 @@ int64_t Client::_write(Fh *f, int64_t offset, uint64_t size, bufferlist bl,
       }
 
       // allow caller to wait on onfinish...
+      ldout(cct, 10) << " _write_oc_1" << dendl;
       return 0;
     }
 
@@ -11981,6 +12032,7 @@ int64_t Client::_write(Fh *f, int64_t offset, uint64_t size, bufferlist bl,
 
     get_cap_ref(in, CEPH_CAP_FILE_BUFFER);
 
+    ldout(cct, 10) << " _write_filer" << dendl;
     filer->write_trunc(in->ino, &in->layout, in->snaprealm->get_snap_context(),
 		       offset, size, bl, ceph::real_clock::now(), 0,
 		       in->truncate_size, in->truncate_seq,
@@ -11995,6 +12047,7 @@ int64_t Client::_write(Fh *f, int64_t offset, uint64_t size, bufferlist bl,
       cwf.release();
 
       // allow caller to wait on onfinish...
+      ldout(cct, 10) << " _write_filer_2" << dendl;
       return 0;
     }
 
@@ -12010,6 +12063,7 @@ int64_t Client::_write(Fh *f, int64_t offset, uint64_t size, bufferlist bl,
 success:
 
   // do not get here if non-blocking caller (onfinish != nullptr)
+  ldout(cct, 10) << " _write_filer_succeess" << dendl;
   r = _write_success(f, start, fpos, offset, size, in);
 
   if (r >= 0 && do_fsync) {
@@ -17674,6 +17728,109 @@ mds_rank_t Client::_get_random_up_mds() const
   return *p;
 }
 
+// --- subvolume metrics tracking --- //
+SubvolumeTracker::SubvolumeTracker(CephContext *ct, client_t id) : cct(ct), whoami(id) {}
+
+void SubvolumeTracker::dump(Formatter *f) {
+  auto current_metrics = aggregate(false);
+  f->open_array_section("current_metrics");
+  for (auto &met : current_metrics) {
+    f->dump_object("", met);
+  }
+  f->close_section();
+
+  std::vector<AggregatedIOMetrics> temp;
+  {
+    std::shared_lock l(metrics_lock);
+    temp = last_subvolume_metrics;
+  }
+  f->open_array_section("last_metrics");
+  for (auto &val : temp) {
+    f->dump_object("", val);
+  }
+  f->close_section();
+}
+
+void SubvolumeTracker::add_inode(inodeno_t inode, inodeno_t subvol) {
+  ldout(cct, 20) << __func__ << " subv_metric " << inode << "-" << subvol << dendl;
+  std::unique_lock l(metrics_lock);
+  if (inode_subvolume.contains(inode)) {
+    ldout(cct, 10) << __func__ << " " << inode << "-" << subvol << " subv_metric inode exists" << dendl;
+    return;
+  }
+
+  auto [it, inserted] = subvolume_metrics.try_emplace(subvol);
+  if (inserted) {
+    it->second.metrics.reserve(initial_reserve);
+  }
+
+  inode_subvolume[inode] = subvol;
+  ldout(cct, 10) << __func__ << " add " << inode << "-" << subvol << dendl;
+}
+
+void SubvolumeTracker::remove_inode(inodeno_t inode) {
+  ldout(cct, 20) << __func__ << " subv_metric " << inode << "-" << dendl;
+  std::unique_lock l(metrics_lock);
+  auto it = inode_subvolume.find(inode);
+  if (it == inode_subvolume.end()) {
+    return;
+  }
+
+  inodeno_t subvol = it->second;
+  inode_subvolume.erase(it);
+
+  auto se = subvolume_metrics.find(subvol);
+  if (se == subvolume_metrics.end()) {
+    ldout(cct, 20) << __func__ << " subv_metric not found " << inode << "-" << subvol << dendl;
+    return;
+  }
+  ldout(cct, 20) << __func__ << " subv_metric end " << inode << dendl;
+}
+
+void SubvolumeTracker::add_metric(inodeno_t inode, SimpleIOMetric&& metric) {
+  ldout(cct, 10) << __func__ << " " << inode << dendl;
+  std::shared_lock l(metrics_lock);
+  auto it = inode_subvolume.find(inode);
+  if (it == inode_subvolume.end()) {
+     return;
+  }
+  ldout(cct, 10) << __func__ << " adding subv_metric for " << inode << dendl;
+  auto& entry = subvolume_metrics[it->second]; // creates entry if not present
+  l.unlock();  // release before modifying
+  std::unique_lock l2(metrics_lock);
+  entry.metrics.emplace_back(metric);
+}
+
+std::vector<AggregatedIOMetrics> SubvolumeTracker::aggregate(bool clean) {
+  ldout(cct, 20) << __func__ << dendl;
+  std::vector<AggregatedIOMetrics> res;
+  res.reserve(subvolume_metrics.size());
+  std::unordered_map<inodeno_t, SubvolumeEntry> local_map;
+  {
+    std::unique_lock l(metrics_lock);
+    if (clean)
+      subvolume_metrics.swap(local_map);
+    else
+      local_map = subvolume_metrics;
+  }
+
+  for (const auto& [subvol_id, entry] : local_map) {
+    if (entry.metrics.empty())
+        continue;
+    auto& agg = res.emplace_back();
+    agg.subvolume_id = subvol_id;
+    for (const auto& metric : entry.metrics) {
+      agg.add(metric);
+    }
+  }
+
+  std::unique_lock l(metrics_lock);
+  last_subvolume_metrics = res;
+
+  ldout(cct, 20) << __func__ << " res size " << res.size() << dendl;
+  return res;
+}
+// --- subvolume metrics tracking --- //
 
 StandaloneClient::StandaloneClient(Messenger *m, MonClient *mc,
 				   boost::asio::io_context& ictx)
