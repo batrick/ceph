@@ -54,7 +54,12 @@ REDMINE_CUSTOM_FIELD_ID_RELEASED_IN = 35
 REDMINE_CUSTOM_FIELD_ID_UPKEEP_TIMESTAMP = 37
 
 REDMINE_STATUS_ID_RESOLVED = 3
+REDMINE_STATUS_ID_CLOSED  = 5
 REDMINE_STATUS_ID_REJECTED = 6
+REDMINE_STATUS_ID_WONTFIX = 8
+REDMINE_STATUS_ID_CANTREPRODUCE = 9
+REDMINE_STATUS_ID_DUPLICATE = 10
+REDMINE_STATUS_ID_WONTFIX_EOL = 19
 REDMINE_STATUS_ID_FIX_UNDER_REVIEW = 13
 REDMINE_STATUS_ID_PENDING_BACKPORT = 14
 
@@ -155,6 +160,23 @@ Issue #{self.issue_update.issue.id} referenced "PR #{self.pr_id}":https://github
 {self.traceback.strip()}
 </pre>
 """
+
+class RedmineUpdateException(UpkeepException):
+    def __init__(self, issue_update, **kwargs):
+        super().__init__(issue_update, **kwargs)
+
+    def __str__(self):
+        return "Update to Redmine failed"
+
+    def comment(self):
+        return f"""
+Redmine Update failed:
+
+<pre>
+{self.traceback.strip()}
+</pre>
+"""
+
 
 class IssueUpdate:
     def __init__(self, issue, github_session, git_repo):
@@ -665,6 +687,81 @@ class RedmineUpkeep:
             issue_update.logger.info(f"Resolved and matched backports found: {resolved_and_matched_backports}")
         return False
 
+
+    class FilterUnresolvedMerged(Filter):
+        """
+        Filters for issues that have a merge commit set but are not yet in
+        'Pending Backport' or 'Resolved' status.
+        """
+
+        PRIORITY = 100
+        NAME = "Unresolved Merge"
+
+        @staticmethod
+        def get_filters():
+            filters = {}
+            filters[f"cf_{REDMINE_CUSTOM_FIELD_ID_MERGE_COMMIT}"] = '*'
+            filter_out_statuses = [
+                REDMINE_STATUS_ID_RESOLVED,
+                REDMINE_STATUS_ID_CLOSED,
+                REDMINE_STATUS_ID_REJECTED,
+                REDMINE_STATUS_ID_WONTFIX,
+                REDMINE_STATUS_ID_CANTREPRODUCE,
+                REDMINE_STATUS_ID_DUPLICATE,
+                REDMINE_STATUS_ID_WONTFIX_EOL,
+                REDMINE_STATUS_ID_PENDING_BACKPORT,
+            ]
+            filters["status_id"] = "!" + ",".join(filter_out_statuses)
+            return filters
+
+        @staticmethod
+        def requires_github_api():
+            return False
+
+    def _transform_set_status_on_merge(self, issue_update):
+        """
+        Transformation: Updates the status of an issue after its associated PR is merged.
+        If the 'Backports' field contains entries, sets status to 'Pending Backport'.
+        If 'Backports' is empty, sets status to 'Resolved'.
+        """
+        issue_update.logger.debug("Running _transform_set_status_on_merge")
+
+        # FIXME run this only after transform_merged
+        current_status_id = issue_update.issue.status.id
+        merge_commit = issue_update.get_custom_field(REDMINE_CUSTOM_FIELD_ID_MERGE_COMMIT)
+        if not merge_commit:
+            issue_update.logger.info("No merge commit found. Skipping status update.")
+            return False
+
+        # Only proceed if the issue is not already in a final or pending backport state
+        if issue_update.issue.status.is_closed or issue_update.issue.status.id == REDMINE_STATUS_ID_PENDING_BACKPORT:
+            issue_update.logger.info(f"Issue is already closed or 'Pending Backport'. Skipping status update on merge.")
+            return False
+
+        issue_update.logger.info(f"Issue has a merge commit ({merge_commit}) and current status is '{issue_update.issue.status.name}'.")
+
+        backports_field_value = issue_update.get_custom_field(REDMINE_CUSTOM_FIELD_ID_BACKPORT)
+        backports_list = [bp.strip() for bp in (backports_field_value or "").split(',') if bp.strip()]
+
+        if backports_list:
+            # If 'Backports' field has entries, move to PENDING_BACKPORT
+            if current_status_id != REDMINE_STATUS_ID_PENDING_BACKPORT:
+                issue_update.logger.info(f"Backports defined: {backports_list}. Setting status to 'Pending Backport'.")
+                return issue_update.change_field('status_id', REDMINE_STATUS_ID_PENDING_BACKPORT)
+            else:
+                issue_update.logger.info("Status is already 'Pending Backport'. No change needed.")
+                return False
+        else:
+            # If 'Backports' field is empty, move to RESOLVED
+            if current_status_id != REDMINE_STATUS_ID_RESOLVED:
+                issue_update.logger.info("No backports defined. Setting status to 'Resolved'.")
+                # FIXME add comment to github PR that no backports will be done.
+                return issue_update.change_field('status_id', REDMINE_STATUS_ID_RESOLVED)
+            else:
+                issue_update.logger.info("Status is already 'Resolved'. No change needed.")
+                return False
+
+
     def _process_issue_transformations(self, issue):
         """
         Applies all discovered transformation methods to a single Redmine issue
@@ -687,10 +784,13 @@ class RedmineUpkeep:
                 # Each transformation method modifies the same issue_update object
                 transform_name = transform_method.__name__.removeprefix("_transform_")
                 issue_update.logger.debug(f"Calling transformation: {transform_name}")
-                issue_update.set_transform(transform_name)
-                if transform_method(issue_update):
-                    issue_update.logger.info(f"Transformation {transform_method.__name__} resulted in a change.")
-                    applied_transformations.append(transform_method.__name__)
+                try:
+                    issue_update.set_transform(transform_name)
+                    if transform_method(issue_update):
+                        issue_update.logger.info(f"Transformation {transform_method.__name__} resulted in a change.")
+                        applied_transformations.append(transform_method.__name__)
+                finally:
+                    issue_update.set_transform(None)
 
             if issue_update.has_changes:
                 issue_update.logger.info("Changes detected. Sending update to Redmine...")
@@ -712,10 +812,9 @@ class RedmineUpkeep:
                         self.modifications_made.setdefault(t_name, 0)
                         self.modifications_made[t_name] += 1
                     return True
-                except requests.exceptions.HTTPError as err:
+                except requests.exceptions.HTTPError as e:
                     issue_update.logger.error("API PUT failure during upkeep.", exc_info=True)
-                    self._handle_upkeep_failure(issue_update, err)
-                    return False
+                    raise RedmineUpdateException(self, exception=e, traceback=traceback.format_exc())
             else:
                 issue_update.logger.info("No changes detected after all transformations. No Redmine update sent.")
                 return False
@@ -723,7 +822,6 @@ class RedmineUpkeep:
             self._handle_upkeep_failure(issue_update, e)
             return False
         finally:
-            issue_update.set_transform(None)
             if IS_GITHUB_ACTION:
                 log_stream.flush()
                 print(f"::endgroup::", file=sys.stderr, flush=False) # End GitHub Actions group
