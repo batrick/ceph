@@ -28,6 +28,11 @@ tasks:
       - sudo ls -lZaR /tmp/cephfs/postgres/
       - sudo mkdir -p /etc/systemd/system/postgresql.service.d/ && printf '[Service]\nEnvironment=PGDATA=/tmp/cephfs/postgres/data\nEnvironment=PGLOG=/tmp/cephfs/postgres/pgstartup.log\n' | sudo tee /etc/systemd/system/postgresql.service.d/env.conf
       - sudo -u postgres -- postgresql-setup --initdb
+      - echo 'shared_buffers = 1GB' | sudo -u postgres tee -a /tmp/cephfs/postgres/data/postgresql.conf
+      - echo 'effective_cache_size = 1GB' | sudo -u postgres tee -a /tmp/cephfs/postgres/data/postgresql.conf
+      - echo 'maintenance_work_mem = 256MB' | sudo -u postgres tee -a /tmp/cephfs/postgres/data/postgresql.conf
+      - echo 'work_mem = 4MB' | sudo -u postgres tee -a /tmp/cephfs/postgres/data/postgresql.conf
+      - sudo -u postgres cat /tmp/cephfs/postgres/data/postgresql.conf
       - sudo ls -lZaR /tmp/cephfs/postgres/
       - sudo systemctl start postgresql
       - sudo -u postgres -- pgbench -s 32 -i
