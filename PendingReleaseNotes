@@ -17,6 +17,9 @@
   and the scrubbing process is delayed between each read in order to avoid monopolizing
   the I/O capacity of the OSD.
   The default stride size (``osd_deep_scrub_stride``) was 512 KBytes, and is now 4 MBytes.
+>=21.0.0
+
+* The ``auth_supported`` config has been removed.
 
 >=20.0.0
 
