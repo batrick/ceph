@@ -1,3 +1,7 @@
+>=21.0.0
+
+* The ``auth_supported`` config has been removed.
+
 >=20.0.0
 
 * RADOS: lead Monitor and stretch mode status are now included in the `ceph status` output.
