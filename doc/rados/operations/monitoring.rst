@@ -295,7 +295,7 @@ following command to the mgr:
         },
         ...
 
-
+.. _health-mute:
 
 Muting Health Checks
 --------------------
