@@ -552,6 +552,12 @@ int AsyncConnection::send_message(Message *m)
 		      << this
 		      << dendl;
 
+  if (unlikely(state == STATE_SHUTTING_DOWN || state == STATE_CLOSED)) {
+    ldout(async_msgr->cct, 20) << __func__ << " cannot send as connection shutdown" << dendl;
+    m->put();
+    return 0;
+  }
+
   if (is_blackhole()) {
     lgeneric_subdout(async_msgr->cct, ms, 0) << __func__ << ceph_entity_type_name(peer_type)
       << " blackhole " << *m << dendl;
@@ -735,6 +741,15 @@ void AsyncConnection::handle_write()
 {
   ldout(async_msgr->cct, 10) << __func__ << dendl;
   protocol->write_event();
+
+  std::unique_lock<std::mutex> l(write_lock);
+  if (state == STATE_SHUTTING_DOWN && !protocol->is_queued() &&
+      protocol->sent_queue_empty()) {
+    l.unlock();
+    ldout(async_msgr->cct, 10) << __func__ << ": all messages sent and acked, tearing down." << dendl;
+    stop(true);
+    return;
+  }
 }
 
 void AsyncConnection::handle_write_callback() {
@@ -752,17 +767,30 @@ void AsyncConnection::handle_write_callback() {
 }
 
 void AsyncConnection::stop(bool queue_reset) {
-  lock.lock();
-  bool need_queue_reset = (state != STATE_CLOSED) && queue_reset;
-  protocol->stop();
-  lock.unlock();
-  if (need_queue_reset) dispatch_queue->queue_reset(this);
+  bool need_queue_reset;
+  {
+    std::lock_guard<std::mutex> l(lock);
+    need_queue_reset = (state != STATE_CLOSED) && queue_reset;
+    protocol->stop();
+  }
+  if (need_queue_reset) {
+    dispatch_queue->queue_reset(this);
+  }
 }
 
-void AsyncConnection::shutdown()
-{
-  /* FIXME: stop() discards out queue so this doesn't actually flush sent messages */
-  return stop(true);
+void AsyncConnection::shutdown() {
+  {
+    std::lock_guard<std::mutex> l(lock);
+    if (state == STATE_CLOSED || state == STATE_SHUTTING_DOWN)
+      return;
+
+    ldout(async_msgr->cct, 10) << __func__ << " gracefully" << dendl;
+    state = STATE_SHUTTING_DOWN;
+    protocol->shutdown();
+    if (!protocol->is_queued() && protocol->sent_queue_empty())
+      center->dispatch_event_external(write_handler);
+  }
+  dispatch_queue->discard_queue(conn_id); /* drop all subsequent messages */
 }
 
 void AsyncConnection::cleanup() {

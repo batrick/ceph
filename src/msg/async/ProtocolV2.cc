@@ -120,6 +120,21 @@ void ProtocolV2::accept() {
 
 bool ProtocolV2::is_connected() { return can_write; }
 
+void ProtocolV2::shutdown() {
+  std::lock_guard<std::mutex> l(connection->write_lock);
+  if (state == CLOSED)
+    return;
+  shutting_down = true;
+  if (!out_queue.empty()) {
+    connection->center->dispatch_event_external(connection->write_handler);
+  }
+}
+
+bool ProtocolV2::sent_queue_empty() const {
+  std::lock_guard<std::mutex> l(connection->write_lock);
+  return sent.empty();
+}
+
 /*
  * Tears down the message queues, and removes them from the
  * DispatchQueue Must hold write_lock prior to calling.
@@ -1444,6 +1459,14 @@ CtPtr ProtocolV2::handle_message() {
   }
 
   INTERCEPT(17);
+
+  if (shutting_down) {
+    ldout(cct, 10) << __func__ << " shutting down, dropping incoming message" << dendl;
+    message->put();
+    reset_throttle(); /* FIXME: check this is right */
+    state = READY;
+    return CONTINUE(read_frame);
+  }
 
   message->set_byte_throttler(connection->policy.throttler_bytes);
   message->set_message_throttler(connection->policy.throttler_messages);

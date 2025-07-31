@@ -103,6 +103,20 @@ bool ProtocolV1::is_connected() {
   return can_write.load() == WriteStatus::CANWRITE;
 }
 
+void ProtocolV1::shutdown() {
+  std::lock_guard<std::mutex> l(connection->write_lock);
+  if (can_write.load() == WriteStatus::CLOSED)
+    return;
+  shutting_down = true;
+  // trigger write_event to send remaining messages or finalize shutdown
+  connection->center->dispatch_event_external(connection->write_handler);
+}
+
+bool ProtocolV1::sent_queue_empty() const {
+  std::lock_guard<std::mutex> l(connection->write_lock);
+  return sent.empty();
+}
+
 void ProtocolV1::stop() {
   ldout(cct, 20) << __func__ << dendl;
   if (state == CLOSED) {
@@ -942,6 +956,18 @@ CtPtr ProtocolV1::handle_message_footer(char *buffer, int r) {
   ldout(cct, 20) << __func__ << " got " << front.length() << " + "
                  << middle.length() << " + " << data.length() << " byte message"
                  << dendl;
+
+  if (shutting_down) {
+    ldout(cct, 10) << __func__ << " shutting down, dropping incoming message" << dendl;
+    if (connection->policy.throttler_messages)
+      connection->policy.throttler_messages->put();
+    if (connection->policy.throttler_bytes)
+      connection->policy.throttler_bytes->put(cur_msg_size);
+    connection->dispatch_queue->dispatch_throttle_release(cur_msg_size);
+    state = OPENED;
+    return CONTINUE(wait_message);
+  }
+
   Message *message = decode_message(cct, messenger->crcflags, current_header,
                                     footer, front, middle, data, connection);
   if (!message) {

@@ -156,6 +156,7 @@ public:
     STATE_CONNECTING_RE,
     STATE_ACCEPTING,
     STATE_CONNECTION_ESTABLISHED,
+    STATE_SHUTTING_DOWN,
     STATE_CLOSED
   };
 
@@ -166,6 +167,7 @@ public:
                                         "STATE_CONNECTING_RE",
                                         "STATE_ACCEPTING",
                                         "STATE_CONNECTION_ESTABLISHED",
+                                        "STATE_SHUTTING_DOWN",
                                         "STATE_CLOSED"};
       return statenames[state];
   }

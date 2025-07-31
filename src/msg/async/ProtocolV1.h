@@ -154,6 +154,7 @@ protected:
                    // presentation
   bool is_reset_from_peer;
   bool once_ready;
+  bool shutting_down = false;
 
   State state;
 
@@ -228,12 +229,14 @@ public:
   virtual void connect() override;
   virtual void accept() override;
   virtual bool is_connected() override;
+  virtual void shutdown() override;
   virtual void stop() override;
   virtual void fault() override;
   virtual void send_message(Message *m) override;
   virtual void send_keepalive() override;
 
   virtual void read_event() override;
+  virtual bool sent_queue_empty() const override;
   virtual void write_event() override;
   virtual bool is_queued() override;
 
