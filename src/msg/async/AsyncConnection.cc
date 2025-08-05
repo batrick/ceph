@@ -787,8 +787,8 @@ void AsyncConnection::shutdown() {
     ldout(async_msgr->cct, 10) << __func__ << " gracefully" << dendl;
     state = STATE_SHUTTING_DOWN;
     protocol->shutdown();
-    if (!protocol->is_queued() && protocol->sent_queue_empty())
-      center->dispatch_event_external(write_handler);
+    //if (!protocol->is_queued() && protocol->sent_queue_empty())
+    //center->dispatch_event_external(write_handler);
   }
   dispatch_queue->discard_queue(conn_id); /* drop all subsequent messages */
 }

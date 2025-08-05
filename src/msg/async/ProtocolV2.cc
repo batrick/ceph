@@ -628,6 +628,7 @@ void ProtocolV2::handle_message_ack(uint64_t seq) {
   int i = 0;
   Message *pending[max_pending];
   auto now = ceph::mono_clock::now();
+  bool should_fault;
   connection->write_lock.lock();
   while (!sent.empty() && sent.front()->get_seq() <= seq && i < max_pending) {
     Message *m = sent.front();
@@ -637,10 +638,14 @@ void ProtocolV2::handle_message_ack(uint64_t seq) {
                    << " >= " << m->get_seq() << " on " << m << " " << *m
                    << dendl;
   }
+  should_fault = sent.empty() && shutting_down;
   connection->write_lock.unlock();
   connection->logger->tinc(l_msgr_handle_ack_lat, ceph::mono_clock::now() - now);
   for (int k = 0; k < i; k++) {
     pending[k]->put();
+  }
+  if (should_fault) {
+    _fault();
   }
 }
 
