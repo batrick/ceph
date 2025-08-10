@@ -55,8 +55,6 @@ enum {
   l_subvolume_metrics_write_iops,
   l_subvolume_metrics_write_tp_Bps,
   l_subvolume_metrics_avg_write_latency,
-  l_subvolume_metrics_last_window_end,
-  l_subvolume_metrics_last_window,
   l_subvolume_metrics_last
 };
 
@@ -187,12 +185,6 @@ void MetricAggregator::refresh_subvolume_metrics_for_rank(
                   "Average write throughput (Bps)", "wbps", PerfCountersBuilder::PRIO_CRITICAL);
       plb.add_u64(l_subvolume_metrics_avg_write_latency, "avg_write_lat_msec",
                   "Average write latency (ms)", "wlav", PerfCountersBuilder::PRIO_CRITICAL);
-      // for debug only, not exported to mgr stats
-      plb.add_u64(l_subvolume_metrics_last_window_end,
-                  "last_window_end_sec", "time from last window end, sec", "tflw", PerfCountersBuilder::PRIO_CRITICAL);
-      plb.add_u64(l_subvolume_metrics_last_window,
-                  "last_window_dur_sec", "duration of last window, sec", "msli", PerfCountersBuilder::PRIO_CRITICAL);
-
       auto perf_counter = plb.create_perf_counters();
       subvolume_perf_counters[m.subvolume_path] = perf_counter;
       m_cct->get_perfcounters_collection()->add(perf_counter);
@@ -296,9 +288,6 @@ void MetricAggregator::refresh_subvolume_metrics_for_rank(
       counter->set(l_subvolume_metrics_write_iops, aggr_metric.write_iops);
       counter->set(l_subvolume_metrics_write_tp_Bps, aggr_metric.write_tBps);
       counter->set(l_subvolume_metrics_avg_write_latency, aggr_metric.avg_write_latency);
-      // debug only, remove
-      counter->set(l_subvolume_metrics_last_window_end, aggr_metric.time_window_last_end_sec);
-      counter->set(l_subvolume_metrics_last_window, aggr_metric.time_window_last_dur_sec);
 
       // Update query_metrics_map
       auto sub_key_func_subvolume = [this, &path](const MDSPerfMetricSubKeyDescriptor &desc,
