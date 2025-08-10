@@ -17757,9 +17757,8 @@ void SubvolumeMetricTracker::add_inode(inodeno_t inode, inodeno_t subvol) {
 
   auto [it, inserted] = subvolume_metrics.try_emplace(subvol);
   if (inserted) {
-    it->second.metrics.reserve(initial_reserve);
+    ldout(cct, 10) << __func__ << " inserted " << inode << "-" << subvol << dendl;
   }
-
   inode_subvolume[inode] = subvol;
   ldout(cct, 10) << __func__ << " add " << inode << "-" << subvol << dendl;
 }
@@ -17785,46 +17784,50 @@ void SubvolumeMetricTracker::remove_inode(inodeno_t inode) {
 
 void SubvolumeMetricTracker::add_metric(inodeno_t inode, SimpleIOMetric&& metric) {
   ldout(cct, 10) << __func__ << " " << inode << dendl;
-  std::shared_lock l(metrics_lock);
+  std::unique_lock l(metrics_lock);
+
   auto it = inode_subvolume.find(inode);
-  if (it == inode_subvolume.end()) {
-     return;
-  }
-  ldout(cct, 10) << __func__ << " adding subv_metric for " << inode << dendl;
-  auto& entry = subvolume_metrics[it->second]; // creates entry if not present
-  l.unlock();  // release before modifying
-  std::unique_lock l2(metrics_lock);
-  entry.metrics.emplace_back(metric);
+  if (it == inode_subvolume.end())
+    return;
+
+  auto& entry = subvolume_metrics[it->second];
+  entry.metrics.add(std::move(metric));
 }
 
-std::vector<AggregatedIOMetrics> SubvolumeMetricTracker::aggregate(bool clean) {
+std::vector<AggregatedIOMetrics>
+SubvolumeMetricTracker::aggregate(bool clean) {
   ldout(cct, 20) << __func__ << dendl;
   std::vector<AggregatedIOMetrics> res;
-  res.reserve(subvolume_metrics.size());
-  std::unordered_map<inodeno_t, SubvolumeEntry> local_map;
-  {
-    std::unique_lock l(metrics_lock);
-    if (clean)
-      subvolume_metrics.swap(local_map);
-    else
-      local_map = subvolume_metrics;
-  }
 
-  for (const auto& [subvol_id, entry] : local_map) {
-    if (entry.metrics.empty())
-        continue;
-    auto& agg = res.emplace_back();
-    agg.subvolume_id = subvol_id;
-    for (const auto& metric : entry.metrics) {
-      agg.add(metric);
+  if (clean) {
+    std::unordered_map<inodeno_t, SubvolumeEntry> tmp;
+    // move subvolume map to the local one, to release wlock asap
+    {
+      std::unique_lock l(metrics_lock);
+      subvolume_metrics.swap(tmp);
+    }
+    res.reserve(tmp.size());
+    for (auto &[subv_id, entry]: tmp) {
+      res.emplace_back(std::move(entry.metrics));
+      res.back().subvolume_id = subv_id;
+    }
+  } else {
+    // on rlock is needed, no need to copy the map to the local instance on the metrics map
+    std::shared_lock l(metrics_lock);
+    res.reserve(subvolume_metrics.size());
+    for (const auto &[subv_id, entry]: subvolume_metrics) {
+      res.emplace_back(entry.metrics);
+      res.back().subvolume_id = subv_id;
     }
   }
 
-  std::unique_lock l(metrics_lock);
-  last_subvolume_metrics = res;
+  {
+    std::unique_lock l(metrics_lock);
+    last_subvolume_metrics = res; // since res holds only 1 aggregated metrics per subvolume, copying is not so bad
+  }
 
   ldout(cct, 20) << __func__ << " res size " << res.size() << dendl;
-  return res;
+  return res; // return value optimization
 }
 // --- subvolume metrics tracking --- //
 

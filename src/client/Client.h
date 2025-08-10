@@ -271,11 +271,10 @@ struct dir_result_t {
 class SubvolumeMetricTracker {
 public:
     struct SubvolumeEntry {
-        std::vector<SimpleIOMetric> metrics;
+        AggregatedIOMetrics metrics;
 
         void dump(Formatter *f) const {
-          for(auto const& m : metrics)
-            f->dump_object("", m);
+          f->dump_object("", metrics);
         }
     };
 
@@ -289,7 +288,6 @@ protected:
     std::vector<AggregatedIOMetrics> last_subvolume_metrics;
     std::unordered_map<inodeno_t, SubvolumeEntry> subvolume_metrics;
     std::unordered_map<inodeno_t, inodeno_t> inode_subvolume;
-    size_t initial_reserve = 1000;
     CephContext *cct = nullptr;
     client_t whoami;
     std::shared_mutex metrics_lock;

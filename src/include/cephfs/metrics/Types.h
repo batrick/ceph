@@ -648,7 +648,7 @@ struct AggregatedIOMetrics {
     uint64_t write_bytes = 0;
     uint64_t read_latency_us = 0;
     uint64_t write_latency_us = 0;
-    uint64_t time_stamp; // set on MDS
+    uint64_t time_stamp = 0; // set on MDS
 
     void add(const SimpleIOMetric& m) {
       auto lat = m.get_latency_us();
