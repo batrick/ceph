@@ -4057,6 +4057,7 @@ epoch_t MDSRank::get_osd_epoch() const
 }
 
 std::string MDSRank::get_path(inodeno_t ino) {
+  std::lock_guard locker(mds_lock);
   CInode* inode = mdcache->get_inode(ino);
   if (!inode) return {};
   std::string res;
