@@ -5,6 +5,7 @@
 #define CEPH_MDS_METRICS_HANDLER_H
 
 #include <map>
+#include <mutex>
 #include <unordered_map>
 #include <thread>
 #include <utility>
@@ -75,6 +76,13 @@ private:
     inline void operator()(const ClientMetricPayload &payload) const {
       metrics_handler->handle_payload(session, payload);
     }
+    
+    // Specialization for SubvolumeMetricsPayload - should not be called
+    // as it's handled specially in handle_client_metrics
+    // just for the compiler to be happy with visitor pattern
+    inline void operator()(const SubvolumeMetricsPayload &) const {
+      ceph_abort_msg("SubvolumeMetricsPayload should be handled specially");
+    }
   };
 
   std::unique_ptr<PerfCounters> create_subv_perf_counter(const std::string& subv_name);
@@ -115,7 +123,7 @@ private:
   void handle_payload(Session *session, const OpenedInodesPayload &payload);
   void handle_payload(Session *session, const ReadIoSizesPayload &payload);
   void handle_payload(Session *session, const WriteIoSizesPayload &payload);
-  void handle_payload(Session *session, const SubvolumeMetricsPayload &payload);
+  void handle_payload(Session *session, const SubvolumeMetricsPayload &payload, std::unique_lock<ceph::mutex> &lock_guard);
   void handle_payload(Session *session, const UnknownPayload &payload);
 
   void set_next_seq(version_t seq);

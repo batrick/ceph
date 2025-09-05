@@ -3,6 +3,8 @@
 
 #include "MetricsHandler.h"
 
+#include <variant>
+
 #include "common/debug.h"
 #include "common/errno.h"
 
@@ -321,27 +323,53 @@ void MetricsHandler::handle_payload(Session *session, const WriteIoSizesPayload 
   metrics.write_io_sizes_metric.updated = true;
 }
 
-void MetricsHandler::handle_payload(Session *session, const SubvolumeMetricsPayload &payload) {
+void MetricsHandler::handle_payload(Session* session,  const SubvolumeMetricsPayload& payload, std::unique_lock<ceph::mutex>& lk) {
   dout(20) << ": type=" << payload.get_type() << ", session=" << session
-	   << " , subv_metrics count=" << payload.subvolume_metrics.size() << dendl;
+      << " , subv_metrics count=" << payload.subvolume_metrics.size() << dendl;
 
-  // on each mds we accumulate aggregated metrics from each client per each subvolume
-  // to be later send to the metrics handler for aggregation
-  for (auto const& metric : payload.subvolume_metrics) {
-    // FIXME: this is unsafe to call without mds_lock held - use subvolume-id
-    // as the path string (for now).
-    /*
+  ceph_assert(lk.owns_lock()); // caller must hold the lock
+
+  std::vector<std::string> resolved_paths;
+  resolved_paths.reserve(payload.subvolume_metrics.size());
+
+  // RAII guard: unlock on construction, re-lock on destruction (even on exceptions)
+  struct UnlockGuard {
+    std::unique_lock<ceph::mutex> &lk;
+    explicit UnlockGuard(std::unique_lock<ceph::mutex>& l) : lk(l) { lk.unlock(); }
+    ~UnlockGuard() noexcept {
+      if (!lk.owns_lock()) {
+        try { lk.lock(); }
+        catch (...) {
+          dout(0) << "failed to re-lock in UnlockGuard dtor" << dendl;
+        }
+      }
+    }
+  } unlock_guard{lk};
+
+  // unlocked: resolve paths, no contention with mds lock
+  for (const auto& metric : payload.subvolume_metrics) {
     std::string path = mds->get_path(metric.subvolume_id);
     if (path.empty()) {
       dout(10) << " path not found for " << metric.subvolume_id << dendl;
-      continue;
-      } */
-    std::string path = stringify(metric.subvolume_id);
-    auto& metrics_vec = subvolume_metrics_map[path];
-    dout(20) << " accumulating subv_metric " << metric << dendl;
-    metrics_vec.push_back(std::move(metric));
-    metrics_vec.back().time_stamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+    resolved_paths.emplace_back(std::move(path));
+  }
+
+  // locked again (via UnlockGuard dtor): update metrics map
+  const auto now_ms = static_cast<int64_t>(
+  std::chrono::duration_cast<std::chrono::milliseconds>(
+std::chrono::steady_clock::now().time_since_epoch()).count());
+
+  // Keep index pairing but avoid double map lookup
+  for (size_t i = 0; i < resolved_paths.size(); ++i) {
+    const auto& path = resolved_paths[i];
+    if (path.empty()) continue;
+
+    auto& vec = subvolume_metrics_map[path];
+
+    dout(20) << " accumulating subv_metric " << payload.subvolume_metrics[i] << dendl;
+    vec.emplace_back(std::move(payload.subvolume_metrics[i]));
+    vec.back().time_stamp = now_ms;
   }
 }
 
@@ -355,7 +383,7 @@ void MetricsHandler::handle_client_metrics(const cref_t<MClientMetrics> &m) {
     return;
   }
 
-  std::scoped_lock locker(lock);
+  std::unique_lock locker(lock);
 
   Session *session = mds->get_session(m);
   dout(20) << ": session=" << session << dendl;
@@ -366,7 +394,14 @@ void MetricsHandler::handle_client_metrics(const cref_t<MClientMetrics> &m) {
   }
 
   for (auto &metric : m->updates) {
-    std::visit(HandlePayloadVisitor(this, session), metric.payload);
+    // Special handling for SubvolumeMetricsPayload to avoid lock contention
+    if (auto* subv_payload = std::get_if<SubvolumeMetricsPayload>(&metric.payload)) {
+      // this handles the subvolume metrics payload without acquiring the mds lock
+      // should not call the visitor pattern here
+      handle_payload(session, *subv_payload, locker);
+    } else {
+      std::visit(HandlePayloadVisitor(this, session), metric.payload);
+    }
   }
 }
 
