@@ -320,7 +320,7 @@ class TestSubvolumeMetrics(CephFSTestCase):
         # check write metrics
         self.assertGreater(counters["avg_write_iops"], 0, "Expected avg_write_iops to be > 0")
         self.assertGreater(counters["avg_write_tp_Bps"], 0, "Expected avg_write_tp_Bps to be > 0")
-        self.self.assertGreaterEqual(counters["avg_write_lat_msec"], 0, "Expected avg_write_lat_msec to be > 0")
+        self.assertGreaterEqual(counters["avg_write_lat_msec"], 0, "Expected avg_write_lat_msec to be > 0")
 
         proc.wait()
 
