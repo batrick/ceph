@@ -277,6 +277,12 @@ class CephFSMountBase(object):
         mask = self.ceph_brx_net.split('/')[1]
         brd = IP(self.ceph_brx_net).broadcast()
 
+        self.run_shell_payload("""
+            sudo modprobe nf_nat
+            sudo modprobe nft_nat
+            sudo modprobe xt_MASQUERADE
+        """)
+
         brx = self.client_remote.run(args=['ip', 'addr'], stderr=StringIO(),
                                      stdout=StringIO(), timeout=(5*60))
         brx = re.findall(r'inet .* ceph-brx', brx.stdout.getvalue())
