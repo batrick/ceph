@@ -277,9 +277,6 @@ class CephFSMountBase(object):
         mask = self.ceph_brx_net.split('/')[1]
         brd = IP(self.ceph_brx_net).broadcast()
 
-        for m in ('nf_nat', 'nft_nat', 'xt_MASQUERADE'):
-            self.client_remote.run(args=['sudo', 'modprobe', m], timeout=30)
-
         brx = self.client_remote.run(args=['ip', 'addr'], stderr=StringIO(),
                                      stdout=StringIO(), timeout=(5*60))
         brx = re.findall(r'inet .* ceph-brx', brx.stdout.getvalue())
@@ -310,9 +307,18 @@ class CephFSMountBase(object):
 
         self.run_shell_payload(f"""
             set -e
-            sudo iptables -A FORWARD -o {gw} -i ceph-brx -j ACCEPT
-            sudo iptables -A FORWARD -i {gw} -o ceph-brx -j ACCEPT
-            sudo iptables -t nat -A POSTROUTING -s {ip}/{mask} -o {gw} -j MASQUERADE
+            # Ensure nat table exists. Ignore error if it already does.
+            sudo nft add table ip nat > /dev/null 2>&1 || true
+            
+            # Ensure postrouting chain exists. Ignore error if it already does.
+            sudo nft add chain ip nat postrouting {{ type nat hook postrouting priority 100 \; }} > /dev/null 2>&1 || true
+            
+            # Add the forwarding rules (to filter table, forward chain)
+            sudo nft add rule ip filter forward iifname ceph-brx oifname {gw} accept
+            sudo nft add rule ip filter forward iifname {gw} oifname ceph-brx accept
+            
+            # Add the NAT rule
+            sudo nft add rule ip nat postrouting ip saddr {ip}/{mask} oifname {gw} masquerade
         """, timeout=(5*60), omit_sudo=False, cwd='/')
 
     def _setup_netns(self):
@@ -442,17 +448,19 @@ class CephFSMountBase(object):
             sudo ip link delete ceph-brx
         """, timeout=(5*60), omit_sudo=False, cwd='/')
 
-        # Drop the iptables NAT rules
+        # Drop the nftables NAT rules
         ip = IP(self.ceph_brx_net)[-2]
         mask = self.ceph_brx_net.split('/')[1]
 
         gw = self._default_gateway()
 
+        # Use nftables instead of iptables
         self.run_shell_payload(f"""
             set -e
-            sudo iptables -D FORWARD -o {gw} -i ceph-brx -j ACCEPT
-            sudo iptables -D FORWARD -i {gw} -o ceph-brx -j ACCEPT
-            sudo iptables -t nat -D POSTROUTING -s {ip}/{mask} -o {gw} -j MASQUERADE
+            # Delete rules. Ignore errors if they don't exist (idempotent cleanup).
+            sudo nft delete rule ip filter forward iifname ceph-brx oifname {gw} accept > /dev/null 2>&1 || true
+            sudo nft delete rule ip filter forward iifname {gw} oifname ceph-brx accept > /dev/null 2>&1 || true
+            sudo nft delete rule ip nat postrouting ip saddr {ip}/{mask} oifname {gw} masquerade > /dev/null 2>&1 || true
         """, timeout=(5*60), omit_sudo=False, cwd='/')
 
     def setup_netns(self):
