@@ -50,7 +50,7 @@ namespace {
 
 void mon_info_t::encode(ceph::buffer::list& bl, uint64_t features) const
 {
-  uint8_t v = 5;
+  uint8_t v = 6;
   uint8_t min_v = 1;
   if (!crush_loc.empty()) {
     // we added crush_loc in version 5, but need to let old clients decode it
@@ -82,12 +82,13 @@ void mon_info_t::encode(ceph::buffer::list& bl, uint64_t features) const
   encode(priority, bl);
   encode(weight, bl);
   encode(crush_loc, bl);
+  encode(time_added, bl);
   ENCODE_FINISH(bl);
 }
 
 void mon_info_t::decode(ceph::buffer::list::const_iterator& p)
 {
-  DECODE_START(5, p);
+  DECODE_START(6, p);
   decode(name, p);
   decode(public_addrs, p);
   if (struct_v >= 2) {
@@ -99,24 +100,32 @@ void mon_info_t::decode(ceph::buffer::list::const_iterator& p)
   if (struct_v >= 5) {
     decode(crush_loc, p);
   }
+  if (struct_v >= 6) {
+    decode(time_added, p);
+  }
   DECODE_FINISH(p);
 }
 
 void mon_info_t::print(ostream& out) const
 {
   out << "mon." << name
-      << " addrs " << public_addrs
+      << "(addrs " << public_addrs
       << " priority " << priority
       << " weight " << weight
-      << " crush location " << crush_loc;
+      << " crush_loc " << crush_loc
+      << " added " << time_added
+      << ")";
 }
 
 void mon_info_t::dump(ceph::Formatter *f) const
 {
   f->dump_string("name", name);
-  f->dump_stream("addr") << public_addrs;
+  f->dump_object("public_addrs", public_addrs);
+  f->dump_stream("addr") << public_addrs; /* sigh: backwards compat */
+  f->dump_string("public_addr", public_addrs.get_legacy_str()); /* sighhhhh */
   f->dump_int("priority", priority);
   f->dump_float("weight", weight);
+  f->dump_string("time_added", fmt::format("{}", time_added));
   encode_json("crush_location", crush_loc, f);
 }
 
@@ -383,6 +392,25 @@ int MonMap::read(const char *fn)
   return 0;
 }
 
+mon_info_t& MonMap::add(mon_info_t&& m)
+{
+  ceph_assert(mon_info.count(m.name) == 0);
+  for (auto& a : m.public_addrs.v) {
+    ceph_assert(addr_mons.count(a) == 0);
+  }
+  m.time_added = ceph::real_clock::now();
+  auto& info = mon_info[m.name];
+  info = std::move(m);
+  if (get_required_features().contains_all(ceph::features::mon::FEATURE_NAUTILUS)) {
+    ranks.push_back(info.name);
+    ceph_assert(ranks.size() == mon_info.size());
+  } else {
+    calc_legacy_ranks();
+  }
+  calc_addr_mons();
+  return info;
+}
+
 void MonMap::print_summary(ostream& out) const
 {
   out << "e" << epoch << ": "
@@ -419,13 +447,11 @@ void MonMap::print(ostream& out) const
       !disallowed_leaders.empty()) {
     out << "disallowed_leaders " << disallowed_leaders << "\n";
   }
-  unsigned i = 0;
-  for (auto p = ranks.begin(); p != ranks.end(); ++p) {
-    const auto &mi = mon_info.find(*p);
-    ceph_assert(mi != mon_info.end());
-    out << i++ << ": " << mi->second.public_addrs << " mon." << *p;
-    if (!mi->second.crush_loc.empty()) {
-      out << "; crush_location " << mi->second.crush_loc;
+  for (unsigned rank = 0; auto& name : ranks) {
+    auto& info = get(name);
+    out << rank++ << ": " << info.public_addrs << " mon." << name;
+    if (!info.crush_loc.empty()) {
+      out << "; crush_location " << info.crush_loc;
     }
     out << "\n";
   }
@@ -449,20 +475,11 @@ void MonMap::dump(Formatter *f) const
   optional_features.dump(f, "optional");
   f->close_section();
   f->open_array_section("mons");
-  int i = 0;
-  for (auto p = ranks.begin(); p != ranks.end(); ++p, ++i) {
+  for (unsigned rank = 0; auto& name : ranks) {
+    auto const& info = get(name);
     f->open_object_section("mon");
-    f->dump_int("rank", i);
-    f->dump_string("name", *p);
-    f->dump_object("public_addrs", get_addrs(*p));
-    // compat: make these look like pre-nautilus entity_addr_t
-    f->dump_stream("addr") << get_addrs(*p).get_legacy_str();
-    f->dump_stream("public_addr") << get_addrs(*p).get_legacy_str();
-    f->dump_unsigned("priority", get_priority(*p));
-    f->dump_unsigned("weight", get_weight(*p));
-    const auto &mi = mon_info.find(*p);
-    // we don't need to assert this validity as all the get_* functions did
-    f->dump_stream("crush_location") << mi->second.crush_loc;
+    f->dump_int("rank", rank++);
+    info.dump(f);
     f->close_section();
   }
   f->close_section();
