@@ -149,6 +149,14 @@ class _FakeAuthorizer:
 
 
 class _Matcher:
+    _match_resources = (
+        resources.Cluster,
+        resources.Share,
+        resources.JoinAuth,
+        resources.UsersAndGroups,
+        resources.TLSCredential,
+    )
+
     def __init__(self) -> None:
         self._contents: Set[Any] = set()
         self._inputs: Set[str] = set()
@@ -178,14 +186,7 @@ class _Matcher:
 
     def parse(self, txt: str) -> None:
         rtypes: Dict[str, Any] = {
-            cast(Any, r).resource_type: r
-            for r in (
-                resources.Cluster,
-                resources.Share,
-                resources.JoinAuth,
-                resources.UsersAndGroups,
-                resources.TLSCredential,
-            )
+            cast(Any, r).resource_type: r for r in self._match_resources
         }
         if txt in rtypes:
             resource_cls = rtypes[txt]
