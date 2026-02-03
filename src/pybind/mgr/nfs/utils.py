@@ -103,7 +103,8 @@ def nfs_rados_configs(rados: 'Rados', nfs_pool: str = POOL_NAME) -> List[str]:
                     ns.append(obj.nspace)
     except ObjectNotFound:
         log.debug("Failed to open pool %s", nfs_pool)
-    return ns
+    finally:
+        return ns
 
 
 def restart_nfs_service(mgr: 'Module', cluster_id: str) -> None:

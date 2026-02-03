@@ -19,7 +19,6 @@ from orchestrator import DaemonDescription, OrchestratorError
 
 from cephadm import utils
 from cephadm.services.cephadmservice import AuthEntity, CephadmDaemonDeploySpec, CephService
-from cephadm.schedule import get_placement_hosts
 if TYPE_CHECKING:
     from ..module import CephadmOrchestrator
 
@@ -217,12 +216,6 @@ class NFSService(CephService):
 
         add_kmip_block = (spec.kmip_cert and spec.kmip_key and spec.kmip_ca_cert and spec.kmip_host_list)
 
-        ceph_nodes = []
-        hosts = get_placement_hosts(spec, self.mgr.cache.get_schedulable_hosts(), self.mgr.cache.get_draining_hosts())
-        for host in hosts:
-            host_ip = self.mgr.inventory.get_addr(host.hostname)
-            ceph_nodes.append(host_ip)
-
         # generate the ganesha config
         def get_ganesha_conf() -> str:
             context: Dict[str, Any] = {
@@ -249,7 +242,6 @@ class NFSService(CephService):
                 "tls_min_version": spec.tls_min_version,
                 "tls_ktls": spec.tls_ktls,
                 "tls_debug": spec.tls_debug,
-                "ceph_nodes": ceph_nodes,
                 "protocols": "3, 4" if spec.enable_nfsv3 else "4"
             }
             if spec.enable_haproxy_protocol:
