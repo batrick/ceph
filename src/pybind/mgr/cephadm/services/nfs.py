@@ -236,7 +236,6 @@ class NFSService(CephService):
                 "port": port,
                 "monitoring_addr": monitoring_ip,
                 "monitoring_port": monitoring_port,
-                "cqos_port": spec.cluster_qos_port,
                 "bind_addr": bind_addr,
                 "haproxy_hosts": [],
                 "nfs_idmap_conf": nfs_idmap_conf,
