@@ -2124,9 +2124,12 @@ void MDCache::broadcast_quota_to_client(CInode *in, client_t exclude_ct, bool qu
   if (!(mds->is_active() || mds->is_stopping()))
     return;
 
+  if (!in->is_auth() || in->is_frozen())
+    return;
+
   const auto& pi = in->get_projected_inode();
 
-  // creaete snaprealm for quota inode (quota was set before mimic)
+  // create snaprealm for quota inode (quota was set before mimic)
   if (!in->get_projected_srnode())
     mds->server->create_quota_realm(in);
 
@@ -2140,7 +2143,7 @@ void MDCache::broadcast_quota_to_client(CInode *in, client_t exclude_ct, bool qu
            << " rbytes=" << pi->rstat.rbytes
            << dendl;
 
-  // Update subvolume quota cache in MetricsHandler even if we return early.
+  // Update subvolume quota cache in MetricsHandler.
   // Update when quota is enabled OR when there's a quota change (e.g., removing quota).
   // This ensures cache is updated to 0 when quota is set to unlimited.
   // Pass both quota and current used_bytes from this inode.
@@ -2154,9 +2157,6 @@ void MDCache::broadcast_quota_to_client(CInode *in, client_t exclude_ct, bool qu
       used_bytes,
       force_zero);
   }
-
-  if (!in->is_auth() || in->is_frozen())
-    return;
 
   if (!pi->quota.is_enabled() && !quota_change)
     return;
