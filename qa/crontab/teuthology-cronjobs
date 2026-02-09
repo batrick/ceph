@@ -19,7 +19,7 @@ CEPH_QA_EMAIL="ceph-qa@ceph.io"
 CW="/home/teuthology/ceph/qa/nightlies/cron_wrapper"
 SS="/home/teuthology/ceph/qa/nightlies/schedule_subset.sh"
 # default/common arguments added by schedule_subset.sh
-TEUTHOLOGY_SUITE_ARGS="--non-interactive --newest=100 --ceph-repo=https://git.ceph.com/ceph.git --suite-repo=https://git.ceph.com/ceph.git --machine-type smithi"
+TEUTHOLOGY_SUITE_ARGS="--non-interactive --newest=100 --ceph-repo=https://git.ceph.com/ceph.git --suite-repo=https://git.ceph.com/ceph.git --machine-type trial"
 
 ### !!!!!!!!!!!!!!!!!!!!!!!!!!
 ## THIS CRONTAB MUST NOT BE EDITED MANUALLY !!!!
