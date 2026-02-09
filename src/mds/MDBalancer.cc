@@ -40,6 +40,7 @@ using namespace std;
 #include "common/config.h"
 #include "common/debug.h"
 #include "common/errno.h"
+#include "include/util.h"
 
 /* Note, by default debug_mds_balancer is 1/5. For debug messages 1<lvl<=5,
  * should_gather (below) will be true; so, debug_mds will be ignored even if
@@ -360,14 +361,14 @@ mds_load_t MDBalancer::get_load()
   uint64_t cpu_time = 1;
   {
     uint64_t ticks = 0;
-    ceph::mds::proc_stat_error err;
-    if (ceph::mds::read_process_cpu_ticks(&ticks, &err)) {
+    ceph::proc_stat_error err;
+    if (ceph::read_process_cpu_ticks(&ticks, &err)) {
       cpu_time = ticks;
     } else {
       constexpr const char* stat_path = PROCPREFIX "/proc/self/stat";
-      if (err == ceph::mds::proc_stat_error::not_resolvable) {
+      if (err == ceph::proc_stat_error::not_resolvable) {
         derr << "input file '" << stat_path << "' not resolvable" << dendl_impl;
-      } else if (err == ceph::mds::proc_stat_error::not_found) {
+      } else if (err == ceph::proc_stat_error::not_found) {
         derr << "input file '" << stat_path << "' not found" << dendl_impl;
       }
     }

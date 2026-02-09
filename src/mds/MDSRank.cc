@@ -77,38 +77,6 @@ using std::vector;
 using TOPNSPC::common::cmd_getval;
 using TOPNSPC::common::cmd_getval_or;
 
-namespace ceph::mds {
-bool read_process_cpu_ticks(uint64_t* total, proc_stat_error* error)
-{
-  ceph_assert(total != nullptr);
-  if (error) {
-    *error = proc_stat_error::none;
-  }
-  const char* stat_path = PROCPREFIX "/proc/self/stat";
-  std::ifstream stat_file(stat_path);
-  if (!stat_file.is_open()) {
-    if (error) {
-      *error = proc_stat_error::not_found;
-    }
-    return false;
-  }
-
-  std::vector<std::string> stat_vec((std::istream_iterator<std::string>{stat_file}),
-                                    std::istream_iterator<std::string>());
-  if (stat_vec.size() < 15) {
-    if (error) {
-      *error = proc_stat_error::not_resolvable;
-    }
-    return false;
-  }
-
-  uint64_t utime = std::strtoull(stat_vec[13].c_str(), nullptr, 10);
-  uint64_t stime = std::strtoull(stat_vec[14].c_str(), nullptr, 10);
-  *total = utime + stime;
-  return true;
-}
-}
-
 class C_Flush_Journal : public MDSInternalContext {
 public:
   C_Flush_Journal(MDCache *mdcache, MDLog *mdlog, MDSRank *mds,

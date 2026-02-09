@@ -127,15 +127,6 @@ enum {
   l_mdm_last,
 };
 
-namespace ceph::mds {
-enum class proc_stat_error {
-  none,
-  not_found,
-  not_resolvable
-};
-bool read_process_cpu_ticks(uint64_t* total, proc_stat_error* error = nullptr);
-}
-
 namespace ceph {
   struct heartbeat_handle_d;
 }

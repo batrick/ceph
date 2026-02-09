@@ -110,7 +110,18 @@ void dump_services(ceph::Formatter* f, const std::map<std::string,
 std::string cleanbin(ceph::buffer::list &bl, bool &b64, bool show = false);
 std::string cleanbin(std::string &str);
 
-namespace ceph::util {
+namespace ceph {
+
+enum class proc_stat_error {
+  none,
+  not_found,
+  not_resolvable
+};
+
+/// Read user+system CPU ticks for the current process from /proc/self/stat
+bool read_process_cpu_ticks(uint64_t* total, proc_stat_error* error = nullptr);
+
+namespace util {
 
 // Returns true if s matches any parameters:
 template <typename ...XS>
@@ -119,5 +130,6 @@ bool match_str(const std::string& s, const XS& ...xs)
  return ((s == xs) || ...);
 }
 
-} // namespace ceph::util
+} // namespace util
+} // namespace ceph
 #endif /* CEPH_UTIL_H */
