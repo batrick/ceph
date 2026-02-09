@@ -361,16 +361,11 @@ mds_load_t MDBalancer::get_load()
   uint64_t cpu_time = 1;
   {
     uint64_t ticks = 0;
-    ceph::proc_stat_error err;
+    std::string err;
     if (ceph::read_process_cpu_ticks(&ticks, &err)) {
       cpu_time = ticks;
     } else {
-      constexpr const char* stat_path = PROCPREFIX "/proc/self/stat";
-      if (err == ceph::proc_stat_error::not_resolvable) {
-        derr << "input file '" << stat_path << "' not resolvable" << dendl_impl;
-      } else if (err == ceph::proc_stat_error::not_found) {
-        derr << "input file '" << stat_path << "' not found" << dendl_impl;
-      }
+      derr << err << dendl_impl;
     }
   }
 

@@ -465,17 +465,14 @@ std::string bytes2str(uint64_t count) {
 }
 
 #ifndef _WIN32
-bool ceph::read_process_cpu_ticks(uint64_t* total, ceph::proc_stat_error* error)
+bool ceph::read_process_cpu_ticks(uint64_t* total, std::string* error)
 {
   ceph_assert(total != nullptr);
-  if (error) {
-    *error = ceph::proc_stat_error::none;
-  }
   const char* stat_path = PROCPREFIX "/proc/self/stat";
   std::ifstream stat_file(stat_path);
   if (!stat_file.is_open()) {
     if (error) {
-      *error = ceph::proc_stat_error::not_found;
+      *error = std::string("failed to open '") + stat_path + "'";
     }
     return false;
   }
@@ -484,7 +481,7 @@ bool ceph::read_process_cpu_ticks(uint64_t* total, ceph::proc_stat_error* error)
                                     std::istream_iterator<std::string>());
   if (stat_vec.size() < 15) {
     if (error) {
-      *error = ceph::proc_stat_error::not_resolvable;
+      *error = std::string("failed to parse '") + stat_path + "'";
     }
     return false;
   }
@@ -495,10 +492,10 @@ bool ceph::read_process_cpu_ticks(uint64_t* total, ceph::proc_stat_error* error)
   return true;
 }
 #else
-bool ceph::read_process_cpu_ticks(uint64_t* total, ceph::proc_stat_error* error)
+bool ceph::read_process_cpu_ticks(uint64_t* total, std::string* error)
 {
   if (error) {
-    *error = ceph::proc_stat_error::not_found;
+    *error = "/proc/self/stat not available on this platform";
   }
   return false;
 }

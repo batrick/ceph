@@ -672,7 +672,7 @@ void MetricsHandler::maybe_update_subvolume_quota(inodeno_t subvol_id, uint64_t 
 
 void MetricsHandler::sample_cpu_usage() {
   uint64_t current_ticks = 0;
-  ceph::proc_stat_error err;
+  std::string err;
 
   if (clk_tck <= 0) {
     rank_telemetry.metrics.cpu_usage_percent = 0;
@@ -687,12 +687,7 @@ void MetricsHandler::sample_cpu_usage() {
     if (rank_perf_counters) {
       rank_perf_counters->set(l_mds_rank_perf_cpu_usage, 0);
     }
-    constexpr const char* stat_path = PROCPREFIX "/proc/self/stat";
-    if (err == ceph::proc_stat_error::not_resolvable) {
-      dout(5) << "input file '" << stat_path << "' not resolvable" << dendl;
-    } else if (err == ceph::proc_stat_error::not_found) {
-      dout(5) << "input file '" << stat_path << "' not found" << dendl;
-    }
+    dout(5) << err << dendl;
     return;
   }
 

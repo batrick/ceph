@@ -112,14 +112,8 @@ std::string cleanbin(std::string &str);
 
 namespace ceph {
 
-enum class proc_stat_error {
-  none,
-  not_found,
-  not_resolvable
-};
-
 /// Read user+system CPU ticks for the current process from /proc/self/stat
-bool read_process_cpu_ticks(uint64_t* total, proc_stat_error* error = nullptr);
+bool read_process_cpu_ticks(uint64_t* total, std::string* error = nullptr);
 
 namespace util {
 
