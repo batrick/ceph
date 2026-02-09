@@ -29,7 +29,7 @@ TEUTHOLOGY_SUITE_ARGS="--non-interactive --newest=100 --ceph-repo=https://git.ce
 ## crontab is in https://github.com/ceph/ceph/main/qa/crontab/teuthology-cronjobs
 # chkcrontab: disable-msg=INVALID_USER
 # chkcrontab: disable-msg=USER_NOT_FOUND
-@daily /bin/bash /home/teuthology/bin/update-crontab.sh
+#@daily /bin/bash /home/teuthology/bin/update-crontab.sh
 ### !!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
