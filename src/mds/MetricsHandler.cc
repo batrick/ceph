@@ -64,6 +64,9 @@ Dispatcher::dispatch_result_t MetricsHandler::ms_dispatch2(const ref_t<Message> 
 void MetricsHandler::init() {
   dout(10) << dendl;
 
+  // Create local perf counters for non-rank0 MDS only. Rank0's perf counters
+  // are created by MetricAggregator::update_rank_perf_metrics() to avoid
+  // duplicate counters (MetricAggregator creates counters for all ranks).
   if (mds->get_nodeid() != 0 && !rank_perf_counters) {
     std::string labels = ceph::perf_counters::key_create(
       "mds_rank_perf",
