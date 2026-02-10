@@ -2203,7 +2203,6 @@ update:
     msg->quota = pi->quota;
     mds->send_message_client_counted(msg, cap->get_session());
   }
-
   for (const auto &it : in->get_replicas()) {
     auto msg = make_message<MGatherCaps>();
     msg->ino = in->ino();

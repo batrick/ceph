@@ -86,10 +86,6 @@ void MetricsHandler::init() {
   }
 
   subv_window_sec = g_conf().get_val<std::chrono::seconds>("subv_metrics_window_interval").count();
-  if (!subv_window_sec) {
-    dout(0) << "subv_metrics_window_interval is not set, setting to 300 seconds" << dendl;
-    subv_window_sec = 300;
-  }
 
   updater = std::thread([this]() {
       ceph_pthread_setname("mds-metrics");
