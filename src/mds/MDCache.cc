@@ -2128,13 +2128,7 @@ void MDCache::broadcast_quota_to_client(CInode *in, client_t exclude_ct, bool qu
     return;
 
   const auto& pi = in->get_projected_inode();
-
-  // create snaprealm for quota inode (quota was set before mimic)
-  if (!in->get_projected_srnode())
-    mds->server->create_quota_realm(in);
-
   inodeno_t subvolume_id = in->get_subvolume_id();
-
   dout(10) << __func__ << " ino " << in->ino()
            << " subvol " << subvolume_id
            << " quota_enabled=" << pi->quota.is_enabled()
@@ -2160,6 +2154,10 @@ void MDCache::broadcast_quota_to_client(CInode *in, client_t exclude_ct, bool qu
 
   if (!pi->quota.is_enabled() && !quota_change)
     return;
+
+  // create snaprealm for quota inode (quota was set before mimic)
+  if (!in->get_projected_srnode())
+    mds->server->create_quota_realm(in);
 
   for (auto &p : in->client_caps) {
     Capability *cap = &p.second;
