@@ -298,7 +298,6 @@ class TestMDSMetrics(TestMetrics):
     def test_mds_perf_metrics(self):
         # Trigger some I/O so that CPU metrics are sampled
         self._do_spread_io_all_clients()
-        time.sleep(5)
 
         cpu_entries, open_entries = self._wait_for_mds_rank_metrics(expected_count=1, rank=0, tries=30)
         self.assertEqual(len(cpu_entries), 1, cpu_entries)
@@ -312,7 +311,6 @@ class TestMDSMetrics(TestMetrics):
         fscid = self.fs.id
         self._spread_directory_on_all_ranks(fscid)
         self._do_spread_io_all_clients()
-        time.sleep(5)
 
         cpu_entries, open_entries = self._wait_for_mds_rank_metrics(expected_count=2, rank=0, tries=30)
         self.assertEqual(len(cpu_entries), 2, cpu_entries)
@@ -323,7 +321,6 @@ class TestMDSMetrics(TestMetrics):
         # Cleanup: remove directories and shrink back to a single MDS
         self._cleanup_test_dirs()
         self.fs.shrink(1)
-        time.sleep(5)
 
     def test_query_mds_filter(self):
         # validate
