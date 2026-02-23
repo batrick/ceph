@@ -1023,7 +1023,8 @@ def _generate_smb_service_spec(
     if needs_proxy:
         features.append(_CEPHFS_PROXY)
     if cluster.remote_control_is_enabled:
-        features.append(_REMOTE_CONTROL)
+        assert cluster.remote_control is not None
+        features.extend(cluster.remote_control.enabled_features())
     if cluster.keybridge_is_enabled:
         features.append(_KEYBRIDGE)
     # only one config uri can be used, the input list should be
