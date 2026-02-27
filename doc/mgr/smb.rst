@@ -649,6 +649,13 @@ keybridge
         Used to control what processes the keybridge server will permit
         for access. This option is meant for testing and development only.
         If left unspecified the default behavior is ``restricted``.
+    locally_enabled
+        Optional boolean. If set to ``true`` this field will enable the
+        remote control service local listener. The local listener lets
+        processes on the Ceph cluster host communicate with the remote
+        control service independently of the default TCP/mTLS listener.
+        The TLS certificates configuration values do not apply to this
+        unix socket based listener.
 external_ceph_cluster:
     Optional object. The fields are described in :ref:`external Ceph cluster
     source fields<external-ceph-cluster-source-fields>`. This is an
