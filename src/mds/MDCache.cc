@@ -10006,7 +10006,7 @@ void MDCache::request_cleanup(const MDRequestRef& mdr)
     if (!new_batch_head) {
       mdr->batch_op_map->erase(it);
     } else {
-      mds->finisher->queue(new C_MDS_RetryRequest(this, new_batch_head));
+      mds->queue_waiter(new C_MDS_RetryRequest(this, new_batch_head));
     }
   }
 
@@ -10361,7 +10361,7 @@ int MDCache::scan_stray_dir(dirfrag_t next, std::unique_ptr<MDCache::C_MDS_DumpS
   // only if we came from asok cmd handler
   if (cmd_ctx) {
     cmd_ctx->end_dump();
-    cmd_ctx->finish(0);
+    cmd_ctx->complete(0);
   }
   return 0;
 }
