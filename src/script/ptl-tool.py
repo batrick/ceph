@@ -152,6 +152,7 @@ import logging
 import os
 import re
 import signal
+import subprocess
 import sys
 import textwrap
 
@@ -227,13 +228,14 @@ log.addHandler(logging.StreamHandler())
 log.setLevel(logging.INFO)
 
 # find containing git dir
-git_dir = GITDIR
-max_levels = 6
-while not os.path.exists(git_dir + '/.git'):
-    git_dir += '/..'
-    max_levels -= 1
-    if max_levels < 0:
-        break
+try:
+    git_dir = subprocess.check_output(
+        ['git', 'rev-parse', '--show-toplevel'],
+        cwd=GITDIR
+    ).decode('utf-8').strip()
+except subprocess.CalledProcessError as e:
+    log.error("Could not find git repository root: %s", e)
+    sys.exit(1)
 
 CONTRIBUTORS = {}
 NEW_CONTRIBUTORS = {}
