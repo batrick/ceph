@@ -660,7 +660,10 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                     log.error("Rejecting PR due to incomplete backport after posting review.")
                     sys.exit(1)
             elif ans == 'o':
-                first_url = True
+                # Open the backport PR first in a new window
+                bp_pr_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
+                webbrowser.open_new(bp_pr_url)
+
                 for pr_name, o_sha, o_summary, m_sha in missing_commits:
                     urls_to_open = []
                     m_pr = re.search(r'#(\d+)', pr_name)
@@ -670,11 +673,7 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                     urls_to_open.append(f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{o_sha}")
                     
                     for url in urls_to_open:
-                        if first_url:
-                            webbrowser.open_new(url)
-                            first_url = False
-                        else:
-                            webbrowser.open_new_tab(url)
+                        webbrowser.open_new_tab(url)
                 print("Opened URLs in a new browser window.")
             else:
                 print("Invalid choice. Please enter p, o, r, or q.")
