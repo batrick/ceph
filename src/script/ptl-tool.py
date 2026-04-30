@@ -247,7 +247,7 @@ TRACKER_MATCH = re.compile("(.*https?://tracker.ceph.com/.*)")
 
 @dataclass
 class AuditLabels:
-    old: str
+    queue: str
     passed: str = None
     failed: str = None
 
@@ -1055,11 +1055,11 @@ def build_branch(args):
             log.info(f"Audit of PR #{pr} {'passed' if audit_passed else 'failed'}. Skipping merge.")
             if isinstance(args.audit, AuditLabels):
                 labels = args.audit
-                req = session.delete(f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/labels/{labels.old}", auth=gitauth())
+                req = session.delete(f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/labels/{labels.search}", auth=gitauth())
                 if req.status_code in (200, 204):
-                    log.info(f"Removed label {labels.old} from PR #{pr}")
+                    log.info(f"Removed label {labels.search} from PR #{pr}")
                 else:
-                    log.warning(f"Failed to remove label {labels.old} from PR #{pr}: {req.status_code}")
+                    log.warning(f"Failed to remove label {labels.search} from PR #{pr}: {req.status_code}")
 
                 target_label = labels.passed if audit_passed else labels.failed
                 if target_label:
@@ -1315,7 +1315,7 @@ def main():
     group.add_argument('--push-ci', dest='push_ci', action='store_true', help='push branch and tag to CI repository (even when not making QA tickets)')
 
     group = parser.add_argument_group('Backport Verification')
-    group.add_argument('--audit', dest='audit', type=parse_audit_labels, nargs='?', const=True, default=False, help='run parity and conflict simulations. Can optionally take a format like old_label:passed_label:failed_label to swap labels on success/failure')
+    group.add_argument('--audit', dest='audit', type=parse_audit_labels, nargs='?', const=True, default=False, help='run parity and conflict simulations. Can optionally take a format like search_label:passed_label:failed_label to swap labels on success/failure')
     group.add_argument('--skip-conflict-check', dest='skip_conflict_check', action='store_true', help='skip conflict resolution simulation')
 
     def parse_pr(value):
@@ -1336,7 +1336,7 @@ def main():
         if args.pr_label:
             log.error("--audit with labels and --pr-label are mutually exclusive")
             sys.exit(1)
-        args.pr_label = args.audit.old
+        args.pr_label = args.audit.search
 
     if args.create_qa and args.update_qa:
         log.error("--create-qa and --update-qa are mutually exclusive switches")
