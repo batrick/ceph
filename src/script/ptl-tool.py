@@ -1067,10 +1067,9 @@ def build_branch(args):
                     if req.status_code == 200:
                         log.info(f"Added label {target_label} to PR #{pr}")
                     else:
-                        log.error(f"Failed to add label {target_label} to PR #{pr}: {req.status_code}")
-            
-            if not audit_passed:
-                sys.exit(1)
+                        raise SystemExit(f"Failed to add label {target_label} to PR #{pr}: {req.status_code}")
+
+            # Skip merge
             continue
 
         for commit in reversed(pr_commits): # back to reverse-chronological for the message
