@@ -1333,6 +1333,7 @@ def main():
     args = parser.parse_args(argv)
 
     if isinstance(args.audit, AuditLabels):
+        print(args.audit)
         if args.pr_label:
             log.error("--audit with labels and --pr-label are mutually exclusive")
             sys.exit(1)
