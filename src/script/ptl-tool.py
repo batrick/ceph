@@ -143,6 +143,7 @@
 # Look for check failures?
 
 import argparse
+from dataclasses import dataclass
 import datetime
 import difflib
 import hashlib
@@ -244,8 +245,23 @@ NEW_CONTRIBUTORS = {}
 BZ_MATCH = re.compile("(.*https?://bugzilla.redhat.com/.*)")
 TRACKER_MATCH = re.compile("(.*https?://tracker.ceph.com/.*)")
 
+@dataclass
+class AuditLabels:
+    old: str
+    passed: str = None
+    failed: str = None
+
+def parse_audit_labels(value):
+    if value is True or value is False:
+        return value
+    parts = value.split(':')
+    if len(parts) == 1:
+        return AuditLabels(old=parts)
+    if len(parts) == 3:
+        return AuditLabels(old=parts, passed=parts, failed=parts)
+    raise argparse.ArgumentTypeError("Audit labels must be either 'old_label' or 'old:passed:failed'")
+
 def gitauth():
-    class GitHubBearerAuth(requests.auth.AuthBase):
         def __call__(self, r):
             if GITHUB_TOKEN:
                 r.headers['Authorization'] = f'Bearer {GITHUB_TOKEN}'
@@ -1036,19 +1052,15 @@ def build_branch(args):
 
         if args.audit:
             log.info(f"Audit of PR #{pr} {'passed' if audit_passed else 'failed'}. Skipping merge.")
-            if isinstance(args.audit, str):
-                audit_labels = args.audit.split(':')
-                old_label = audit_labels[0]
-                new_label = audit_labels[1] if len(audit_labels) > 1 else None
-                failed_label = audit_labels[2] if len(audit_labels) > 2 else None
-
-                req = session.delete(f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/labels/{old_label}", auth=gitauth())
+            if isinstance(args.audit, AuditLabels):
+                labels = args.audit
+                req = session.delete(f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/labels/{labels.old}", auth=gitauth())
                 if req.status_code in (200, 204):
-                    log.info(f"Removed label {old_label} from PR #{pr}")
+                    log.info(f"Removed label {labels.old} from PR #{pr}")
                 else:
-                    log.warning(f"Failed to remove label {old_label} from PR #{pr}: {req.status_code}")
+                    log.warning(f"Failed to remove label {labels.old} from PR #{pr}: {req.status_code}")
 
-                target_label = new_label if audit_passed else failed_label
+                target_label = labels.passed if audit_passed else labels.failed
                 if target_label:
                     req = session.post(f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/labels", data=json.dumps([target_label]), auth=gitauth())
                     if req.status_code == 200:
@@ -1302,7 +1314,7 @@ def main():
     group.add_argument('--push-ci', dest='push_ci', action='store_true', help='push branch and tag to CI repository (even when not making QA tickets)')
 
     group = parser.add_argument_group('Backport Verification')
-    group.add_argument('--audit', dest='audit', nargs='?', const=True, default=False, help='run parity and conflict simulations. Can optionally take a format like old_label:passed_label:failed_label to swap labels on success/failure')
+    group.add_argument('--audit', dest='audit', type=parse_audit_labels, nargs='?', const=True, default=False, help='run parity and conflict simulations. Can optionally take a format like old_label:passed_label:failed_label to swap labels on success/failure')
     group.add_argument('--skip-conflict-check', dest='skip_conflict_check', action='store_true', help='skip conflict resolution simulation')
 
     def parse_pr(value):
@@ -1319,12 +1331,11 @@ def main():
 
     args = parser.parse_args(argv)
 
-    if args.audit and isinstance(args.audit, str):
-        audit_labels = args.audit.split(':')
+    if isinstance(args.audit, AuditLabels):
         if args.pr_label:
             log.error("--audit with labels and --pr-label are mutually exclusive")
             sys.exit(1)
-        args.pr_label = audit_labels
+        args.pr_label = args.audit.old
 
     if args.create_qa and args.update_qa:
         log.error("--create-qa and --update-qa are mutually exclusive switches")
