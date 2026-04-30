@@ -980,55 +980,84 @@ def build_branch(args):
         response = pr_responses[pr]
 
         log.info("Performing trivial merge check for PR #%d...", pr)
-        wt_dir = tempfile.mkdtemp(prefix="ptl-merge-check-")
-        has_base_conflicts = False
+        
+        audit_passed = True
         try:
-            G.git.worktree('add', '--detach', wt_dir, G.head.commit)
-            wt_repo = git.Repo(wt_dir)
+            wt_dir = tempfile.mkdtemp(prefix="ptl-merge-check-")
+            has_base_conflicts = False
             try:
-                wt_repo.git(c=SANDBOX_CFG).merge(tip.hexsha, '--no-commit', '--no-ff')
-            except git.exc.GitCommandError:
-                has_base_conflicts = True
-            finally:
+                G.git.worktree('add', '--detach', wt_dir, G.head.commit)
+                wt_repo = git.Repo(wt_dir)
                 try:
-                    wt_repo.git.merge('--abort')
+                    wt_repo.git(c=SANDBOX_CFG).merge(tip.hexsha, '--no-commit', '--no-ff')
                 except git.exc.GitCommandError:
-                    pass
-        finally:
-            G.git.worktree('remove', '--force', wt_dir)
+                    has_base_conflicts = True
+                finally:
+                    try:
+                        wt_repo.git.merge('--abort')
+                    except git.exc.GitCommandError:
+                        pass
+            finally:
+                G.git.worktree('remove', '--force', wt_dir)
 
-        if has_base_conflicts:
-            log.error(f"PR #{pr} has conflicts with the target base branch.")
-            while True:
-                ans = input(f"PR #{pr} needs a rebase! Do you want to post a review requesting a rebase? [y/N/o] (y=yes, n=abort script, o=open PR in browser): ").strip().lower()
-                if ans == 'o':
-                    url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
-                    webbrowser.open_new(url)
-                    print(f"Opened {url} in browser.")
-                elif ans == 'y':
-                    md_text = "**Automated PR Review - Rebase Required**\n\n"
-                    md_text += f"This PR currently has merge conflicts with the target base branch. Please rebase and resolve the conflicts."
-                    if post_draft_review(session, pr, md_text):
-                        log.error("Rejecting PR pending rebase.")
+            if has_base_conflicts:
+                log.error(f"PR #{pr} has conflicts with the target base branch.")
+                while True:
+                    ans = input(f"PR #{pr} needs a rebase! Do you want to post a review requesting a rebase? [y/N/o] (y=yes, n=abort script, o=open PR in browser): ").strip().lower()
+                    if ans == 'o':
+                        url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
+                        webbrowser.open_new(url)
+                        print(f"Opened {url} in browser.")
+                    elif ans == 'y':
+                        md_text = "**Automated PR Review - Rebase Required**\n\n"
+                        md_text += f"This PR currently has merge conflicts with the target base branch. Please rebase and resolve the conflicts."
+                        if post_draft_review(session, pr, md_text):
+                            log.error("Rejecting PR pending rebase.")
+                            sys.exit(1)
+                    elif ans == 'n' or ans == '':
+                        log.error(f"Aborting script due to unmergeable PR #{pr}.")
                         sys.exit(1)
-                elif ans == 'n' or ans == '':
-                    log.error(f"Aborting script due to unmergeable PR #{pr}.")
-                    sys.exit(1)
 
-        qa_tracker_description.append(f'* "PR #{pr}":{response["html_url"]} -- {response["title"].strip()}')
+            qa_tracker_description.append(f'* "PR #{pr}":{response["html_url"]} -- {response["title"].strip()}')
 
-        message = "Merge PR #%d into %s\n\n* %s:\n" % (pr, merge_branch_name, remote_ref)
+            message = "Merge PR #%d into %s\n\n* %s:\n" % (pr, merge_branch_name, remote_ref)
 
-        pr_commits = list(G.iter_commits(rev="HEAD.."+str(tip)))
-        pr_commits.reverse() # chronological order for simulation
+            pr_commits = list(G.iter_commits(rev="HEAD.."+str(tip)))
+            pr_commits.reverse() # chronological order for simulation
 
-        if base != 'main':
-            visualizer_text = verify_commit_parity(G, session, pr, pr_commits, base)
-            if not args.skip_conflict_check:
-                simulate_conflict_resolution(G, session, pr, pr_commits, base, args.always_fetch, visualizer_text)
+            if base != 'main':
+                visualizer_text = verify_commit_parity(G, session, pr, pr_commits, base)
+                if not args.skip_conflict_check:
+                    simulate_conflict_resolution(G, session, pr, pr_commits, base, args.always_fetch, visualizer_text)
+        except SystemExit:
+            audit_passed = False
+            if not args.audit:
+                raise
 
         if args.audit:
-            log.info(f"Audit of PR #{pr} complete. Skipping merge.")
+            log.info(f"Audit of PR #{pr} {'passed' if audit_passed else 'failed'}. Skipping merge.")
+            if isinstance(args.audit, str):
+                audit_labels = args.audit.split(':')
+                old_label = audit_labels[0]
+                new_label = audit_labels[1] if len(audit_labels) > 1 else None
+                failed_label = audit_labels[2] if len(audit_labels) > 2 else None
+
+                req = session.delete(f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/labels/{old_label}", auth=gitauth())
+                if req.status_code in (200, 204):
+                    log.info(f"Removed label {old_label} from PR #{pr}")
+                else:
+                    log.warning(f"Failed to remove label {old_label} from PR #{pr}: {req.status_code}")
+
+                target_label = new_label if audit_passed else failed_label
+                if target_label:
+                    req = session.post(f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/labels", data=json.dumps([target_label]), auth=gitauth())
+                    if req.status_code == 200:
+                        log.info(f"Added label {target_label} to PR #{pr}")
+                    else:
+                        log.error(f"Failed to add label {target_label} to PR #{pr}: {req.status_code}")
+            
+            if not audit_passed:
+                sys.exit(1)
             continue
 
         for commit in reversed(pr_commits): # back to reverse-chronological for the message
@@ -1273,7 +1302,7 @@ def main():
     group.add_argument('--push-ci', dest='push_ci', action='store_true', help='push branch and tag to CI repository (even when not making QA tickets)')
 
     group = parser.add_argument_group('Backport Verification')
-    group.add_argument('--audit', dest='audit', action='store_true', help='run parity and conflict simulations without merging or modifying branches')
+    group.add_argument('--audit', dest='audit', nargs='?', const=True, default=False, help='run parity and conflict simulations. Can optionally take a format like old_label:passed_label:failed_label to swap labels on success/failure')
     group.add_argument('--skip-conflict-check', dest='skip_conflict_check', action='store_true', help='skip conflict resolution simulation')
 
     def parse_pr(value):
@@ -1289,6 +1318,13 @@ def main():
     group.add_argument('prs', metavar="PRs...", type=parse_pr, nargs='*', help='Pull Requests to Merge (numbers or URLs)')
 
     args = parser.parse_args(argv)
+
+    if args.audit and isinstance(args.audit, str):
+        audit_labels = args.audit.split(':')
+        if args.pr_label:
+            log.error("--audit with labels and --pr-label are mutually exclusive")
+            sys.exit(1)
+        args.pr_label = audit_labels
 
     if args.create_qa and args.update_qa:
         log.error("--create-qa and --update-qa are mutually exclusive switches")
