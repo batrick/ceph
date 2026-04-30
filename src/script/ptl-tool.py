@@ -262,6 +262,7 @@ def parse_audit_labels(value):
     raise argparse.ArgumentTypeError("Audit labels must be either 'old_label' or 'old:passed:failed'")
 
 def gitauth():
+    class GitHubBearerAuth(requests.auth.AuthBase):
         def __call__(self, r):
             if GITHUB_TOKEN:
                 r.headers['Authorization'] = f'Bearer {GITHUB_TOKEN}'
