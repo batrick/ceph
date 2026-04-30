@@ -856,9 +856,14 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                         visualizer_clean = re.sub(r'\033\[[0-9;]*m', '', visualizer_text) if visualizer_text else ""
                         diff_text = diff if 'diff' in locals() else "No range diff available."
                         
-                        md_text = "**Automated Backport Parity Review - Backport Deviation Alert**\n\n"
-                        md_text += "A conflict or unapproved deviation was detected during the simulation of this backport, and the changes appear to be incorrect or undocumented. Please review the highlighted files.\n\n"
-                        md_text += "**Affected File(s):**\n"
+                        md_text = """
+                        **Automated Backport Parity Review - Backport Deviation Alert**
+
+                        A conflict or unapproved deviation was detected during the simulation of this backport, and the changes appear to be incorrect or undocumented. Please review the highlighted files. Make sure Conflict markers are left into cherry-picks with explanations.
+
+                        **Affected File(s):**
+                        """
+                        md_text = textwrap.dedent(md_text)
                         for f_name in unmerged:
                             f_hash = hashlib.sha256(f_name.encode('utf-8')).hexdigest()
                             md_text += f"* `{f_name}`\n"
