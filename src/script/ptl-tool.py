@@ -252,6 +252,7 @@ class AuditLabels:
     failed: str = None
 
 def parse_audit_labels(value):
+    print(value)
     if value is True or value is False:
         return value
     parts = value.split(':')
@@ -259,7 +260,7 @@ def parse_audit_labels(value):
         return AuditLabels(old=parts)
     if len(parts) == 3:
         return AuditLabels(old=parts, passed=parts, failed=parts)
-    raise argparse.ArgumentTypeError("Audit labels must be either 'old_label' or 'old:passed:failed'")
+    raise argparse.ArgumentTypeError("Audit labels must be either 'queue' or 'queue:passed:failed'")
 
 def gitauth():
     class GitHubBearerAuth(requests.auth.AuthBase):
