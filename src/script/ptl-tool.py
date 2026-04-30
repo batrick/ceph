@@ -1053,15 +1053,15 @@ def build_branch(args):
 
         if args.audit:
             log.info(f"Audit of PR #{pr} {'passed' if audit_passed else 'failed'}. Skipping merge.")
-            if isinstance(args.audit, AuditLabels):
-                labels = args.audit
-                req = session.delete(f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/labels/{labels.search}", auth=gitauth())
+            audit = args.audit
+            if isinstance(audit, AuditLabels):
+                req = session.delete(f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/labels/{audit.queue}", auth=gitauth())
                 if req.status_code in (200, 204):
-                    log.info(f"Removed label {labels.search} from PR #{pr}")
+                    log.info(f"Removed label {audit.queue} from PR #{pr}")
                 else:
-                    log.warning(f"Failed to remove label {labels.search} from PR #{pr}: {req.status_code}")
+                    log.warning(f"Failed to remove label {audit.queue} from PR #{pr}: {req.status_code}")
 
-                target_label = labels.passed if audit_passed else labels.failed
+                target_label = audit.passed if audit_passed else audit.failed
                 if target_label:
                     req = session.post(f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/labels", data=json.dumps([target_label]), auth=gitauth())
                     if req.status_code == 200:
@@ -1336,7 +1336,7 @@ def main():
         if args.pr_label:
             log.error("--audit with labels and --pr-label are mutually exclusive")
             sys.exit(1)
-        args.pr_label = args.audit.search
+        args.pr_label = args.audit.queue
 
     if args.create_qa and args.update_qa:
         log.error("--create-qa and --update-qa are mutually exclusive switches")
