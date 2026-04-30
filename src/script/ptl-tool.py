@@ -255,11 +255,10 @@ def parse_audit_labels(value):
     if value is True or value is False:
         return value
     parts = value.split(':')
-    print(parts)
     if len(parts) == 1:
-        return AuditLabels(old=parts)
+        return AuditLabels(queue=parts)
     if len(parts) == 3:
-        return AuditLabels(old=parts, passed=parts, failed=parts)
+        return AuditLabels(queue=parts, passed=parts, failed=parts)
     raise argparse.ArgumentTypeError("Audit labels must be either 'queue' or 'queue:passed:failed'")
 
 def gitauth():
