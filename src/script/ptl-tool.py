@@ -252,10 +252,10 @@ class AuditLabels:
     failed: str = None
 
 def parse_audit_labels(value):
-    print(value)
     if value is True or value is False:
         return value
     parts = value.split(':')
+    print(parts)
     if len(parts) == 1:
         return AuditLabels(old=parts)
     if len(parts) == 3:
