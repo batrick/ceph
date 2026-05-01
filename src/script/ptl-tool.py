@@ -861,6 +861,8 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
 
                         A conflict or unapproved deviation was detected during the simulation of this backport, and the changes appear to be incorrect or undocumented. Please review the highlighted files. Make sure Conflict markers are left into cherry-picks with explanations.
 
+                        [Be familiar with the rules and guidelines for writing backports.](https://github.com/ceph/ceph/blob/main/SubmittingPatches-backports.rst)
+
                         **Affected File(s):**
                         """
                         md_text = textwrap.dedent(md_text)
