@@ -35,7 +35,6 @@ import argparse
 from dataclasses import dataclass
 import datetime
 import difflib
-from functools import lru_cache
 import hashlib
 from getpass import getuser
 import itertools
@@ -160,11 +159,13 @@ def gitauth():
             return r
     return GitHubBearerAuth()
 
-@lru_cache(maxsize=None)
+_PR_CACHE = {}
 def get_pr_info(session, pr):
-    log.info("Fetching information for PR #%d", pr)
-    endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/pulls/{pr}"
-    return next(get(session, endpoint, paging=False))
+    if pr not in _PR_CACHE:
+        log.info("Fetching information for PR #%d", pr)
+        endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/pulls/{pr}"
+        _PR_CACHE[pr] = next(get(session, endpoint, paging=False))
+    return _PR_CACHE[pr]
 
 def get_pr_tracker_string(session, pr, response=None):
     if not response:
