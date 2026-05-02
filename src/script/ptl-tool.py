@@ -783,6 +783,210 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
         log.info("Removing temporary worktree `%s'", wt_dir)
         G.git.worktree('remove', '--force', wt_dir)
 
+def verify_pr_readiness(G, session, pr, pr_commits, tip, base, args):
+    try:
+        log.info("Performing trivial merge check for PR #%d...", pr)
+        wt_dir = tempfile.mkdtemp(prefix="ptl-merge-check-")
+        has_base_conflicts = False
+        try:
+            G.git.worktree('add', '--detach', wt_dir, G.head.commit)
+            wt_repo = git.Repo(wt_dir)
+            try:
+                wt_repo.git(c=SANDBOX_CFG).merge(tip.hexsha, '--no-commit', '--no-ff')
+            except git.exc.GitCommandError:
+                has_base_conflicts = True
+            finally:
+                try:
+                    wt_repo.git.merge('--abort')
+                except git.exc.GitCommandError:
+                    pass
+        finally:
+            G.git.worktree('remove', '--force', wt_dir)
+
+        if has_base_conflicts:
+            log.error(f"PR #{pr} has conflicts with the target base branch.")
+            while True:
+                ans = input(f"PR #{pr} needs a rebase! Do you want to post a review requesting a rebase? [y/N/o] (y=yes, n=abort script, o=open PR in browser): ").strip().lower()
+                if ans == 'o':
+                    url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
+                    webbrowser.open_new(url)
+                    print(f"Opened {url} in browser.")
+                elif ans == 'y':
+                    md_text = "**Automated PR Review - Rebase Required**\n\n"
+                    md_text += f"This PR currently has merge conflicts with the target base branch. Please rebase and resolve the conflicts."
+                    if post_draft_review(session, pr, md_text):
+                        log.error("Rejecting PR pending rebase.")
+                        sys.exit(1)
+                elif ans == 'n' or ans == '':
+                    log.error(f"Aborting script due to unmergeable PR #{pr}.")
+                    sys.exit(1)
+
+        if base != 'main':
+            visualizer_text = verify_commit_parity(G, session, pr, pr_commits, base)
+            if not args.skip_conflict_check:
+                simulate_conflict_resolution(G, session, pr, pr_commits, base, args.always_fetch, visualizer_text)
+        return True
+    except SystemExit:
+        if not args.audit:
+            raise
+        return False
+
+def manage_qa_tracker(args, R, session, branch, prs, tag, qa_tracker_description, base, created_branch):
+    if not (args.create_qa or args.update_qa):
+        return
+
+    if not created_branch:
+        log.error("branch already exists!")
+        sys.exit(1)
+    project = R.project.get(REDMINE_PROJECT_QA)
+    log.debug("got redmine project %s", project)
+    user = R.user.get('current')
+    log.debug("got redmine user %s", user)
+    tracker = None
+    for t in project.trackers:
+        if t['name'] == REDMINE_TRACKER_QA:
+            tracker = t
+    if tracker is None:
+        log.error("could not find tracker in project: %s", REDMINE_TRACKER_QA)
+    log.debug("got redmine tracker %s", tracker)
+
+    # Use hard-coded custom field ids because there is apparently no way to
+    # figure these out via the python library
+    custom_fields = []
+    custom_fields.append({'id': REDMINE_CUSTOM_FIELD_ID_SHAMAN_BUILD, 'value': branch})
+    custom_fields.append({'id': REDMINE_CUSTOM_FIELD_ID_QA_RUNS, 'value': branch})
+    if args.qa_release:
+        custom_fields.append({'id': REDMINE_CUSTOM_FIELD_ID_QA_RELEASE, 'value': args.qa_release})
+    if args.qa_tags:
+        custom_fields.append({'id': REDMINE_CUSTOM_FIELD_ID_QA_TAGS, 'value': args.qa_tags})
+
+    if not args.no_tag and tag:
+        origin_url = f'{BASE_PROJECT}/{CI_REPO}/commits/{tag.name}'
+    else:
+        origin_url = f'{BASE_PROJECT}/{CI_REPO}/commits/{branch}'
+    custom_fields.append({'id': REDMINE_CUSTOM_FIELD_ID_GIT_BRANCH, 'value': origin_url})
+
+    issue_kwargs = {
+      "assigned_to_id": user['id'],
+      "custom_fields": custom_fields,
+      "description": '\n'.join(qa_tracker_description),
+      "project_id": project['id'],
+      "watcher_user_ids": [user['id']],
+    }
+
+    if args.qa_private:
+        issue_kwargs['is_private'] = True
+
+    if args.update_qa:
+        issue = R.issue.get(args.update_qa)
+        if issue.project.id != project.id:
+            log.error(f"issue {issue.url} project {issue.project} does not match {project}")
+            sys.exit(1)
+        if issue.tracker.id != tracker.id:
+            log.error(f"issue {issue.url} tracker {issue.tracker} does not match {tracker}")
+            sys.exit(1)
+
+        old_branch = "unknown"
+        for cf in issue.custom_fields:
+            if cf.id in (REDMINE_CUSTOM_FIELD_ID_SHAMAN_BUILD, REDMINE_CUSTOM_FIELD_ID_QA_RUNS):
+                old_branch = cf.value
+                if old_branch:
+                    break
+
+        old_prs = set()
+        if hasattr(issue, 'description') and issue.description:
+            for match in re.finditer(r'\* "PR #(\d+)":', issue.description):
+                old_prs.add(int(match.group(1)))
+
+        new_prs = set(int(p) for p in prs)
+        added_prs = new_prs - old_prs
+        removed_prs = old_prs - new_prs
+
+        notes = f"""
+            **Update Triggered**
+
+            **Previous Branch:** `{old_branch}`
+            **New Branch:** `{branch}`
+
+            **Previous QA Links:**
+            * [Shaman Build](https://shaman.ceph.com/builds/ceph/{old_branch}/)
+            * [Pulpito / Teuthology Results](https://pulpito.ceph.com/?branch={old_branch})
+
+            """
+        notes = textwrap.dedent(notes)
+        if old_prs:
+            notes += "**Previous PRs included in that run:**\n"
+            for old_pr in sorted(old_prs):
+                notes += get_pr_tracker_string(session, old_pr) + "\n"
+        else:
+            notes += "**Previous PRs included in that run:** None\n"
+
+        issue_kwargs['notes'] = notes.strip()
+
+        if args.dry_run:
+            log.info(f"[DRY RUN] Would update redmine qa issue {issue.url} with kwargs: {issue_kwargs}")
+            issue_url = issue.url
+        else:
+            log.debug("updating issue with kwargs: %s", issue_kwargs)
+            if R.issue.update(issue.id, **issue_kwargs):
+                log.info("updated redmine qa issue: %s", issue.url)
+                issue_url = issue.url
+            else:
+                log.error(f"failed to update {issue}")
+                sys.exit(1)
+
+        for pr in added_prs:
+            body = f"This PR has been added to [{issue.subject}]({issue_url})."
+            if args.dry_run:
+                log.info(f"[DRY RUN] Would post comment to added PR #{pr}: {body}")
+            else:
+                endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/comments"
+                r = session.post(endpoint, auth=gitauth(), data=json.dumps({'body':body}))
+                if r.status_code == 201:
+                    log.info(f"Successfully posted added comment to PR #{pr}")
+                else:
+                    log.error(f"Failed to post comment: {r.status_code} {r.text}")
+
+        for pr in removed_prs:
+            body = f"This PR has been removed from [{issue.subject}]({issue_url})."
+            if args.dry_run:
+                log.info(f"[DRY RUN] Would post comment to removed PR #{pr}: {body}")
+            else:
+                endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/comments"
+                r = session.post(endpoint, auth=gitauth(), data=json.dumps({'body':body}))
+                if r.status_code == 201:
+                    log.info(f"Successfully posted removed comment to PR #{pr}")
+                else:
+                    log.error(f"Failed to post comment: {r.status_code} {r.text}")
+
+    elif args.create_qa:
+        now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        default_subject = f"{base} integration testing by {USER} started {now_str}"
+        issue_kwargs['subject'] = args.qa_subject if args.qa_subject else default_subject
+
+        if args.dry_run:
+            log.info(f"[DRY RUN] Would create redmine qa issue with kwargs: {issue_kwargs}")
+            issue_url = f"{REDMINE_ENDPOINT}/issues/DRY_RUN_ID"
+        else:
+            log.debug("creating issue with kwargs: %s", issue_kwargs)
+            issue = R.issue.create(**issue_kwargs)
+            log.info("created redmine qa issue: %s", issue.url)
+            issue_url = issue.url
+
+        for pr in prs:
+            log.debug(f"Posting QA Run in comment for ={pr}")
+            subject = issue_kwargs['subject']
+            body = f"This PR has been added to [{subject}]({issue_url})."
+            if args.dry_run:
+                log.info(f"[DRY RUN] Would post comment to PR #{pr}: {body}")
+            else:
+                endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/comments"
+                r = session.post(endpoint, auth=gitauth(), data=json.dumps({'body':body}))
+                if r.status_code == 201:
+                    log.info(f"Successfully posted comment to PR #{pr}")
+                else:
+                    log.error(f"Failed to post comment: {r.status_code} {r.text}")
+
 def build_branch(args):
     base = args.base
     label = args.label
@@ -816,6 +1020,7 @@ def build_branch(args):
     except git.exc.GitCommandError as e:
         raise SystemExit(f"Could not fetch .githubmap from {BASE_REMOTE_URL}:main:\n{e}")
 
+    R = None
     if args.create_qa or args.update_qa:
         log.info("connecting to %s", REDMINE_ENDPOINT)
         R = Redmine(REDMINE_ENDPOINT, username=REDMINE_USER, key=REDMINE_API_KEY)
@@ -917,52 +1122,8 @@ def build_branch(args):
         pr_commits.reverse() # chronological order for simulation
 
         audit_passed = True
-        if not args.integration:
-            log.info("Performing trivial merge check for PR #%d...", pr)
-            try:
-                wt_dir = tempfile.mkdtemp(prefix="ptl-merge-check-")
-                has_base_conflicts = False
-                try:
-                    G.git.worktree('add', '--detach', wt_dir, G.head.commit)
-                    wt_repo = git.Repo(wt_dir)
-                    try:
-                        wt_repo.git(c=SANDBOX_CFG).merge(tip.hexsha, '--no-commit', '--no-ff')
-                    except git.exc.GitCommandError:
-                        has_base_conflicts = True
-                    finally:
-                        try:
-                            wt_repo.git.merge('--abort')
-                        except git.exc.GitCommandError:
-                            pass
-                finally:
-                    G.git.worktree('remove', '--force', wt_dir)
-
-                if has_base_conflicts:
-                    log.error(f"PR #{pr} has conflicts with the target base branch.")
-                    while True:
-                        ans = input(f"PR #{pr} needs a rebase! Do you want to post a review requesting a rebase? [y/N/o] (y=yes, n=abort script, o=open PR in browser): ").strip().lower()
-                        if ans == 'o':
-                            url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
-                            webbrowser.open_new(url)
-                            print(f"Opened {url} in browser.")
-                        elif ans == 'y':
-                            md_text = "**Automated PR Review - Rebase Required**\n\n"
-                            md_text += f"This PR currently has merge conflicts with the target base branch. Please rebase and resolve the conflicts."
-                            if post_draft_review(session, pr, md_text):
-                                log.error("Rejecting PR pending rebase.")
-                                sys.exit(1)
-                        elif ans == 'n' or ans == '':
-                            log.error(f"Aborting script due to unmergeable PR #{pr}.")
-                            sys.exit(1)
-
-                if base != 'main':
-                    visualizer_text = verify_commit_parity(G, session, pr, pr_commits, base)
-                    if not args.skip_conflict_check:
-                        simulate_conflict_resolution(G, session, pr, pr_commits, base, args.always_fetch, visualizer_text)
-            except SystemExit:
-                audit_passed = False
-                if not args.audit:
-                    raise
+        if args.final_merge or args.audit:
+            audit_passed = verify_pr_readiness(G, session, pr, pr_commits, tip, base, args)
 
         if args.audit:
             log.info(f"Audit of PR #{pr} {'passed' if audit_passed else 'failed'}. Skipping merge.")
@@ -1095,157 +1256,8 @@ def build_branch(args):
             if created_branch and not args.no_tag:
                 log.info("[DRY RUN] Would push tag %s to %s" % (tag.name, CI_REMOTE_URL))
 
-    if args.create_qa or args.update_qa:
-        if not created_branch:
-            log.error("branch already exists!")
-            sys.exit(1)
-        project = R.project.get(REDMINE_PROJECT_QA)
-        log.debug("got redmine project %s", project)
-        user = R.user.get('current')
-        log.debug("got redmine user %s", user)
-        for tracker in project.trackers:
-            if tracker['name'] == REDMINE_TRACKER_QA:
-                tracker = tracker
-        if tracker is None:
-            log.error("could not find tracker in project: %s", REDMINE_TRACKER_QA)
-        log.debug("got redmine tracker %s", tracker)
-
-        # Use hard-coded custom field ids because there is apparently no way to
-        # figure these out via the python library
-        custom_fields = []
-        custom_fields.append({'id': REDMINE_CUSTOM_FIELD_ID_SHAMAN_BUILD, 'value': branch})
-        custom_fields.append({'id': REDMINE_CUSTOM_FIELD_ID_QA_RUNS, 'value': branch})
-        if args.qa_release:
-            custom_fields.append({'id': REDMINE_CUSTOM_FIELD_ID_QA_RELEASE, 'value': args.qa_release})
-        if args.qa_tags:
-            custom_fields.append({'id': REDMINE_CUSTOM_FIELD_ID_QA_TAGS, 'value': args.qa_tags})
-
-        if not args.no_tag:
-            origin_url = f'{BASE_PROJECT}/{CI_REPO}/commits/{tag.name}'
-        else:
-            origin_url = f'{BASE_PROJECT}/{CI_REPO}/commits/{branch}'
-        custom_fields.append({'id': REDMINE_CUSTOM_FIELD_ID_GIT_BRANCH, 'value': origin_url})
-
-        issue_kwargs = {
-          "assigned_to_id": user['id'],
-          "custom_fields": custom_fields,
-          "description": '\n'.join(qa_tracker_description),
-          "project_id": project['id'],
-          "watcher_user_ids": [user['id']],
-        }
-
-        if args.qa_private:
-            issue_kwargs['is_private'] = True
-
-        if args.update_qa:
-            issue = R.issue.get(args.update_qa)
-            if issue.project.id != project.id:
-                log.error(f"issue {issue.url} project {issue.project} does not match {project}")
-                sys.exit(1)
-            if issue.tracker.id != tracker.id:
-                log.error(f"issue {issue.url} tracker {issue.tracker} does not match {tracker}")
-                sys.exit(1)
-
-            old_branch = "unknown"
-            for cf in issue.custom_fields:
-                if cf.id in (REDMINE_CUSTOM_FIELD_ID_SHAMAN_BUILD, REDMINE_CUSTOM_FIELD_ID_QA_RUNS):
-                    old_branch = cf.value
-                    if old_branch:
-                        break
-
-            old_prs = set()
-            if hasattr(issue, 'description') and issue.description:
-                for match in re.finditer(r'\* "PR #(\d+)":', issue.description):
-                    old_prs.add(int(match.group(1)))
-
-            new_prs = set(int(p) for p in prs)
-            added_prs = new_prs - old_prs
-            removed_prs = old_prs - new_prs
-
-            notes = f"""
-                **Update Triggered**
-
-                **Previous Branch:** `{old_branch}`
-                **New Branch:** `{branch}`
-
-                **Previous QA Links:**
-                * [Shaman Build](https://shaman.ceph.com/builds/ceph/{old_branch}/)
-                * [Pulpito / Teuthology Results](https://pulpito.ceph.com/?branch={old_branch})
-
-                """
-            notes = textwrap.dedent(notes)
-            if old_prs:
-                notes += "**Previous PRs included in that run:**\n"
-                for old_pr in sorted(old_prs):
-                    notes += get_pr_tracker_string(session, old_pr) + "\n"
-            else:
-                notes += "**Previous PRs included in that run:** None\n"
-
-            issue_kwargs['notes'] = notes.strip()
-
-            if args.dry_run:
-                log.info(f"[DRY RUN] Would update redmine qa issue {issue.url} with kwargs: {issue_kwargs}")
-                issue_url = issue.url
-            else:
-                log.debug("updating issue with kwargs: %s", issue_kwargs)
-                if R.issue.update(issue.id, **issue_kwargs):
-                    log.info("updated redmine qa issue: %s", issue.url)
-                    issue_url = issue.url
-                else:
-                    log.error(f"failed to update {issue}")
-                    sys.exit(1)
-
-            for pr in added_prs:
-                body = f"This PR has been added to [{issue.subject}]({issue_url})."
-                if args.dry_run:
-                    log.info(f"[DRY RUN] Would post comment to added PR #{pr}: {body}")
-                else:
-                    endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/comments"
-                    r = session.post(endpoint, auth=gitauth(), data=json.dumps({'body':body}))
-                    if r.status_code == 201:
-                        log.info(f"Successfully posted added comment to PR #{pr}")
-                    else:
-                        log.error(f"Failed to post comment: {r.status_code} {r.text}")
-
-            for pr in removed_prs:
-                body = f"This PR has been removed from [{issue.subject}]({issue_url})."
-                if args.dry_run:
-                    log.info(f"[DRY RUN] Would post comment to removed PR #{pr}: {body}")
-                else:
-                    endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/comments"
-                    r = session.post(endpoint, auth=gitauth(), data=json.dumps({'body':body}))
-                    if r.status_code == 201:
-                        log.info(f"Successfully posted removed comment to PR #{pr}")
-                    else:
-                        log.error(f"Failed to post comment: {r.status_code} {r.text}")
-
-        elif args.create_qa:
-            now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-            default_subject = f"{base} integration testing by {USER} started {now_str}"
-            issue_kwargs['subject'] = args.qa_subject if args.qa_subject else default_subject
-
-            if args.dry_run:
-                log.info(f"[DRY RUN] Would create redmine qa issue with kwargs: {issue_kwargs}")
-                issue_url = f"{REDMINE_ENDPOINT}/issues/DRY_RUN_ID"
-            else:
-                log.debug("creating issue with kwargs: %s", issue_kwargs)
-                issue = R.issue.create(**issue_kwargs)
-                log.info("created redmine qa issue: %s", issue.url)
-                issue_url = issue.url
-
-            for pr in prs:
-                log.debug(f"Posting QA Run in comment for ={pr}")
-                subject = issue_kwargs['subject']
-                body = f"This PR has been added to [{subject}]({issue_url})."
-                if args.dry_run:
-                    log.info(f"[DRY RUN] Would post comment to PR #{pr}: {body}")
-                else:
-                    endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/comments"
-                    r = session.post(endpoint, auth=gitauth(), data=json.dumps({'body':body}))
-                    if r.status_code == 201:
-                        log.info(f"Successfully posted comment to PR #{pr}")
-                    else:
-                        log.error(f"Failed to post comment: {r.status_code} {r.text}")
+    tag_obj = locals().get('tag') if created_branch and not args.no_tag else None
+    manage_qa_tracker(args, R, session, branch, prs, tag_obj, qa_tracker_description, base, created_branch)
 
 class SplitCommaAppendAction(argparse.Action):
     """
@@ -1277,7 +1289,7 @@ def main():
              $ ptl-tool.py --integration --pr-label wip-$USER-testing --create-qa
 
           2. Merge a specific PR for the main or release branch (leaves HEAD detached):
-             $ ptl-tool.py --release-merge https://github.com/ceph/ceph/pull/12345
+             $ ptl-tool.py --final-merge https://github.com/ceph/ceph/pull/12345
 
           For more examples, use the --examples switch.
     """)
@@ -1304,14 +1316,16 @@ def main():
     group.add_argument('--always-fetch', dest='always_fetch', action='store_true', help='always fetch commits from remote (bypass local cache)')
     group.add_argument('--base', dest='base', action='store', help='base for branch')
     group.add_argument('--branch', dest='branch', action='store', default=default_branch, help='branch to create ("HEAD" leaves HEAD detached; i.e. no branch is made)')
-    group.add_argument('--release-merge', dest='release_merge', action='store_true', help='enable release (or \'main\') merge behavior (implies --branch HEAD)')
     group.add_argument('--branch-name-append', dest='branch_append', action='store', help='append string to branch name')
     group.add_argument('--branch-release', dest='branch_release', action='store', help='release name to embed in branch (for shaman)')
-    group.add_argument('--integration', dest='integration', action='store_true', help='enable integration workflow: auto-sets --branch-release and --qa-release to the PR base, implies --no-credits, --always-fetch, and skips all verification checks')
     group.add_argument('--merge-branch-name', dest='merge_branch_name', action='store', default=False, help='name of the branch for merge messages')
     group.add_argument('--no-credits', dest='credits', action='store_false', help='skip indication search (Reviewed-by, etc.)')
     group.add_argument('--no-tag', dest='no_tag', action='store_true', help='do not create a tag of the branch')
     group.add_argument('--stop-at-built', dest='stop_at_built', action='store_true', help='stop execution when branch is built')
+
+    me_group = group.add_mutually_exclusive_group()
+    me_group.add_argument('--final-merge', dest='final_merge', action='store_true', help='enable final upstream merge behavior (implies --branch HEAD)')
+    me_group.add_argument('--integration', dest='integration', action='store_true', help='enable integration workflow: auto-sets --branch-release and --qa-release to the PR base, implies --no-credits, --always-fetch, and skips all verification checks')
 
     group = parser.add_argument_group('Build Control Options')
     group.add_argument('--archs', dest='archs', action=SplitCommaAppendAction, default=[], help='add arch(s) to build. Specify one or more times. Comma separated values are split.')
@@ -1370,7 +1384,7 @@ def main():
            Merges a PR into a detached HEAD without creating a testing branch. 
            Useful for merging directly to a stable branch like 'quincy' or 'reef' locally
            before pushing upstream:
-           $ ptl-tool.py --release-merge 123456
+           $ ptl-tool.py --final-merge 123456
            $ git log # verify everything looks good
            $ git push upstream HEAD:main
 
@@ -1398,7 +1412,7 @@ def main():
     if args.debug_build:
         args.flavors.add('debug')
 
-    if args.release_merge:
+    if args.final_merge:
         args.branch = 'HEAD'
 
     if not GITHUB_TOKEN:
