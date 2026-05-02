@@ -352,6 +352,9 @@ def open_in_browser(urls):
     for url in urls:
         log.debug("Opening %s", url)
 
+    if len(urls) == 1:
+        return webbrowser.open_new(urls[0])
+
     # We are using an html file to hold the URLs because browsers are dumb;
     # they won't open all the urls in a single **new window**.
     js_array = ", ".join(f"'{url}'" for url in urls)
