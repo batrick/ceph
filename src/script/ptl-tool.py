@@ -1167,14 +1167,26 @@ def build_branch(args):
         if created_branch and not args.no_tag:
             # tag it for future reference.
             tag_name = "testing/%s" % branch
-            tag = git.refs.tag.Tag.create(G, tag_name)
-            log.info("Created tag %s" % tag)
+            if not args.dry_run:
+                tag = git.refs.tag.Tag.create(G, tag_name)
+                log.info("Created tag %s" % tag)
+            else:
+                log.info("[DRY RUN] Would create tag %s" % tag_name)
+                class DummyTag:
+                    def __init__(self, name):
+                        self.name = name
+                tag = DummyTag(tag_name)
 
     do_qa = args.create_qa or args.update_qa
     if args.push_ci or (not args.no_push_ci and do_qa):
-        G.git.push(CI_REMOTE_URL, branch) # for shaman
-        if created_branch and not args.no_tag:
-            G.git.push(CI_REMOTE_URL, tag.name) # for archival
+        if not args.dry_run:
+            G.git.push(CI_REMOTE_URL, branch) # for shaman
+            if created_branch and not args.no_tag:
+                G.git.push(CI_REMOTE_URL, tag.name) # for archival
+        else:
+            log.info("[DRY RUN] Would push branch %s to %s" % (branch, CI_REMOTE_URL))
+            if created_branch and not args.no_tag:
+                log.info("[DRY RUN] Would push tag %s to %s" % (tag.name, CI_REMOTE_URL))
 
     if args.create_qa or args.update_qa:
         if not created_branch:
@@ -1212,8 +1224,7 @@ def build_branch(args):
           "custom_fields": custom_fields,
           "description": '\n'.join(qa_tracker_description),
           "project_id": project['id'],
-          "subject": branch,
-          "watcher_user_ids": user['id'],
+          "watcher_user_ids": [user['id']],
         }
 
         if args.qa_private:
@@ -1228,29 +1239,113 @@ def build_branch(args):
                 log.error(f"issue {issue.url} tracker {issue.tracker} does not match {tracker}")
                 sys.exit(1)
 
-            log.debug("updating issue with kwargs: %s", issue_kwargs)
+            old_branch = "unknown"
+            for cf in issue.custom_fields:
+                if cf.id in (REDMINE_CUSTOM_FIELD_ID_SHAMAN_BUILD, REDMINE_CUSTOM_FIELD_ID_QA_RUNS):
+                    old_branch = cf.value
+                    if old_branch:
+                        break
+
+            old_prs = set()
+            if hasattr(issue, 'description') and issue.description:
+                for match in re.finditer(r'\* "PR #(\d+)":', issue.description):
+                    old_prs.add(int(match.group(1)))
+
+            new_prs = set(int(p) for p in prs)
+            added_prs = new_prs - old_prs
+            removed_prs = old_prs - new_prs
+
             notes = f"""
-            Updating branch to {branch}.
-            """
-            if R.issue.update(issue.id, **issue_kwargs):
-                log.info("updated redmine qa issue: %s", issue.url)
+                **Update Triggered**
+
+                **Previous Branch:** `{old_branch}`
+                **New Branch:** `{branch}`
+
+                **Previous QA Links:**
+                * [Shaman Build](https://shaman.ceph.com/builds/ceph/{old_branch}/)
+                * [Pulpito / Teuthology Results](https://pulpito.ceph.com/?branch={old_branch})
+
+                """
+            notes = textwrap.dedent(notes)
+            first = True
+            for pr in prs:
+                if First:
+                    notes += "**Removed PRs included in previous branch/run:**"
+                log.info("Fetching information for PR #%d", pr)
+                endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/pulls/{pr}"
+                response = next(get(session, endpoint, paging=False))
+                notes += f"* \"PR #{pr}\":{response["html_url"]} -- {response["title"].strip()}"
+
+            issue_kwargs['notes'] = '\n'.join(notes)
+
+            if args.dry_run:
+                log.info(f"[DRY RUN] Would update redmine qa issue {issue.url} with kwargs: {issue_kwargs}")
+                issue_url = issue.url
             else:
-                log.error(f"failed to update {issue}")
-                sys.exit(1)
+                log.debug("updating issue with kwargs: %s", issue_kwargs)
+                if R.issue.update(issue.id, **issue_kwargs):
+                    log.info("updated redmine qa issue: %s", issue.url)
+                    issue_url = issue.url
+                else:
+                    log.error(f"failed to update {issue}")
+                    sys.exit(1)
+
+            other_count = len(new_prs) - 1
+            alongside_text = f" alongside {other_count} other PR{'s' if other_count != 1 else ''}" if other_count > 0 else ""
+
+            for pr in added_prs:
+                body = f"This PR has been added to QA run [{issue_url}]({issue_url}){alongside_text}."
+                if args.dry_run:
+                    log.info(f"[DRY RUN] Would post comment to added PR #{pr}: {body}")
+                else:
+                    endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/comments"
+                    r = session.post(endpoint, auth=gitauth(), data=json.dumps({'body':body}))
+                    if r.status_code == 201:
+                        log.info(f"Successfully posted added comment to PR #{pr}")
+                    else:
+                        log.error(f"Failed to post comment: {r.status_code} {r.text}")
+
+            for pr in removed_prs:
+                body = f"This PR has been removed from QA run [{issue_url}]({issue_url})."
+                if args.dry_run:
+                    log.info(f"[DRY RUN] Would post comment to removed PR #{pr}: {body}")
+                else:
+                    endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/comments"
+                    r = session.post(endpoint, auth=gitauth(), data=json.dumps({'body':body}))
+                    if r.status_code == 201:
+                        log.info(f"Successfully posted removed comment to PR #{pr}")
+                    else:
+                        log.error(f"Failed to post comment: {r.status_code} {r.text}")
+
         elif args.create_qa:
-            log.debug("creating issue with kwargs: %s", issue_kwargs)
-            issue = R.issue.create(**issue_kwargs)
-            log.info("created redmine qa issue: %s", issue.url)
+            now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+            default_subject = f"{base} integration testing by {USER} started {now_str}"
+            issue_kwargs['subject'] = args.qa_subject if args.qa_subject else default_subject
+
+            if args.dry_run:
+                log.info(f"[DRY RUN] Would create redmine qa issue with kwargs: {issue_kwargs}")
+                issue_url = f"{REDMINE_ENDPOINT}/issues/DRY_RUN_ID"
+            else:
+                log.debug("creating issue with kwargs: %s", issue_kwargs)
+                issue = R.issue.create(**issue_kwargs)
+                log.info("created redmine qa issue: %s", issue.url)
+                issue_url = issue.url
+
+            other_count = len(prs) - 1
+            alongside_text = f" alongside {other_count} other PR{'s' if other_count != 1 else ''}" if other_count > 0 else ""
 
             for pr in prs:
                 log.debug(f"Posting QA Run in comment for ={pr}")
-                endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/comments"
-                body = f"This PR is under test in [{issue.url}]({issue.url})."
-                r = session.post(endpoint, auth=gitauth(), data=json.dumps({'body':body}))
-                if r.status_code == 201:
-                    log.info(f"Successfully posted comment to PR #{pr}")
+                body = f"This PR is under test in [{issue_url}]({issue_url}){alongside_text}."
+                if args.dry_run:
+                    log.info(f"[DRY RUN] Would post comment to PR #{pr}: {body}")
                 else:
-                    log.error(f"Failed to post comment: {r.status_code} {r.text}")
+                    endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/issues/{pr}/comments"
+                    r = session.post(endpoint, auth=gitauth(), data=json.dumps({'body':body}))
+                    if r.status_code == 201:
+                        log.info(f"Successfully posted comment to PR #{pr}")
+                    else:
+                        log.error(f"Failed to post comment: {r.status_code} {r.text}")
 
 class SplitCommaAppendAction(argparse.Action):
     """
@@ -1283,6 +1378,7 @@ def main():
 
     group = parser.add_argument_group('General Options')
     group.add_argument('--debug', dest='debug', action='store_true', help='turn debugging on')
+    group.add_argument('--dry-run', dest='dry_run', action='store_true', help='print actions without modifying remote state')
     group.add_argument('--git-dir', dest='git', action='store', default=git_dir, help='git directory')
 
     group = parser.add_argument_group('GitHub PR Options')
@@ -1310,6 +1406,7 @@ def main():
 
     group = parser.add_argument_group('QA Control Options')
     group.add_argument('--create-qa', dest='create_qa', action='store_true', help='create QA run ticket')
+    group.add_argument('--qa-subject', dest='qa_subject', action='store', help='override default QA tracker subject')
     group.add_argument('--qa-private', dest='qa_private', action='store_true', help='make the QA run ticket private')
     group.add_argument('--qa-release', dest='qa_release', action='store', help='QA release for tracker')
     group.add_argument('--qa-tags', dest='qa_tags', action='store', help='QA tags for tracker')
