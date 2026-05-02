@@ -580,22 +580,33 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
         visualizer_text = "\n".join(visualizer_lines)
         print(visualizer_text)
 
+    visualizer_clean = re.sub(r'\033\[[0-9;]*m', '', visualizer_text) if visualizer_text else ""
+
     for commit in invalid_format_commits:
         log.error(f"Commit {commit.hexsha[:8]} invalid format. Must be cherry-pick or start with '{base}:'")
         while True:
-            ans = input("Do you want to allow this commit anyway? [y/N/m/o] (y=yes, n=no, m=skip to merge, o=open PR in browser) ").strip().lower()
+            ans = input("Do you want to allow this commit anyway? [y/N/m/r/o] (y=yes, n=no, m=skip to merge, r=review PR, o=open PR in browser) ").strip().lower()
             if ans == 'o':
                 url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
                 open_in_browser([url])
                 print(f"Opened {url} in browser.")
             elif ans == 'm':
                 raise SkipToMerge()
+            elif ans == 'r':
+                md_text = f"**Automated Backport Parity Review - Invalid Commit Format**\n\n"
+                md_text += f"Commit `{commit.hexsha[:8]}` has an invalid format. Backport commits must either include a standard `(cherry picked from commit ...)` line or start with the target branch name (e.g., `{base}:`).\n\n"
+                if visualizer_clean:
+                    md_text += f"**Commit Parity Visualizer:**\n```text\n{visualizer_clean}\n```\n"
+                draft_ans = post_draft_review(session, pr, md_text, base=base)
+                if draft_ans == 'm':
+                    raise SkipToMerge()
+                elif draft_ans == 'r':
+                    log.error("Rejecting PR pending commit format correction.")
+                    sys.exit(1)
             elif ans != 'y':
                 sys.exit(1)
             else:
                 break
-
-    visualizer_clean = re.sub(r'\033\[[0-9;]*m', '', visualizer_text) if visualizer_text else ""
     if missing_commits:
         # Generate markdown comment draft
         md_text = f"**Automated Backport Parity Review**\n\n"
