@@ -957,7 +957,7 @@ def manage_qa_tracker(args, R, session, branch, prs, tag, qa_tracker_description
                     log.error(f"Failed to post comment: {r.status_code} {r.text}")
 
     elif args.create_qa:
-        now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d-%H:%M")
         default_subject = f"{base} integration testing by {USER} started {now_str}"
         issue_kwargs['subject'] = args.qa_subject if args.qa_subject else default_subject
 
