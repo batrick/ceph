@@ -634,6 +634,7 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
             elif ans == 'r':
                 md_text = f"**Automated Backport Parity Review - Invalid Commit Format**\n\n"
                 md_text += f"Commit `{commit.hexsha[:8]}` has an invalid format. Backport commits must either include a standard `(cherry picked from commit ...)` line or start with the target branch name (e.g., `{base}:`).\n\n"
+                md_text += "[Be familiar with the rules and guidelines for writing backports.](https://github.com/ceph/ceph/blob/main/SubmittingPatches-backports.rst)\n\n"
                 if visualizer_clean:
                     md_text += f"**Commit Parity Visualizer:**\n```text\n{visualizer_clean}\n```\n"
                 draft_ans = post_draft_review(session, pr, md_text, base=base)
@@ -656,9 +657,12 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
         for c in unmerged_cps:
             orig_sha = cp_regex.search(c.message).group(1)
             md_text += f"* Backport commit `{c.hexsha[:8]}` cherry-picks `{orig_sha[:8]}`\n"
+
+        md_text += "\n"
+        md_text += "[Be familiar with the rules and guidelines for writing backports.](https://github.com/ceph/ceph/blob/main/SubmittingPatches-backports.rst)\n\n"
             
         if visualizer_clean:
-            md_text += f"\n**Commit Parity Visualizer:**\n```text\n{visualizer_clean}\n```\n"
+            md_text += f"**Commit Parity Visualizer:**\n```text\n{visualizer_clean}\n```\n"
             
         while True:
             ans = input("Unmerged cherry-picks detected! [p]roceed, [m] skip to merge, [o]pen browser to investigate, [r]eview PR (request changes), [q]uit: ").strip().lower()
