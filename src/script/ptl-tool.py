@@ -58,8 +58,10 @@ except ImportError:
     MISSING_DEPS.append("GitPython")
 
 try:
+    import redminelib
     from redminelib import Redmine  # https://pypi.org/project/python-redmine/
 except ImportError:
+    redminelib = None
     Redmine = None
     MISSING_DEPS.append("python-redmine")
 
