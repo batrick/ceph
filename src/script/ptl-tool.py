@@ -871,13 +871,18 @@ def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
     irregularities = []
     notes = []
 
+    if not found_prs:
+        log.warning(f"No original PRs were identified for backport PR #{bp_pr}.")
+        irregularities.append(f"**Missing Original PR(s):** Could not identify any `main` PRs associated with this backport. Ensure the backport commits properly reference the original PRs.")
+
     for pr_name in found_prs:
         m_pr = re.search(r'#(\d+)', pr_name)
         if not m_pr:
             continue
         orig_pr = int(m_pr.group(1))
 
-        log.info(f"Checking Redmine for main PR #{orig_pr}...")
+        pr_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{orig_pr}"
+        log.info(f"Checking Redmine for main PR #{orig_pr} ({pr_url})...")
         filters = {
             f"cf_{REDMINE_CUSTOM_FIELD_ID_PULL_REQUEST_ID}": orig_pr,
             "status_id": "*"
@@ -885,7 +890,8 @@ def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
         main_trackers = list(R.issue.filter(**filters))
         
         if main_trackers:
-            log.debug(f"Found main tracker(s): {[t.id for t in main_trackers]}")
+            tracker_urls = [f"{REDMINE_ENDPOINT}/issues/{t.id}" for t in main_trackers]
+            log.info(f"Found main tracker(s): {', '.join(tracker_urls)}")
         else:
             log.info(f"No tracker found with Pull Request ID '{orig_pr}', searching descriptions...")
             search_results = R.search(q=str(orig_pr), resources=['issues'])
@@ -896,7 +902,7 @@ def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
                         match = re.search(r'^https://github\.com/[^/]+/[^/]+/pull/(\d+)$', issue.description.strip(), re.MULTILINE)
                         if match and int(match.group(1)) == orig_pr:
                             main_trackers.append(issue)
-                            log.debug(f"Found main tracker #{issue.id} via description search.")
+                            log.info(f"Found main tracker #{issue.id} ({REDMINE_ENDPOINT}/issues/{issue.id}) via description search.")
                             print(f"Found PR #{orig_pr} in description of issue #{issue.id}.")
                             ans = input(f"Fix tracker #{issue.id} by moving PR link from description to 'Pull Request ID' field? [y/N]: ").strip().lower()
                             if ans == 'y':
@@ -908,12 +914,12 @@ def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
                     pass
         
         if not main_trackers:
-            log.warning(f"Failed to find any main trackers for PR #{orig_pr}")
+            log.warning(f"Failed to find any main trackers for PR #{orig_pr} ({pr_url})")
             irregularities.append(f"**Orphaned Main PR:** Could not find a Redmine tracker for `main` PR #{orig_pr}. Please create a ticket, set its 'Pull Request ID', populate the 'Backports' field, and ensure it is in the 'Pending Backport' state.")
             continue
         
         for main_tracker in main_trackers:
-            log.debug(f"Investigating relations for main tracker #{main_tracker.id}")
+            log.debug(f"Investigating relations for main tracker #{main_tracker.id} ({REDMINE_ENDPOINT}/issues/{main_tracker.id})")
             bp_trackers = []
             try:
                 for rel in main_tracker.relations:
@@ -930,12 +936,12 @@ def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
                 pass
 
             if not bp_trackers:
-                log.warning(f"No backport trackers found for main tracker #{main_tracker.id} targeting base '{base}'")
+                log.warning(f"No backport trackers found for main tracker #{main_tracker.id} ({REDMINE_ENDPOINT}/issues/{main_tracker.id}) targeting base '{base}'")
                 irregularities.append(f"**Missing Backport Tracker:** Main tracker [#{main_tracker.id}]({REDMINE_ENDPOINT}/issues/{main_tracker.id}) does not have a backport tracker for `{base}`. Please adjust the 'Backports' field on the main tracker appropriately and remove 'backport_processed' from 'Tags (freeform)'.")
                 continue
             
             for bp_tracker in bp_trackers:
-                log.debug(f"Found backport tracker #{bp_tracker.id} linked to main tracker #{main_tracker.id}")
+                log.info(f"Found backport tracker #{bp_tracker.id} ({REDMINE_ENDPOINT}/issues/{bp_tracker.id}) linked to main tracker #{main_tracker.id}")
                 cf_pr = get_custom_field(bp_tracker, REDMINE_CUSTOM_FIELD_ID_PULL_REQUEST_ID)
                 
                 # Check description if PR ID is missing
