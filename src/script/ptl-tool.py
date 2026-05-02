@@ -5,16 +5,14 @@
 # This tool's purpose is to make it easier to merge PRs into test branches and
 # into main.
 #
-#
 # == Getting Started ==
 #
 # You will probably want to setup a virtualenv for running this script:
 #
 #    (
-#    virtualenv ~/ptl-venv
-#    source ~/ptl-venv/bin/activate
-#    pip3 install GitPython
-#    pip3 install python-redmine
+#      virtualenv ~/ptl-venv
+#      source ~/ptl-venv/bin/activate
+#      pip3 install GitPython python-redmine requests
 #    )
 #
 # Then run the tool with:
@@ -30,117 +28,8 @@
 # Some important environment variables:
 #
 #  - PTL_TOOL_GITHUB_TOKEN (your github Personal access token, or what is stored in ~/.github_token)
-#  - PTL_TOOL_REDMINE_USER (your redmine username)
 #  - PTL_TOOL_REDMINE_API_KEY (your redmine api key, or what is stored in ~/redmine_key)
 #  - PTL_TOOL_USER (your desired username embedded in test branch names)
-#
-#
-# You can use this tool to create a QA tracker ticket for you:
-#
-# $ python3 ptl-tool.py ... --create-qa --qa-release reef
-#
-# which will populate the ticket with all the usual information and also push a
-# tagged version of your test branch to ceph-ci for posterity.
-
-#
-# ** Here are some basic exmples to get started: **
-#
-# Merging all PRs labeled 'wip-pdonnell-testing' into a new test branch:
-#
-# $ src/script/ptl-tool.py --pr-label wip-pdonnell-testing
-# Adding labeled PR #18805 to PR list
-# Adding labeled PR #18774 to PR list
-# Adding labeled PR #18600 to PR list
-# Will merge PRs: [18805, 18774, 18600]
-# Detaching HEAD onto base: main
-# Merging PR #18805
-# Merging PR #18774
-# Merging PR #18600
-# Checked out new branch wip-pdonnell-testing-20171108.054517
-# Created tag testing/wip-pdonnell-testing-20171108.054517
-#
-#
-# Merging all PRs labeled 'wip-pdonnell-testing' into main:
-#
-# $ src/script/ptl-tool.py --pr-label wip-pdonnell-testing --branch main
-# Adding labeled PR #18805 to PR list
-# Adding labeled PR #18774 to PR list
-# Adding labeled PR #18600 to PR list
-# Will merge PRs: [18805, 18774, 18600]
-# Detaching HEAD onto base: main
-# Merging PR #18805
-# Merging PR #18774
-# Merging PR #18600
-# Checked out branch main
-#
-# Now push to main:
-# $ git push upstream main
-# ...
-#
-#
-# Merging all PRs labeled 'wip-pdonnell-testing' into a new test branch but
-# NOT pushing that branch to ceph-ci repo (pushing to ceph-ci repo usually
-# happens only when we use --create-qa or --update-qa):
-#
-# $ src/script/ptl-tool.py --pr-label wip-pdonnell-testing --branch main --no-push-ci
-# Adding labeled PR #18805 to PR list
-# Adding labeled PR #18774 to PR list
-# Adding labeled PR #18600 to PR list
-# Will merge PRs: [18805, 18774, 18600]
-# Detaching HEAD onto base: main
-# Merging PR #18805
-# Merging PR #18774
-# Merging PR #18600
-# Checked out new branch wip-pdonnell-testing-20171108.054517
-# Created tag testing/wip-pdonnell-testing-20171108.054517
-#
-#
-# Merging PR #1234567 and #2345678 into a new test branch with a testing label added to the PR:
-#
-# $ src/script/ptl-tool.py 1234567 2345678 --label wip-pdonnell-testing
-# Detaching HEAD onto base: main
-# Merging PR #1234567
-# Labeled PR #1234567 wip-pdonnell-testing
-# Merging PR #2345678
-# Labeled PR #2345678 wip-pdonnell-testing
-# Deleted old test branch wip-pdonnell-testing-20170928
-# Created branch wip-pdonnell-testing-20170928
-# Created tag testing/wip-pdonnell-testing-20170928_03
-#
-#
-# Merging PR #1234567 into main leaving a detached HEAD (i.e. do not update your repo's main branch) and do not label:
-#
-# $ src/script/ptl-tool.py --branch HEAD --merge-branch-name main 1234567
-# Detaching HEAD onto base: main
-# Merging PR #1234567
-# Leaving HEAD detached; no branch anchors your commits
-#
-# Now push to main:
-# $ git push upstream HEAD:main
-#
-#
-# Merging PR #12345678 into luminous leaving a detached HEAD (i.e. do not update your repo's main branch) and do not label:
-#
-# $ src/script/ptl-tool.py --base luminous --branch HEAD --merge-branch-name luminous 12345678
-# Detaching HEAD onto base: luminous
-# Merging PR #12345678
-# Leaving HEAD detached; no branch anchors your commits
-#
-# Now push to luminous:
-# $ git push upstream HEAD:luminous
-#
-#
-# Merging all PRs labelled 'wip-pdonnell-testing' into main leaving a detached HEAD:
-#
-# $ src/script/ptl-tool.py --base main --branch HEAD --merge-branch-name main --pr-label wip-pdonnell-testing
-# Adding labeled PR #18192 to PR list
-# Will merge PRs: [18192]
-# Detaching HEAD onto base: main
-# Merging PR #18192
-# Leaving HEAD detached; no branch anchors your commit
-
-# TODO
-# Look for check failures?
 
 import argparse
 from dataclasses import dataclass
@@ -1383,7 +1272,19 @@ class SplitCommaAppendAction(argparse.Action):
             raise NotImplementedError("type not supported")
 
 def main():
-    parser = argparse.ArgumentParser(description="Ceph PTL tool")
+    epilog_text = textwrap.dedent("""
+        Quick Start Examples:
+          1. Build an integration branch from labeled PRs and set up a QA ticket:
+             $ ptl-tool.py --integration --pr-label wip-$USER-testing --create-qa
+
+          2. Merge a specific PR for the main or release branch (leaves HEAD detached):
+             $ ptl-tool.py --release-merge https://github.com/ceph/ceph/pull/12345
+    """)
+    parser = argparse.ArgumentParser(
+        description="Ceph PTL tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=epilog_text
+    )
     default_branch = TEST_BRANCH
     default_label = ''
     argv = sys.argv[1:]
@@ -1391,6 +1292,7 @@ def main():
     group = parser.add_argument_group('General Options')
     group.add_argument('--debug', dest='debug', action='store_true', help='turn debugging on')
     group.add_argument('--dry-run', dest='dry_run', action='store_true', help='print actions without modifying remote state')
+    group.add_argument('--examples', dest='examples', action='store_true', help='show extended examples and usage')
     group.add_argument('--git-dir', dest='git', action='store', default=git_dir, help='git directory')
 
     group = parser.add_argument_group('GitHub PR Options')
@@ -1446,6 +1348,38 @@ def main():
     group.add_argument('prs', metavar="PRs...", type=parse_pr, nargs='*', help='Pull Requests to Merge (numbers or URLs)')
 
     args = parser.parse_args(argv)
+
+    if args.examples:
+        examples_text = textwrap.dedent("""
+        Ceph PTL Tool - Advanced Examples
+        =================================
+
+        1. Integration Testing (The "Daily Driver"):
+           Finds all PRs labeled 'wip-yourname-testing', auto-detects the base branch,
+           merges them locally, creates a test branch with the correct release name,
+           pushes it to ceph-ci, and creates a Redmine QA tracker ticket:
+           $ ptl-tool.py --integration --pr-label wip-yourname-testing --create-qa
+
+        2. Updating an Existing QA Run:
+           If you already have a QA tracker ticket (e.g., #55555) and want to add or 
+           remove PRs. Label the desired PRs on GitHub, then run:
+           $ ptl-tool.py --integration --pr-label wip-yourname-testing --update-qa 55555
+
+        3. Merging a Backport/Release PR:
+           Merges a PR into a detached HEAD without creating a testing branch. 
+           Useful for merging directly to a stable branch like 'quincy' or 'reef' locally
+           before pushing upstream:
+           $ ptl-tool.py --release-merge 123456
+           $ git log # verify everything looks good
+           $ git push upstream HEAD:main
+
+        4. Dry-Run a Massive integration branch:
+           Want to see what the tool *would* do without actually pushing branches,
+           creating Redmine tickets, or leaving GitHub comments?
+           $ ptl-tool.py --integration --pr-label wip-massive-test --create-qa --dry-run
+        """)
+        print(examples_text.strip())
+        sys.exit(0)
 
     if isinstance(args.audit, AuditLabels):
         print(args.audit)
