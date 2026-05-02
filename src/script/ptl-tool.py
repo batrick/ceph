@@ -657,13 +657,33 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
         if visualizer_clean:
             md_text += f"\n**Commit Parity Visualizer:**\n```text\n{visualizer_clean}\n```\n"
             
-        log.error("Unmerged cherry-picks detected. Preparing draft review...")
-        draft_ans = post_draft_review(session, pr, md_text, base=base)
-        if draft_ans == 'm':
-            raise SkipToMerge()
-        else:
-            log.error("Rejecting PR due to unmerged cherry-picks.")
-            sys.exit(1)
+        while True:
+            ans = input("Unmerged cherry-picks detected! [p]roceed, [m] skip to merge, [o]pen browser to investigate, [r]eview PR (request changes), [q]uit: ").strip().lower()
+            if ans == 'p':
+                break
+            elif ans == 'm':
+                raise SkipToMerge()
+            elif ans == 'q':
+                log.error("Rejecting PR due to unmerged cherry-picks.")
+                sys.exit(1)
+            elif ans == 'r':
+                draft_ans = post_draft_review(session, pr, md_text, base=base)
+                if draft_ans == 'm':
+                    raise SkipToMerge()
+                else:
+                    log.error("Rejecting PR due to unmerged cherry-picks.")
+                    sys.exit(1)
+            elif ans == 'o':
+                bp_pr_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
+                urls_to_open = [bp_pr_url]
+                for c in unmerged_cps:
+                    orig_sha = cp_regex.search(c.message).group(1)
+                    urls_to_open.append(f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{orig_sha}")
+                    urls_to_open.append(f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{c.hexsha}")
+                open_in_browser(urls_to_open)
+                print("Opened URLs in browser.")
+            else:
+                print("Invalid choice. Please enter p, m, o, r, or q.")
 
     if missing_commits or extra_commits:
         # Generate markdown comment draft
@@ -799,19 +819,21 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
 
                     if first_conflict:
                         while True:
-                            ans = input(f"Conflict or unapproved deviation detected in {c.hexsha[:8]}. Do you want to interactively review this PR? [Y/n/m/o]\n(y = yes, n = auto-approve remaining, m = skip to merge, o = open in browser) ").strip().lower()
+                            ans = input(f"Conflict or unapproved deviation detected in {c.hexsha[:8]}. Do you want to interactively review this PR? [i/a/m/o]\n(i = interactively review, a = auto-approve remaining, m = skip to merge, o = open in browser) ").strip().lower()
                             if ans == 'o':
                                 bp_pr_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
                                 commit_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{c.hexsha}"
                                 open_in_browser([bp_pr_url, commit_url])
                                 print("Opened PR and commit URLs in browser.")
-                            else:
+                            elif ans in ['i', 'a', 'm']:
                                 break
+                            else:
+                                print("Invalid choice. Please enter i, a, m, or o.")
                         first_conflict = False
                         if ans == 'm':
                             log.info("Skipping ahead to merge.")
                             raise SkipToMerge()
-                        elif ans == 'n':
+                        elif ans == 'a':
                             log.info("Auto-approving and skipping interactive checks for this PR.")
                             auto_approve_conflicts = True
                             continue
@@ -843,7 +865,7 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                         # Concatenate with a marker
                         diff = f"{msg_diff}\n" + "="*80 + "\nRANGE DIFF\n" + "="*80 + "\n\n" + diff
 
-                    prompt_text = "Does the PR properly explain and resolve this conflict/deviation? [y/N/s/m/o/e]\n(y = next check, n = abort, s = skip remaining checks, m = skip to merge, o = open in browser, e = re-examine in editor) "
+                    prompt_text = "Does the PR properly explain and resolve this conflict/deviation? [p/r/s/m/o/e]\n(p = proceed to next check, r = request review, s = skip remaining checks, m = skip to merge, o = open in browser, e = re-examine in editor) "
                     
                     open_editor = True
                     while True:
@@ -902,17 +924,19 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                         elif ans == 'e':
                             log.info(f"Re-opening {editor} to examine conflicts...")
                             open_editor = True
-                        else:
+                        elif ans in ['p', 'r', 's', 'm']:
                             break
+                        else:
+                            print("Invalid choice. Please enter p, r, s, m, o, or e.")
                     if ans == 'm':
                         log.info("Skipping ahead to merge.")
                         raise SkipToMerge()
                     elif ans == 's':
                         log.info("Skipping remaining checks for this PR.")
                         auto_approve_conflicts = True
-                    elif ans == 'y':
+                    elif ans == 'p':
                         pass # Already applied backport commit
-                    else:
+                    elif ans == 'r':
                         log.error("Rejecting PR due to undocumented/unapproved change. Preparing draft review...")
                         visualizer_clean = re.sub(r'\033\[[0-9;]*m', '', visualizer_text) if visualizer_text else ""
                         diff_text = diff if 'diff' in locals() else "No range diff available."
