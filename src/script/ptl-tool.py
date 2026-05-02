@@ -906,8 +906,8 @@ def manage_qa_tracker(args, R, session, branch, prs, tag, qa_tracker_description
             **New Branch:** `{branch}`
 
             **Previous QA Links:**
-            * [Shaman Build](https://shaman.ceph.com/builds/ceph/{old_branch}/)
-            * [Pulpito / Teuthology Results](https://pulpito.ceph.com/?branch={old_branch})
+            * "Shaman Build":https://shaman.ceph.com/builds/ceph/{old_branch}/
+            * "Pulpito / Teuthology Results":https://pulpito.ceph.com/?branch={old_branch}
 
             """
         notes = textwrap.dedent(notes)
