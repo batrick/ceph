@@ -159,11 +159,14 @@ def gitauth():
             return r
     return GitHubBearerAuth()
 
+def get_pr_info(session, pr):
+    log.info("Fetching information for PR #%d", pr)
+    endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/pulls/{pr}"
+    return next(get(session, endpoint, paging=False))
+
 def get_pr_tracker_string(session, pr, response=None):
     if not response:
-        log.debug(f"Fetching information for PR #{pr}")
-        endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/pulls/{pr}"
-        response = next(get(session, endpoint, paging=False))
+        response = get_pr_info(session, pr)
     return f'* "PR #{pr}":{response["html_url"]} -- {response["title"].strip()}'
 
 def get(session, url, params=None, paging=True):
@@ -1037,25 +1040,20 @@ def build_branch(args):
                 prs.append(n)
     log.info("Will merge PRs: {}".format(prs))
 
-    # PRE-FLIGHT: Auto-detect base from the first PR if necessary and cache responses
+    # PRE-FLIGHT: Auto-detect base from the first PR if necessary
     pr_responses = {}
-    for pr in prs:
-        log.info("Fetching information for PR #%d", pr)
-        endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/pulls/{pr}"
-        pr_responses[pr] = next(get(session, endpoint, paging=False))
-        
     if prs and base is None:
-        for pr in prs:
-            detected_base = pr_responses[pr].get("base", {}).get("ref")
-            log.debug("Detected base for PR #%d as `%s'", pr, detected_base)
-            if detected_base:
-                log.info(f"Auto-detected target base from PR #{pr}: {detected_base}")
-                base = detected_base
-                if args.merge_branch_name is False:
-                    merge_branch_name = detected_base
-            else:
-                if base != detected_base:
-                    raise SystemExit("base of each PR is not equal, use hard-coded --base")
+        first_pr = prs
+        pr_responses[first_pr] = get_pr_info(session, first_pr)
+        detected_base = pr_responses[first_pr].get("base", {}).get("ref")
+        
+        if detected_base:
+            log.info(f"Auto-detected target base from PR #{first_pr}: {detected_base}")
+            base = detected_base
+            if args.merge_branch_name is False:
+                merge_branch_name = detected_base
+        else:
+            raise SystemExit(f"Could not auto-detect base for PR #{first_pr}. Use hard-coded --base")
 
     if args.integration:
         if not base or base == 'HEAD':
@@ -1098,14 +1096,21 @@ def build_branch(args):
         pr = int(pr)
         log.info("Merging PR #{pr}".format(pr=pr))
 
+        if pr not in pr_responses:
+            pr_responses[pr] = get_pr_info(session, pr)
+
+        response = pr_responses[pr]
+        detected_base = response.get("base", {}).get("ref")
+        if base and detected_base and detected_base != base:
+            log.error(f"Base mismatch! PR #{pr} targets '{detected_base}' but expected '{base}'.")
+            sys.exit(1)
+
         remote_ref = "refs/pull/{pr}/head".format(pr=pr)
-        remote_sha1 = pr_responses[pr].get('head', {}).get('sha')
+        remote_sha1 = response.get('head', {}).get('sha')
         
         ref_to_fetch = remote_sha1 if remote_sha1 else remote_ref
         tip = resolve_ref(G, ref_to_fetch, BASE_REMOTE_URL, args.always_fetch)
         log.info("Now have head for PR #%d: %s", pr, str(tip))
-
-        response = pr_responses[pr]
 
         qa_tracker_description.append(get_pr_tracker_string(session, pr, response))
         message = "Merge PR #%d into %s\n\n* %s:\n" % (pr, merge_branch_name, remote_ref)
