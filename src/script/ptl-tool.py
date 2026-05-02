@@ -360,11 +360,32 @@ def open_in_browser(urls):
     html_content = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>Tab Launcher</title>
+    <title>PTL Tool - Tab Launcher</title>
+    <style>
+        body {{ font-family: sans-serif; padding: 2rem; background: #222; color: #eee; max-width: 800px; margin: 0 auto; line-height: 1.5; }}
+        .notice {{ background: #333; padding: 1.5rem; border-left: 4px solid #e2b714; margin-bottom: 2rem; border-radius: 0 4px 4px 0; }}
+        button {{ padding: 12px 24px; font-size: 16px; cursor: pointer; background: #0060df; color: white; border: none; border-radius: 4px; }}
+        button:hover {{ background: #003eaa; }}
+        a {{ color: #8cb4ff; }}
+    </style>
 </head>
-<body style="font-family: sans-serif; padding: 2rem; background: #222; color: #eee;">
+<body>
     <h2>🚀 Ready to launch tabs</h2>
-    <button id="openBtn" style="padding: 12px 24px; font-size: 16px; cursor: pointer; background: #0060df; color: white; border: none; border-radius: 4px;">Open All Tabs</button>
+    
+    <div class="notice">
+        <strong>Why are you seeing this?</strong><br>
+        Firefox has a known race condition when attempting to open a new window and multiple tabs simultaneously via the command line. This launcher page is a workaround to guarantee all your requested PRs and commits open reliably in this dedicated window.<br><br>
+        <strong>First-time setup (Popup Blocker):</strong><br>
+        When you click the button below, Firefox's popup blocker will likely intercept it. 
+        <ol>
+            <li>Look for the yellow warning bar below the address bar.</li>
+            <li>Click <strong>Options</strong> (or <strong>Preferences</strong>).</li>
+            <li>Select <strong>Allow pop-ups for file://.../ptl-tool-tab-launcher.html</strong>.</li>
+        </ol>
+        <em>Note: Because this tool now uses a static, predictable file name, you are only whitelisting this specific script's output, not all local files on your computer!</em>
+    </div>
+
+    <button id="openBtn">Open All Tabs</button>
     <ul style="margin-top: 20px; line-height: 1.8;">
 {list_items}    </ul>
     <script>
@@ -377,9 +398,10 @@ def open_in_browser(urls):
 </html>
 """
 
-    with tempfile.NamedTemporaryFile(mode='w+', suffix='.html', delete=False) as tf:
-        tf.write(html_content)
-        launcher_path = tf.name
+    # Use a static filename so the user only has to whitelist this exact file, not all file://
+    launcher_path = os.path.join(tempfile.gettempdir(), "ptl-tool-tab-launcher.html")
+    with open(launcher_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
 
     target_url = f"file://{launcher_path}"
     webbrowser.open_new(target_url)
