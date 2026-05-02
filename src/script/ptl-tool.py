@@ -201,24 +201,15 @@ def resolve_ref(G, ref, remote_url, always_fetch=False):
     always_fetch is True, it fetches the ref from the remote.
     Returns the git.Commit object.
     """
-    if not always_fetch:
-        try:
-            c = G.commit(ref)
+    try:
+        c = G.commit(ref)
+        is_commit = (len(ref) >= 7 and c.hexsha.startswith(ref))
+        if not always_fetch or is_commit:
             log.debug(f"Resolved {ref} locally to {c.hexsha[:8]}.")
             return c
-        except (git.exc.BadName, ValueError):
-            pass
+    except (git.exc.BadName, ValueError):
+        pass
         
-        # Check typical remote prefix fallbacks for branches
-        if not re.match(r'^[0-9a-f]{40}$', ref) and not ref.startswith('refs/'):
-            for local_alias in [f"upstream/{ref}", f"origin/{ref}"]:
-                try:
-                    c = G.commit(local_alias)
-                    log.debug(f"Resolved {ref} locally via {local_alias} to {c.hexsha[:8]}.")
-                    return c
-                except (git.exc.BadName, ValueError):
-                    pass
-
     log.info(f"Fetching {ref} from {remote_url}")
     try:
         G.git.fetch(remote_url, ref)
