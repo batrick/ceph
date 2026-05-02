@@ -372,7 +372,7 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
     log.info("Verifying commit parity with original PR(s) locally...")
     bp_cherry_picks = []
     invalid_format_commits = []
-    cp_regex = re.compile(r"\(cherry picked from commit ([0-9a-f]{40})\)")
+    cp_regex = re.compile(r"\(cherry picked from commit ([0-9a-f]{7,40})\)")
     for commit in pr_commits:
         m = cp_regex.search(commit.message)
         is_cherry_pick = bool(m)
@@ -426,7 +426,7 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
 
                     for o_commit_sha in orig_pr_commits:
                         o_summary = G.commit(o_commit_sha).summary
-                        bp_match = next((c for c, o_sha in bp_cherry_picks if o_sha == o_commit_sha), None)
+                        bp_match = next((c for c, o_sha in bp_cherry_picks if o_commit_sha.startswith(o_sha)), None)
                         
                         pr_mapping[pr_name].append({
                             'o_sha': o_commit_sha,
@@ -617,7 +617,7 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
         G.git.worktree('add', '--detach', wt_dir, base)
         wt_repo = git.Repo(wt_dir)
         
-        cp_regex = re.compile(r"\(cherry picked from commit ([0-9a-f]{40})\)")
+        cp_regex = re.compile(r"\(cherry picked from commit ([0-9a-f]{7,40})\)")
         auto_approve_conflicts = False
         first_conflict = True
 
