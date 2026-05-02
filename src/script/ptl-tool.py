@@ -528,9 +528,16 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
 
     for commit in invalid_format_commits:
         log.error(f"Commit {commit.hexsha[:8]} invalid format. Must be cherry-pick or start with '{base}:'")
-        ans = input("Do you want to allow this commit anyway? [y/N] ")
-        if ans.lower() != 'y':
-            sys.exit(1)
+        while True:
+            ans = input("Do you want to allow this commit anyway? [y/N/o] (y=yes, n=no, o=open PR in browser) ").strip().lower()
+            if ans == 'o':
+                url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
+                webbrowser.open_new(url)
+                print(f"Opened {url} in browser.")
+            elif ans != 'y':
+                sys.exit(1)
+            else:
+                break
 
     visualizer_clean = re.sub(r'\033\[[0-9;]*m', '', visualizer_text) if visualizer_text else ""
     if missing_commits:
@@ -656,12 +663,21 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                         continue
 
                     if first_conflict:
-                        ans = input(f"Conflict or unapproved deviation detected in {c.hexsha[:8]}. Do you want to interactively review this PR? [Y/n/m]\n(y = yes, n = auto-approve remaining, m = skip to merge) ")
+                        while True:
+                            ans = input(f"Conflict or unapproved deviation detected in {c.hexsha[:8]}. Do you want to interactively review this PR? [Y/n/m/o]\n(y = yes, n = auto-approve remaining, m = skip to merge, o = open in browser) ").strip().lower()
+                            if ans == 'o':
+                                bp_pr_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
+                                commit_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{c.hexsha}"
+                                webbrowser.open_new(bp_pr_url)
+                                webbrowser.open_new_tab(commit_url)
+                                print("Opened PR and commit URLs in browser.")
+                            else:
+                                break
                         first_conflict = False
-                        if ans.lower() == 'm':
+                        if ans == 'm':
                             log.info("Skipping ahead to merge.")
                             return
-                        elif ans.lower() == 'n':
+                        elif ans == 'n':
                             log.info("Auto-approving and skipping interactive checks for this PR.")
                             auto_approve_conflicts = True
                             continue
@@ -734,15 +750,26 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                             except git.exc.GitCommandError as e:
                                 log.warning(f"Could not generate patch comparison for {f}: {e}")
                     
-                    prompt_text = "Does the PR properly explain and resolve this conflict/deviation? [y/N/s/m]\n(y = next check, n = abort, s = skip remaining checks, m = skip to merge) "
-                    ans = input(prompt_text)
-                    if ans.lower() == 'm':
+                    prompt_text = "Does the PR properly explain and resolve this conflict/deviation? [y/N/s/m/o]\n(y = next check, n = abort, s = skip remaining checks, m = skip to merge, o = open in browser) "
+                    while True:
+                        ans = input(prompt_text).strip().lower()
+                        if ans == 'o':
+                            bp_pr_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
+                            orig_commit_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{c.hexsha}"
+                            bp_commit_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{commit.hexsha}"
+                            webbrowser.open_new(bp_pr_url)
+                            webbrowser.open_new_tab(orig_commit_url)
+                            webbrowser.open_new_tab(bp_commit_url)
+                            print("Opened relevant URLs in browser.")
+                        else:
+                            break
+                    if ans == 'm':
                         log.info("Skipping ahead to merge.")
                         return
-                    elif ans.lower() == 's':
+                    elif ans == 's':
                         log.info("Skipping remaining checks for this PR.")
                         auto_approve_conflicts = True
-                    elif ans.lower() == 'y':
+                    elif ans == 'y':
                         pass # Already applied backport commit
                     else:
                         log.error("Rejecting PR due to undocumented/unapproved change. Preparing draft review...")
