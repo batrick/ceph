@@ -338,6 +338,8 @@ def open_in_browser(urls):
         except Exception as e:
             log.warning(f"Failed to open with $BROWSER ({browser_env}): {e}")
 
+    # Note: this doesn't always open all URLs for some reason which is why it's
+    # done manually above, by default.
     webbrowser.open_new(urls)
     for url in urls[1:]:
         webbrowser.open_new_tab(url)
