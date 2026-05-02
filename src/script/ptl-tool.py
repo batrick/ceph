@@ -354,7 +354,12 @@ def open_in_browser(urls):
     browser_env = os.environ.get('BROWSER')
     if browser_env:
         try:
-            subprocess.run([browser_env] + urls)
+            args = [
+                browser_env,
+                '--new-window',
+            ]
+            args += urls
+            subprocess.run(args)
             return
         except Exception as e:
             log.warning(f"Failed to open with $BROWSER ({browser_env}): {e}")
