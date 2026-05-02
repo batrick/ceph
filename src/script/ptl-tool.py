@@ -270,6 +270,13 @@ def gitauth():
             return r
     return GitHubBearerAuth()
 
+def get_pr_tracker_string(session, pr, response=None):
+    if not response:
+        log.debug(f"Fetching information for PR #{pr}")
+        endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/pulls/{pr}"
+        response = next(get(session, endpoint, paging=False))
+    return f'* "PR #{pr}":{response["html_url"]} -- {response["title"].strip()}'
+
 def get(session, url, params=None, paging=True):
     if params is None:
         params = {}
@@ -1041,7 +1048,7 @@ def build_branch(args):
                         log.error(f"Aborting script due to unmergeable PR #{pr}.")
                         sys.exit(1)
 
-            qa_tracker_description.append(f'* "PR #{pr}":{response["html_url"]} -- {response["title"].strip()}')
+            qa_tracker_description.append(get_pr_tracker_string(session, pr, response))
 
             message = "Merge PR #%d into %s\n\n* %s:\n" % (pr, merge_branch_name, remote_ref)
 
@@ -1267,16 +1274,14 @@ def build_branch(args):
 
                 """
             notes = textwrap.dedent(notes)
-            first = True
-            for pr in prs:
-                if First:
-                    notes += "**Removed PRs included in previous branch/run:**"
-                log.info("Fetching information for PR #%d", pr)
-                endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/pulls/{pr}"
-                response = next(get(session, endpoint, paging=False))
-                notes += f"* \"PR #{pr}\":{response["html_url"]} -- {response["title"].strip()}"
+            if old_prs:
+                notes += "**Previous PRs included in that run:**\n"
+                for old_pr in sorted(old_prs):
+                    notes += get_pr_tracker_string(session, old_pr) + "\n"
+            else:
+                notes += "**Previous PRs included in that run:** None\n"
 
-            issue_kwargs['notes'] = '\n'.join(notes)
+            issue_kwargs['notes'] = notes.strip()
 
             if args.dry_run:
                 log.info(f"[DRY RUN] Would update redmine qa issue {issue.url} with kwargs: {issue_kwargs}")
@@ -1290,11 +1295,8 @@ def build_branch(args):
                     log.error(f"failed to update {issue}")
                     sys.exit(1)
 
-            other_count = len(new_prs) - 1
-            alongside_text = f" alongside {other_count} other PR{'s' if other_count != 1 else ''}" if other_count > 0 else ""
-
             for pr in added_prs:
-                body = f"This PR has been added to QA run [{issue_url}]({issue_url}){alongside_text}."
+                body = f"This PR has been added to [{issue.subject}]({issue_url})."
                 if args.dry_run:
                     log.info(f"[DRY RUN] Would post comment to added PR #{pr}: {body}")
                 else:
@@ -1306,7 +1308,7 @@ def build_branch(args):
                         log.error(f"Failed to post comment: {r.status_code} {r.text}")
 
             for pr in removed_prs:
-                body = f"This PR has been removed from QA run [{issue_url}]({issue_url})."
+                body = f"This PR has been removed from [{issue.subject}]({issue_url})."
                 if args.dry_run:
                     log.info(f"[DRY RUN] Would post comment to removed PR #{pr}: {body}")
                 else:
@@ -1331,12 +1333,10 @@ def build_branch(args):
                 log.info("created redmine qa issue: %s", issue.url)
                 issue_url = issue.url
 
-            other_count = len(prs) - 1
-            alongside_text = f" alongside {other_count} other PR{'s' if other_count != 1 else ''}" if other_count > 0 else ""
-
             for pr in prs:
                 log.debug(f"Posting QA Run in comment for ={pr}")
-                body = f"This PR is under test in [{issue_url}]({issue_url}){alongside_text}."
+                subject = issue_kwargs['subject']
+                body = f"This PR has been added to [{subject}]({issue_url})."
                 if args.dry_run:
                     log.info(f"[DRY RUN] Would post comment to PR #{pr}: {body}")
                 else:
