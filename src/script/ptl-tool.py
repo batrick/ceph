@@ -896,15 +896,8 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
 
 def build_branch(args):
     base = args.base
-    branch = datetime.datetime.utcnow().strftime(args.branch).format(user=USER)
-    if args.branch_release:
-        branch = branch + "-" + args.branch_release
-    if args.branch_append:
-        branch += f"-{args.branch_append}"
     label = args.label
     merge_branch_name = args.merge_branch_name
-    if merge_branch_name is False:
-        merge_branch_name = branch
 
     session = requests.Session()
 
@@ -978,6 +971,25 @@ def build_branch(args):
             else:
                 if base != detected_base:
                     raise SystemExit("base of each PR is not equal, use hard-coded --base")
+
+    if args.integration:
+        if not base or base == 'HEAD':
+            log.error("--integration requires a valid base branch (auto-detected or provided via --base)")
+            sys.exit(1)
+        log.info(f"Integration workflow enabled. Applying defaults for base '{base}'...")
+        args.branch_release = args.branch_release or base
+        args.qa_release = args.qa_release or base
+        args.credits = False
+        args.always_fetch = True
+
+    # Compute branch names now that integration flags and auto-detect have settled
+    branch = datetime.datetime.utcnow().strftime(args.branch).format(user=USER)
+    if args.branch_release:
+        branch = branch + "-" + args.branch_release
+    if args.branch_append:
+        branch += f"-{args.branch_append}"
+    if merge_branch_name is False:
+        merge_branch_name = branch
 
     if base == 'HEAD':
         log.info("Branch base is HEAD; not checking out!")
@@ -1389,9 +1401,10 @@ def main():
     group.add_argument('--always-fetch', dest='always_fetch', action='store_true', help='always fetch commits from remote (bypass local cache)')
     group.add_argument('--base', dest='base', action='store', help='base for branch')
     group.add_argument('--branch', dest='branch', action='store', default=default_branch, help='branch to create ("HEAD" leaves HEAD detached; i.e. no branch is made)')
-    group.add_argument('--release-merge', dest='release_merge', action='store_true', help='enable release merge behavior (implies --branch HEAD)')
+    group.add_argument('--release-merge', dest='release_merge', action='store_true', help='enable release (or \'main\') merge behavior (implies --branch HEAD)')
     group.add_argument('--branch-name-append', dest='branch_append', action='store', help='append string to branch name')
     group.add_argument('--branch-release', dest='branch_release', action='store', help='release name to embed in branch (for shaman)')
+    group.add_argument('--integration', dest='integration', action='store_true', help='enable integration workflow: auto-sets --branch-release and --qa-release to the PR base, implies --no-credits and --always-fetch')
     group.add_argument('--merge-branch-name', dest='merge_branch_name', action='store', default=False, help='name of the branch for merge messages')
     group.add_argument('--no-credits', dest='credits', action='store_false', help='skip indication search (Reviewed-by, etc.)')
     group.add_argument('--no-tag', dest='no_tag', action='store_true', help='do not create a tag of the branch')
@@ -1408,7 +1421,7 @@ def main():
     group.add_argument('--create-qa', dest='create_qa', action='store_true', help='create QA run ticket')
     group.add_argument('--qa-subject', dest='qa_subject', action='store', help='override default QA tracker subject')
     group.add_argument('--qa-private', dest='qa_private', action='store_true', help='make the QA run ticket private')
-    group.add_argument('--qa-release', dest='qa_release', action='store', help='QA release for tracker')
+    group.add_argument('--qa-release', dest='qa_release', action='store', help='QA release for tracker (defaults to PR base when --integration)')
     group.add_argument('--qa-tags', dest='qa_tags', action='store', help='QA tags for tracker')
     group.add_argument('--update-qa', dest='update_qa', action='store', help='update QA run ticket')
 
