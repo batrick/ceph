@@ -607,7 +607,9 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                 sys.exit(1)
             else:
                 break
-    if missing_commits:
+    extra_commits = [c for c in pr_commits if c.hexsha not in bp_commits_mapped]
+
+    if missing_commits or extra_commits:
         # Generate markdown comment draft
         md_text = f"**Automated Backport Parity Review**\n\n"
         if len(found_prs) > 1:
@@ -642,11 +644,14 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                         urls_to_open.append(f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{m_pr.group(1)}")
                     urls_to_open.append(f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{m_sha}")
                     urls_to_open.append(f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{o_sha}")
+                
+                for c in extra_commits:
+                    urls_to_open.append(f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{c.hexsha}")
                     
                 open_in_browser(urls_to_open)
                 print("Opened URLs in browser.")
             else:
-                print("Invalid choice. Please enter p, o, r, or q.")
+                print("Invalid choice. Please enter p, m, o, r, or q.")
     elif analyzed_merges:
         print("\033[92mCommit parity check passed! All upstream commits from identified PRs are present.\033[0m")
         
