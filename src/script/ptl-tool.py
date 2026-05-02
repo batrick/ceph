@@ -351,24 +351,38 @@ def open_in_browser(urls):
         return
     for url in urls:
         log.debug("Opening %s", url)
-    browser_env = os.environ.get('BROWSER')
-    if browser_env:
-        try:
-            args = [
-                browser_env,
-                '--new-window',
-            ]
-            args += urls
-            subprocess.run(args)
-            return
-        except Exception as e:
-            log.warning(f"Failed to open with $BROWSER ({browser_env}): {e}")
 
-    # Note: this doesn't always open all URLs for some reason which is why it's
-    # done manually above, by default.
-    webbrowser.open_new(urls)
-    for url in urls[1:]:
-        webbrowser.open_new_tab(url)
+    # We are using an html file to hold the URLs because browsers are dumb;
+    # they won't open all the urls in a single **new window**.
+    js_array = ", ".join(f"'{url}'" for url in urls)
+    list_items = "".join(f'        <li><a href="{url}" target="_blank" style="color: #8cb4ff;">{url}</a></li>\n' for url in urls)
+
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Tab Launcher</title>
+</head>
+<body style="font-family: sans-serif; padding: 2rem; background: #222; color: #eee;">
+    <h2>🚀 Ready to launch tabs</h2>
+    <button id="openBtn" style="padding: 12px 24px; font-size: 16px; cursor: pointer; background: #0060df; color: white; border: none; border-radius: 4px;">Open All Tabs</button>
+    <ul style="margin-top: 20px; line-height: 1.8;">
+{list_items}    </ul>
+    <script>
+    const urls = [{js_array}];
+    document.getElementById('openBtn').addEventListener('click', () => {{
+        urls.forEach(url => window.open(url, '_blank'));
+    }});
+    </script>
+</body>
+</html>
+"""
+
+    with tempfile.NamedTemporaryFile(mode='w+', suffix='.html', delete=False) as tf:
+        tf.write(html_content)
+        launcher_path = tf.name
+
+    target_url = f"file://{launcher_path}"
+    webbrowser.open_new(target_url)
 
 def post_draft_review(session, pr, initial_text, base=None):
     """
