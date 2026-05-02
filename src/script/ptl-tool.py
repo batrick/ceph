@@ -645,6 +645,26 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                 break
     extra_commits = [c for c in pr_commits if c.hexsha not in bp_commits_mapped]
 
+    unmerged_cps = [c for c in extra_commits if cp_regex.search(c.message)]
+    if valid_ref and unmerged_cps:
+        md_text = "**Automated Backport Parity Review - Unmerged Commits Detected**\n\n"
+        md_text += "This backport contains cherry-picks of commits that do not appear to be merged into the `main` branch (could not find an associated merge commit or PR). Backports should only contain commits that have already been merged upstream.\n\n"
+        md_text += "**Unmerged Cherry-Picks:**\n"
+        for c in unmerged_cps:
+            orig_sha = cp_regex.search(c.message).group(1)
+            md_text += f"* Backport commit `{c.hexsha[:8]}` cherry-picks `{orig_sha[:8]}`\n"
+            
+        if visualizer_clean:
+            md_text += f"\n**Commit Parity Visualizer:**\n```text\n{visualizer_clean}\n```\n"
+            
+        log.error("Unmerged cherry-picks detected. Preparing draft review...")
+        draft_ans = post_draft_review(session, pr, md_text, base=base)
+        if draft_ans == 'm':
+            raise SkipToMerge()
+        else:
+            log.error("Rejecting PR due to unmerged cherry-picks.")
+            sys.exit(1)
+
     if missing_commits or extra_commits:
         # Generate markdown comment draft
         md_text = f"**Automated Backport Parity Review**\n\n"
