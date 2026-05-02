@@ -147,6 +147,10 @@ class AuditLabels:
     failed: str = None
 
 
+class SkipToMerge(Exception):
+    """Raised to bypass remaining verification checks and proceed directly to merge."""
+    pass
+
 def parse_audit_labels(value):
     if value is True or value is False:
         return value
@@ -388,8 +392,10 @@ def post_draft_review(session, pr, initial_text, base=None):
             print(final_text)
             print("="*80 + "\n")
             
-            confirm = input(f"Post this feedback to PR #{pr}? [r/c/e/N] (r=request changes, c=comment, e=edit again, n=cancel): ").strip().lower()
-            if confirm in ('r', 'c'):
+            confirm = input(f"Post this feedback to PR #{pr}? [r/c/e/m/N] (r=request changes, c=comment, e=edit again, m=skip to merge, n=cancel): ").strip().lower()
+            if confirm == 'm':
+                raise SkipToMerge()
+            elif confirm in ('r', 'c'):
                 event = 'REQUEST_CHANGES' if confirm == 'r' else 'COMMENT'
                 endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/pulls/{pr}/reviews"
                 r = session.post(endpoint, auth=gitauth(), json={'body': final_text, 'event': event})
@@ -572,11 +578,13 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
     for commit in invalid_format_commits:
         log.error(f"Commit {commit.hexsha[:8]} invalid format. Must be cherry-pick or start with '{base}:'")
         while True:
-            ans = input("Do you want to allow this commit anyway? [y/N/o] (y=yes, n=no, o=open PR in browser) ").strip().lower()
+            ans = input("Do you want to allow this commit anyway? [y/N/m/o] (y=yes, n=no, m=skip to merge, o=open PR in browser) ").strip().lower()
             if ans == 'o':
                 url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
                 open_in_browser([url])
                 print(f"Opened {url} in browser.")
+            elif ans == 'm':
+                raise SkipToMerge()
             elif ans != 'y':
                 sys.exit(1)
             else:
@@ -592,14 +600,19 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
         md_text += f"```text\n{visualizer_clean}\n```"
 
         while True:
-            ans = input("Parity mismatch! [p]roceed, [o]pen browser to investigate, [r]eview PR (request changes), [q]uit: ").strip().lower()
+            ans = input("Parity mismatch! [p]roceed, [m] skip to merge, [o]pen browser to investigate, [r]eview PR (request changes), [q]uit: ").strip().lower()
             if ans == 'p':
                 break
+            elif ans == 'm':
+                raise SkipToMerge()
             elif ans == 'q':
                 log.error("Rejecting PR due to incomplete backport.")
                 sys.exit(1)
             elif ans == 'r':
-                if post_draft_review(session, pr, md_text, base=base) == 'r':
+                draft_ans = post_draft_review(session, pr, md_text, base=base)
+                if draft_ans == 'm':
+                    raise SkipToMerge()
+                elif draft_ans == 'r':
                     log.error("Rejecting PR due to incomplete backport after posting review.")
                     sys.exit(1)
             elif ans == 'o':
@@ -623,7 +636,7 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
         
         if len(found_prs) > 1:
             while True:
-                ans = input("Multiple original PRs detected! Do you want to post a review requesting documentation? [y/N/o] (y=yes, n=no, o=open PRs in browser): ").strip().lower()
+                ans = input("Multiple original PRs detected! Do you want to post a review requesting documentation? [y/N/m/o] (y=yes, n=no, m=skip to merge, o=open PRs in browser): ").strip().lower()
                 if ans == 'o':
                     url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
                     urls_to_open = [url]
@@ -638,10 +651,15 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                     md_text += f"This backport appears to pull commits from multiple `main` PRs including: {', '.join(found_prs)}.\n\n"
                     md_text += "This must be explicitly documented in the backport PR description. Furthermore, each backport tracker ticket associated with these `main` PRs must be linked to this PR.\n\n"
                     md_text += f"**Commit Parity Visualizer:**\n```text\n{visualizer_clean}\n```\n"
-                    if post_draft_review(session, pr, md_text, base=base) == 'r':
+                    draft_ans = post_draft_review(session, pr, md_text, base=base)
+                    if draft_ans == 'm':
+                        raise SkipToMerge()
+                    elif draft_ans == 'r':
                         log.error("Rejecting PR pending documentation of multiple original PRs.")
                         sys.exit(1)
                     break
+                elif ans == 'm':
+                    raise SkipToMerge()
                 else:
                     break
 
@@ -715,7 +733,7 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                         first_conflict = False
                         if ans == 'm':
                             log.info("Skipping ahead to merge.")
-                            return
+                            raise SkipToMerge()
                         elif ans == 'n':
                             log.info("Auto-approving and skipping interactive checks for this PR.")
                             auto_approve_conflicts = True
@@ -811,7 +829,7 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                             break
                     if ans == 'm':
                         log.info("Skipping ahead to merge.")
-                        return
+                        raise SkipToMerge()
                     elif ans == 's':
                         log.info("Skipping remaining checks for this PR.")
                         auto_approve_conflicts = True
@@ -843,7 +861,9 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                             
                         md_text += f"**Range Diff:**\n<details><summary>Click to expand</summary>\n\n```diff\n{diff_text}\n```\n</details>\n\n"
                         
-                        post_draft_review(session, pr, md_text)
+                        draft_ans = post_draft_review(session, pr, md_text)
+                        if draft_ans == 'm':
+                            raise SkipToMerge()
                         sys.exit(1)
             else:
                 log.info(f"Applying branch-specific commit {commit.hexsha[:8]} ...")
@@ -904,8 +924,10 @@ def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
                             main_trackers.append(issue)
                             log.info(f"Found main tracker #{issue.id} ({REDMINE_ENDPOINT}/issues/{issue.id}) via description search.")
                             print(f"Found PR #{orig_pr} in description of issue #{issue.id}.")
-                            ans = input(f"Fix tracker #{issue.id} by moving PR link from description to 'Pull Request ID' field? [y/N]: ").strip().lower()
-                            if ans == 'y':
+                            ans = input(f"Fix tracker #{issue.id} by moving PR link from description to 'Pull Request ID' field? [y/N/m]: ").strip().lower()
+                            if ans == 'm':
+                                raise SkipToMerge()
+                            elif ans == 'y':
                                 new_desc = issue.description.replace(match.group(0), "").strip()
                                 R.issue.update(issue.id, description=new_desc, custom_fields=[{'id': REDMINE_CUSTOM_FIELD_ID_PULL_REQUEST_ID, 'value': str(orig_pr)}])
                                 log.info(f"Updated issue #{issue.id}")
@@ -951,8 +973,10 @@ def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
                         found_pr = match.group(1)
                         log.debug(f"Found PR #{found_pr} in description of backport tracker #{bp_tracker.id}")
                         print(f"Found PR #{found_pr} in description of backport tracker #{bp_tracker.id}.")
-                        ans = input(f"Fix tracker #{bp_tracker.id} by moving PR link from description to 'Pull Request ID' field? [y/N]: ").strip().lower()
-                        if ans == 'y':
+                        ans = input(f"Fix tracker #{bp_tracker.id} by moving PR link from description to 'Pull Request ID' field? [y/N/m]: ").strip().lower()
+                        if ans == 'm':
+                            raise SkipToMerge()
+                        elif ans == 'y':
                             new_desc = bp_tracker.description.replace(match.group(0), "").strip()
                             R.issue.update(bp_tracker.id, description=new_desc, custom_fields=[{'id': REDMINE_CUSTOM_FIELD_ID_PULL_REQUEST_ID, 'value': str(found_pr)}])
                             log.info(f"Updated backport tracker #{bp_tracker.id}")
@@ -985,7 +1009,9 @@ def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
         print("="*80 + "\033[0m")
         
         ans = post_draft_review(session, bp_pr, md_text, base=base)
-        if ans == 'r':
+        if ans == 'm':
+            raise SkipToMerge()
+        elif ans == 'r':
             log.error("Rejecting PR due to Redmine tracking irregularities.")
             sys.exit(1)
         elif ans == 'c':
@@ -1014,26 +1040,41 @@ def verify_pr_readiness(G, session, R, pr, pr_commits, tip, base, args):
         if has_base_conflicts:
             log.error(f"PR #{pr} has conflicts with the target base branch.")
             while True:
-                ans = input(f"PR #{pr} needs a rebase! Do you want to post a review requesting a rebase? [y/N/o] (y=yes, n=abort script, o=open PR in browser): ").strip().lower()
+                ans = input(f"PR #{pr} needs a rebase! Do you want to post a review requesting a rebase? [y/n/m/q/o] (y=post review, n=skip check, m=skip to merge, q=abort script, o=open PR in browser): ").strip().lower()
                 if ans == 'o':
                     url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
                     open_in_browser([url])
                     print(f"Opened {url} in browser.")
+                elif ans == 'm':
+                    raise SkipToMerge()
+                elif ans == 'n':
+                    log.warning(f"Skipping rebase check for PR #{pr}.")
+                    break
                 elif ans == 'y':
                     md_text = "**Automated PR Review - Rebase Required**\n\n"
                     md_text += f"This PR currently has merge conflicts with the target base branch. Please rebase and resolve the conflicts."
-                    if post_draft_review(session, pr, md_text) == 'r':
+                    draft_ans = post_draft_review(session, pr, md_text)
+                    if draft_ans == 'm':
+                        raise SkipToMerge()
+                    elif draft_ans == 'r':
                         log.error("Rejecting PR pending rebase.")
                         sys.exit(1)
-                elif ans == 'n' or ans == '':
+                    break
+                elif ans == 'q' or ans == '':
                     log.error(f"Aborting script due to unmergeable PR #{pr}.")
                     sys.exit(1)
 
         if base != 'main':
-            visualizer_text, found_prs = verify_commit_parity(G, session, pr, pr_commits, base)
-            if not args.skip_conflict_check:
-                simulate_conflict_resolution(G, session, pr, pr_commits, base, args.always_fetch, visualizer_text)
-            verify_redmine_linkage(session, R, pr, base, found_prs)
+            try:
+                visualizer_text, found_prs = verify_commit_parity(G, session, pr, pr_commits, base)
+                if not args.skip_conflict_check:
+                    simulate_conflict_resolution(G, session, pr, pr_commits, base, args.always_fetch, visualizer_text)
+                verify_redmine_linkage(session, R, pr, base, found_prs)
+            except SkipToMerge:
+                log.info(f"Skipping remaining checks and proceeding to merge PR #{pr}.")
+        return True
+    except SkipToMerge:
+        log.info(f"Skipping remaining checks and proceeding to merge PR #{pr}.")
         return True
     except SystemExit:
         if not args.audit:
