@@ -1611,10 +1611,10 @@ def build_branch(args):
                 qa_tracker_description.append(f'* "commit {commit}":{CI_REMOTE_URL}/commit/{commit} -- {commit.summary}')
 
     # If the branch is 'HEAD', leave HEAD detached (but use "main" for commit message)
+    created_branch = False
     if branch == 'HEAD':
         log.info("Leaving HEAD detached; no branch anchors your commits")
     else:
-        created_branch = False
         try:
             G.head.reference = G.create_head(branch)
             log.info("Checked out new branch {branch}".format(branch=branch))
