@@ -908,16 +908,16 @@ def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
                 pass
 
             if not bp_trackers:
-                irregularities.append(f"**Missing Backport Tracker:** Main tracker #{main_tracker.id} does not have a backport tracker for `{base}`. Please adjust the 'Backports' field on the main tracker appropriately.")
+                irregularities.append(f"**Missing Backport Tracker:** Main tracker #{main_tracker.id} does not have a backport tracker for `{base}`. Please adjust the 'Backports' field on the main tracker appropriately and remove 'backport_processed' from 'Tags (freeform)'.")
                 continue
             
             for bp_tracker in bp_trackers:
                 cf_pr = get_custom_field(bp_tracker, REDMINE_CUSTOM_FIELD_ID_PULL_REQUEST_ID)
                 
                 if bp_tracker.status.id == REDMINE_STATUS_ID_REJECTED:
-                    irregularities.append(f"**Rejected Backport Ticket:** Backport tracker #{bp_tracker.id} is marked as Rejected. Suggestion: Close this backport PR.")
+                    irregularities.append(f"**Rejected Backport Ticket:** Backport tracker #{bp_tracker.id} is marked as Rejected. Perhaps this backport PR should be closed?")
                 elif bp_tracker.status.id in (REDMINE_STATUS_ID_RESOLVED, REDMINE_STATUS_ID_CLOSED):
-                    irregularities.append(f"**Closed/Resolved Backport Ticket:** Backport tracker #{bp_tracker.id} is already {bp_tracker.status.name}.")
+                    irregularities.append(f"**Closed/Resolved Backport Ticket:** Backport tracker #{bp_tracker.id} is already {bp_tracker.status.name}. Please reconcile.")
                 
                 if not cf_pr:
                     irregularities.append(f"**Missing PR Link:** Backport tracker #{bp_tracker.id} has no 'Pull Request ID' set. Please link it to PR #{bp_pr}.")
