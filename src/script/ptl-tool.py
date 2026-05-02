@@ -1073,7 +1073,7 @@ def build_branch(args):
         branch = branch + "-" + args.branch_release
     if args.branch_append:
         branch += f"-{args.branch_append}"
-    if merge_branch_name is False:
+    if args.integration or merge_branch_name is False:
         merge_branch_name = branch
 
     if base == 'HEAD':
