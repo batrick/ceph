@@ -1279,6 +1279,8 @@ def main():
 
           2. Merge a specific PR for the main or release branch (leaves HEAD detached):
              $ ptl-tool.py --release-merge https://github.com/ceph/ceph/pull/12345
+
+          For more examples, use the --examples switch.
     """)
     parser = argparse.ArgumentParser(
         description="Ceph PTL tool",
