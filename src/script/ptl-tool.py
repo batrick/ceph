@@ -1547,7 +1547,7 @@ def main():
     group.add_argument('--push-ci', dest='push_ci', action='store_true', help='push branch and tag to CI repository (even when not making QA tickets)')
 
     group = parser.add_argument_group('Backport Verification')
-    group.add_argument('--audit', dest='audit', type=parse_audit_labels, const=True, default=False, help='run parity and conflict simulations. Accepts "true" or a format like search_label:passed_label:failed_label to swap labels on success/failure')
+    group.add_argument('--audit', dest='audit', type=parse_audit_labels, default=False, help='run parity and conflict simulations. Accepts "true" or a format like search_label:passed_label:failed_label to swap labels on success/failure')
     group.add_argument('--skip-conflict-check', dest='skip_conflict_check', action='store_true', help='skip conflict resolution simulation')
 
     def parse_pr(value):
