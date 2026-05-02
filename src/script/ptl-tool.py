@@ -859,10 +859,14 @@ def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
         orig_pr = int(m_pr.group(1))
 
         log.info(f"Checking Redmine for main PR #{orig_pr}...")
-        main_trackers = list(R.issue.filter(cf_21=orig_pr, status_id='*'))
+        filters = {
+            f"cf_{REDMINE_CUSTOM_FIELD_ID_PULL_REQUEST_ID}": orig_pr,
+            "status_id": "*"
+        }
+        main_trackers = list(R.issue.filter(**filters))
         
         if not main_trackers:
-            log.info(f"No tracker found with cf_21={orig_pr}, searching descriptions...")
+            log.info(f"No tracker found with Pull Request ID '{orig_pr}', searching descriptions...")
             search_results = R.search(q=str(orig_pr), resources=['issues'])
             for res in search_results:
                 try:
