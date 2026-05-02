@@ -966,7 +966,7 @@ def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
                 
                 if not cf_pr:
                     log.warning(f"Backport tracker #{bp_tracker.id} is missing a Pull Request ID.")
-                    irregularities.append(f"**Missing PR Link:** Backport tracker [#{bp_tracker.id}]({REDMINE_ENDPOINT}/issues/{bp_tracker.id}) has no 'Pull Request ID' set. Please link it to PR #{bp_pr}.")
+                    irregularities.append(f"**Missing PR Link:** Backport tracker [#{bp_tracker.id}]({REDMINE_ENDPOINT}/issues/{bp_tracker.id}) has no 'Pull Request ID' field set. Please link it to PR #{bp_pr}.")
                 elif str(cf_pr) != str(bp_pr):
                     log.warning(f"Backport tracker #{bp_tracker.id} points to PR #{cf_pr}, but we are auditing PR #{bp_pr}.")
                     irregularities.append(f"**Mismatched PR Link:** Backport tracker [#{bp_tracker.id}]({REDMINE_ENDPOINT}/issues/{bp_tracker.id}) points to PR #{cf_pr}, not this backport PR #{bp_pr}.")
