@@ -690,6 +690,7 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                         unmerged = wt_repo.git.diff('--name-only', clean_tree, backport_tree).splitlines()
                     for f in unmerged:
                         log.debug("Unmerged: %s", f)
+                    
                     if unmerged:
                         # Generate a diff of the commit messages
                         orig_msg = c.message.splitlines(keepends=True)
@@ -708,50 +709,55 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                         # Concatenate with a marker
                         diff = f"{msg_diff}\n" + "="*80 + "\nRANGE DIFF\n" + "="*80 + "\n\n" + diff
 
-                        # Present file-specific 3-pane view (range-diff, orig patch, backport patch)
-                        for f in unmerged:
-                            try:
-                                file_diff = f"Conflict in {f}:\n\n" + diff
-                                orig_patch = wt_repo.git.show(c.hexsha, "--", f)
-                                bp_patch = wt_repo.git.show(commit.hexsha, "--", f)
-
-                                if orig_patch == "":
-                                    orig_patch = "(file not found or empty)"
-                                if bp_patch == "":
-                                    bp_patch = "(file not found or empty)"
-
-                                fds_to_close = []
-                                threads = []
-
-                                cmd = [editor]
-                                if any(ed in editor for ed in ['vim', 'nvim', 'vi']):
-                                    cmd.append('-O')
-                                
-                                pass_fds = []
-                                if file_diff:
-                                    path, r_fd = make_pipe(file_diff, fds_to_close, threads)
-                                    cmd.append(path)
-                                    pass_fds.append(r_fd)
-                                
-                                path1, r_fd1 = make_pipe(orig_patch, fds_to_close, threads)
-                                cmd.append(path1)
-                                pass_fds.append(r_fd1)
-                                
-                                path2, r_fd2 = make_pipe(bp_patch, fds_to_close, threads)
-                                cmd.append(path2)
-                                pass_fds.append(r_fd2)
-                                
-                                subprocess.run(cmd, pass_fds=pass_fds)
-                                
-                                for t in threads:
-                                    t.join()
-                                for fd in fds_to_close:
-                                    os.close(fd)
-                            except git.exc.GitCommandError as e:
-                                log.warning(f"Could not generate patch comparison for {f}: {e}")
+                    prompt_text = "Does the PR properly explain and resolve this conflict/deviation? [y/N/s/m/o/e]\n(y = next check, n = abort, s = skip remaining checks, m = skip to merge, o = open in browser, e = re-examine in editor) "
                     
-                    prompt_text = "Does the PR properly explain and resolve this conflict/deviation? [y/N/s/m/o]\n(y = next check, n = abort, s = skip remaining checks, m = skip to merge, o = open in browser) "
+                    open_editor = True
                     while True:
+                        if unmerged and open_editor:
+                            # Present file-specific 3-pane view (range-diff, orig patch, backport patch)
+                            for f in unmerged:
+                                try:
+                                    file_diff = f"Conflict in {f}:\n\n" + diff
+                                    orig_patch = wt_repo.git.show(c.hexsha, "--", f)
+                                    bp_patch = wt_repo.git.show(commit.hexsha, "--", f)
+
+                                    if orig_patch == "":
+                                        orig_patch = "(file not found or empty)"
+                                    if bp_patch == "":
+                                        bp_patch = "(file not found or empty)"
+
+                                    fds_to_close = []
+                                    threads = []
+
+                                    cmd = [editor]
+                                    if any(ed in editor for ed in ['vim', 'nvim', 'vi']):
+                                        cmd.append('-O')
+                                    
+                                    pass_fds = []
+                                    if file_diff:
+                                        path, r_fd = make_pipe(file_diff, fds_to_close, threads)
+                                        cmd.append(path)
+                                        pass_fds.append(r_fd)
+                                    
+                                    path1, r_fd1 = make_pipe(orig_patch, fds_to_close, threads)
+                                    cmd.append(path1)
+                                    pass_fds.append(r_fd1)
+                                    
+                                    path2, r_fd2 = make_pipe(bp_patch, fds_to_close, threads)
+                                    cmd.append(path2)
+                                    pass_fds.append(r_fd2)
+                                    
+                                    subprocess.run(cmd, pass_fds=pass_fds)
+                                    
+                                    for t in threads:
+                                        t.join()
+                                    for fd in fds_to_close:
+                                        os.close(fd)
+                                except git.exc.GitCommandError as e:
+                                    log.warning(f"Could not generate patch comparison for {f}: {e}")
+                        
+                        open_editor = False
+                        
                         ans = input(prompt_text).strip().lower()
                         if ans == 'o':
                             bp_pr_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
@@ -761,6 +767,9 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                             webbrowser.open_new_tab(orig_commit_url)
                             webbrowser.open_new_tab(bp_commit_url)
                             print("Opened relevant URLs in browser.")
+                        elif ans == 'e':
+                            log.info(f"Re-opening {editor} to examine conflicts...")
+                            open_editor = True
                         else:
                             break
                     if ans == 'm':
