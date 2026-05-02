@@ -1054,7 +1054,7 @@ def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
             log.info(f"Found main tracker(s): {', '.join(tracker_urls)}")
         else:
             log.info(f"No tracker found with Pull Request ID '{orig_pr}', searching descriptions...")
-            search_results = R.search(q=str(orig_pr), resources=['issues'])
+            search_results = R.search(str(orig_pr), resources=['issues'])
             for res in search_results:
                 try:
                     issue = R.issue.get(res.id)
