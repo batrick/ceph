@@ -409,12 +409,8 @@ def open_in_browser(urls):
 {list_items}    </ul>
     <script>
     const urls = [{js_array}];
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-    document.getElementById('openBtn').addEventListener('click', async () => {{
-        for (const url of urls) {{
-            window.open(url, '_blank');
-            await sleep(100);
-        }}
+    document.getElementById('openBtn').addEventListener('click', () => {{
+        urls.reverse().forEach(url => window.open(url, '_blank'));
     }});
     </script>
 </body>
