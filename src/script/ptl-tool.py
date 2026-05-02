@@ -1045,7 +1045,7 @@ def build_branch(args):
 
     # PRE-FLIGHT: Auto-detect base from the first PR if necessary
     if prs and base is None:
-        first_pr = prs
+        first_pr = prs[0]
         detected_base = get_pr_info(session, first_pr).get("base", {}).get("ref")
         
         if detected_base:
