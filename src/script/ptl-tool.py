@@ -35,6 +35,7 @@ import argparse
 from dataclasses import dataclass
 import datetime
 import difflib
+from functools import cache
 import hashlib
 from getpass import getuser
 import itertools
@@ -159,6 +160,7 @@ def gitauth():
             return r
     return GitHubBearerAuth()
 
+@cache
 def get_pr_info(session, pr):
     log.info("Fetching information for PR #%d", pr)
     endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/pulls/{pr}"
@@ -1041,11 +1043,9 @@ def build_branch(args):
     log.info("Will merge PRs: {}".format(prs))
 
     # PRE-FLIGHT: Auto-detect base from the first PR if necessary
-    pr_responses = {}
     if prs and base is None:
         first_pr = prs
-        pr_responses[first_pr] = get_pr_info(session, first_pr)
-        detected_base = pr_responses[first_pr].get("base", {}).get("ref")
+        detected_base = get_pr_info(session, first_pr).get("base", {}).get("ref")
         
         if detected_base:
             log.info(f"Auto-detected target base from PR #{first_pr}: {detected_base}")
@@ -1096,10 +1096,7 @@ def build_branch(args):
         pr = int(pr)
         log.info("Merging PR #{pr}".format(pr=pr))
 
-        if pr not in pr_responses:
-            pr_responses[pr] = get_pr_info(session, pr)
-
-        response = pr_responses[pr]
+        response = get_pr_info(session, pr)
         detected_base = response.get("base", {}).get("ref")
         if base and detected_base and detected_base != base:
             log.error(f"Base mismatch! PR #{pr} targets '{detected_base}' but expected '{base}'.")
