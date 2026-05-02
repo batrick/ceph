@@ -326,6 +326,22 @@ def format_parity_row(left_sha, left_msg, right_sha, right_msg, is_missing=False
     padding = max(1, 47 - visible_left_len)
     return f"{left_col}{' ' * padding}{right_col}"
 
+def format_parity_row_md(left_sha, left_msg, right_sha, right_msg, is_missing=False, is_extra=False, right_prefix=""):
+    """Helper to format visualizer rows for Markdown tables without truncation."""
+    if is_missing:
+        left_col = "**<<<< MISSING IN BACKPORT >>>>**"
+    else:
+        left_col = f"{left_sha} {left_msg}"
+
+    if is_extra:
+        right_col = "**<<<< EXTRA IN BACKPORT >>>>**"
+    else:
+        right_prefix_clean = right_prefix.strip()
+        prefix = f"**{right_prefix_clean}** " if right_prefix_clean else ""
+        right_col = f"{prefix}{right_sha} {right_msg}"
+
+    return f"| {left_col} | {right_col} |"
+
 def make_pipe(content, fds_to_close, threads):
     """
     Helper to create a pipe, write content to it in a background thread,
@@ -549,11 +565,16 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
     # Print Visualizer UI
     visualizer_text = ""
     visualizer_lines = []
+    visualizer_md_table = ""
+    visualizer_md_lines = []
     if found_prs or pr_commits:
         visualizer_lines.append("=" * 80)
         visualizer_lines.append("COMMIT PARITY VISUALIZER")
         visualizer_lines.append("=" * 80)
         
+        visualizer_md_lines.append(f"| BACKPORT PR #{pr} | SOURCE PR / STATUS |")
+        visualizer_md_lines.append("|---|---|")
+
         bp_to_source = {}
         for pr_name, commit_list in pr_mapping.items():
             for item in commit_list:
@@ -581,28 +602,33 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                         for m_sha, m_summary in unprinted_missing[current_pr]:
                             prefix = " " * (len(current_pr) + 1)
                             visualizer_lines.append(format_parity_row(None, None, m_sha, m_summary, is_missing=True, right_prefix=prefix))
+                            visualizer_md_lines.append(format_parity_row_md(None, None, m_sha, m_summary, is_missing=True, right_prefix=prefix))
                         del unprinted_missing[current_pr]
                     visualizer_lines.append("") # Add visual grouping space between different PRs
                     
                 prefix = f"{pr_name} " if pr_name != current_pr else " " * (len(pr_name) + 1)
                 current_pr = pr_name
                 visualizer_lines.append(format_parity_row(bp_c.hexsha, bp_c.summary, item['o_sha'], item['o_summary'], right_prefix=prefix))
+                visualizer_md_lines.append(format_parity_row_md(bp_c.hexsha, bp_c.summary, item['o_sha'], item['o_summary'], right_prefix=prefix))
             else:
                 if current_pr is not None:
                     if current_pr in unprinted_missing:
                         for m_sha, m_summary in unprinted_missing[current_pr]:
                             prefix = " " * (len(current_pr) + 1)
                             visualizer_lines.append(format_parity_row(None, None, m_sha, m_summary, is_missing=True, right_prefix=prefix))
+                            visualizer_md_lines.append(format_parity_row_md(None, None, m_sha, m_summary, is_missing=True, right_prefix=prefix))
                         del unprinted_missing[current_pr]
                     visualizer_lines.append("")
                 current_pr = None # Reset so the next PR prints its name
                 visualizer_lines.append(format_parity_row(bp_c.hexsha, bp_c.summary, None, None, is_extra=True))
+                visualizer_md_lines.append(format_parity_row_md(bp_c.hexsha, bp_c.summary, None, None, is_extra=True))
         
         # Flush any remaining missing commits for the last processed PR block
         if current_pr is not None and current_pr in unprinted_missing:
             for m_sha, m_summary in unprinted_missing[current_pr]:
                 prefix = " " * (len(current_pr) + 1)
                 visualizer_lines.append(format_parity_row(None, None, m_sha, m_summary, is_missing=True, right_prefix=prefix))
+                visualizer_md_lines.append(format_parity_row_md(None, None, m_sha, m_summary, is_missing=True, right_prefix=prefix))
             del unprinted_missing[current_pr]
             
         # Flush any missing commits for PRs that had NO commits successfully mapped
@@ -612,11 +638,13 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
             for m_sha, m_summary in missing_list:
                 prefix = f"{pr_name} " if first else " " * (len(pr_name) + 1)
                 visualizer_lines.append(format_parity_row(None, None, m_sha, m_summary, is_missing=True, right_prefix=prefix))
+                visualizer_md_lines.append(format_parity_row_md(None, None, m_sha, m_summary, is_missing=True, right_prefix=prefix))
                 first = False
 
         visualizer_lines.append("=" * 80)
         
         visualizer_text = "\n".join(visualizer_lines)
+        visualizer_md_table = "\n".join(visualizer_md_lines)
         print(visualizer_text)
 
     visualizer_clean = re.sub(r'\033\[[0-9;]*m', '', visualizer_text) if visualizer_text else ""
@@ -624,7 +652,7 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
     for commit in invalid_format_commits:
         log.error(f"Commit {commit.hexsha[:8]} invalid format. Must be cherry-pick or start with '{base}:'")
         while True:
-            ans = input("Do you want to allow this commit anyway? [y/N/m/r/o] (y=yes, n=no, m=skip to merge, r=review PR, o=open PR in browser) ").strip().lower()
+            ans = input("Do you want to allow this commit anyway? [p/m/r/o/q] (p=proceed, m=skip to merge, r=review PR, o=open PR in browser, q=quit) ").strip().lower()
             if ans == 'o':
                 url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
                 open_in_browser([url])
@@ -633,20 +661,22 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                 raise SkipToMerge()
             elif ans == 'r':
                 md_text = f"**Automated Backport Parity Review - Invalid Commit Format**\n\n"
-                md_text += f"Commit `{commit.hexsha[:8]}` has an invalid format. Backport commits must either include a standard `(cherry picked from commit ...)` line or start with the target branch name (e.g., `{base}:`).\n\n"
+                md_text += f"Commit {commit.hexsha[:8]} has an invalid format. Backport commits must either include a standard `(cherry picked from commit ...)` line or start with the target branch name (e.g., `{base}:`).\n\n"
                 md_text += "[Be familiar with the rules and guidelines for writing backports.](https://github.com/ceph/ceph/blob/main/SubmittingPatches-backports.rst)\n\n"
-                if visualizer_clean:
-                    md_text += f"**Commit Parity Visualizer:**\n```text\n{visualizer_clean}\n```\n"
+                if visualizer_md_table:
+                    md_text += f"**Commit Parity Visualizer:**\n\n{visualizer_md_table}\n\n"
                 draft_ans = post_draft_review(session, pr, md_text, base=base)
                 if draft_ans == 'm':
                     raise SkipToMerge()
                 elif draft_ans == 'r':
                     log.error("Rejecting PR pending commit format correction.")
                     sys.exit(1)
-            elif ans != 'y':
+            elif ans == 'q':
                 sys.exit(1)
-            else:
+            elif ans == 'p':
                 break
+            else:
+                print("Invalid choice. Please enter p, m, r, o, or q.")
     extra_commits = [c for c in pr_commits if c.hexsha not in bp_commits_mapped]
 
     unmerged_cps = [c for c in extra_commits if cp_regex.search(c.message)]
@@ -656,13 +686,13 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
         md_text += "**Unmerged Cherry-Picks:**\n"
         for c in unmerged_cps:
             orig_sha = cp_regex.search(c.message).group(1)
-            md_text += f"* Backport commit `{c.hexsha[:8]}` cherry-picks `{orig_sha[:8]}`\n"
+            md_text += f"* Backport commit {c.hexsha[:8]} cherry-picks {orig_sha[:8]}\n"
 
         md_text += "\n"
         md_text += "[Be familiar with the rules and guidelines for writing backports.](https://github.com/ceph/ceph/blob/main/SubmittingPatches-backports.rst)\n\n"
             
-        if visualizer_clean:
-            md_text += f"**Commit Parity Visualizer:**\n```text\n{visualizer_clean}\n```\n"
+        if visualizer_md_table:
+            md_text += f"**Commit Parity Visualizer:**\n\n{visualizer_md_table}\n\n"
             
         while True:
             ans = input("Unmerged cherry-picks detected! [p]roceed, [m] skip to merge, [o]pen browser to investigate, [r]eview PR (request changes), [q]uit: ").strip().lower()
@@ -698,7 +728,7 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
         if len(found_prs) > 1:
             md_text += f":warning: **Multiple Original PRs Detected:** {', '.join(found_prs)}\n\n"
         md_text += "Discrepancies detected between the backport PR and the original source PR(s). Please review the mapping below:\n\n"
-        md_text += f"```text\n{visualizer_clean}\n```"
+        md_text += f"{visualizer_md_table}\n"
 
         while True:
             ans = input("Parity mismatch! [p]roceed, [m] skip to merge, [o]pen browser to investigate, [r]eview PR (request changes), [q]uit: ").strip().lower()
@@ -740,7 +770,7 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
         
         if len(found_prs) > 1:
             while True:
-                ans = input("Multiple original PRs detected! Do you want to post a review requesting documentation? [y/N/m/o] (y=yes, n=no, m=skip to merge, o=open PRs in browser): ").strip().lower()
+                ans = input("Multiple original PRs detected! Do you want to post a review requesting documentation? [p/r/m/o] (p=proceed/ignore, r=request review, m=skip to merge, o=open PRs in browser): ").strip().lower()
                 if ans == 'o':
                     url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
                     urls_to_open = [url]
@@ -750,11 +780,12 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                             urls_to_open.append(f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{m_pr.group(1)}")
                     open_in_browser(urls_to_open)
                     print("Opened URLs in browser.")
-                elif ans == 'y':
+                elif ans == 'r':
                     md_text = f"**Automated Backport Parity Review - Multiple PRs Detected**\n\n"
                     md_text += f"This backport appears to pull commits from multiple `main` PRs including: {', '.join(found_prs)}.\n\n"
                     md_text += "This must be explicitly documented in the backport PR description. Furthermore, each backport tracker ticket associated with these `main` PRs must be linked to this PR.\n\n"
-                    md_text += f"**Commit Parity Visualizer:**\n```text\n{visualizer_clean}\n```\n"
+                    if visualizer_md_table:
+                        md_text += f"**Commit Parity Visualizer:**\n\n{visualizer_md_table}\n\n"
                     draft_ans = post_draft_review(session, pr, md_text, base=base)
                     if draft_ans == 'm':
                         raise SkipToMerge()
@@ -764,12 +795,14 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                     break
                 elif ans == 'm':
                     raise SkipToMerge()
-                else:
+                elif ans == 'p':
                     break
+                else:
+                    print("Invalid choice. Please enter p, r, m, or o.")
 
-    return visualizer_text, found_prs
+    return visualizer_text, visualizer_md_table, found_prs
 
-def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch, visualizer_text):
+def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch, visualizer_md_table):
     """
     Creates a temporary worktree to dry-run the cherry-pick sequence, verifying
     conflict resolutions dynamically.
@@ -945,7 +978,6 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                         pass # Already applied backport commit
                     elif ans == 'r':
                         log.error("Rejecting PR due to undocumented/unapproved change. Preparing draft review...")
-                        visualizer_clean = re.sub(r'\033\[[0-9;]*m', '', visualizer_text) if visualizer_text else ""
                         diff_text = diff if 'diff' in locals() else "No range diff available."
                         
                         md_text = """
@@ -964,8 +996,8 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                             md_text += f"  * Original: https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{c.hexsha}#diff-{f_hash}\n"
                             md_text += f"  * Backport: https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{commit.hexsha}#diff-{f_hash}\n"
                         
-                        if visualizer_clean:
-                            md_text += f"\n**Commit Parity Visualizer:**\n```text\n{visualizer_clean}\n```\n\n"
+                        if visualizer_md_table:
+                            md_text += f"\n**Commit Parity Visualizer:**\n\n{visualizer_md_table}\n\n"
                             
                         md_text += f"**Range Diff:**\n<details><summary>Click to expand</summary>\n\n```diff\n{diff_text}\n```\n</details>\n\n"
                         
@@ -1148,17 +1180,17 @@ def verify_pr_readiness(G, session, R, pr, pr_commits, tip, base, args):
         if has_base_conflicts:
             log.error(f"PR #{pr} has conflicts with the target base branch.")
             while True:
-                ans = input(f"PR #{pr} needs a rebase! Do you want to post a review requesting a rebase? [y/n/m/q/o] (y=post review, n=skip check, m=skip to merge, q=abort script, o=open PR in browser): ").strip().lower()
+                ans = input(f"PR #{pr} needs a rebase! Do you want to post a review requesting a rebase? [p/r/m/q/o] (p=proceed/skip check, r=request rebase review, m=skip to merge, q=abort, o=open PR in browser): ").strip().lower()
                 if ans == 'o':
                     url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
                     open_in_browser([url])
                     print(f"Opened {url} in browser.")
                 elif ans == 'm':
                     raise SkipToMerge()
-                elif ans == 'n':
+                elif ans == 'p':
                     log.warning(f"Skipping rebase check for PR #{pr}.")
                     break
-                elif ans == 'y':
+                elif ans == 'r':
                     md_text = "**Automated PR Review - Rebase Required**\n\n"
                     md_text += f"This PR currently has merge conflicts with the target base branch. Please rebase and resolve the conflicts."
                     draft_ans = post_draft_review(session, pr, md_text)
@@ -1171,12 +1203,14 @@ def verify_pr_readiness(G, session, R, pr, pr_commits, tip, base, args):
                 elif ans == 'q' or ans == '':
                     log.error(f"Aborting script due to unmergeable PR #{pr}.")
                     sys.exit(1)
+                else:
+                    print("Invalid choice. Please enter p, r, m, q, or o.")
 
         if base != 'main':
             try:
-                visualizer_text, found_prs = verify_commit_parity(G, session, pr, pr_commits, base)
+                visualizer_text, visualizer_md_table, found_prs = verify_commit_parity(G, session, pr, pr_commits, base)
                 if not args.skip_conflict_check:
-                    simulate_conflict_resolution(G, session, pr, pr_commits, base, args.always_fetch, visualizer_text)
+                    simulate_conflict_resolution(G, session, pr, pr_commits, base, args.always_fetch, visualizer_md_table)
                 verify_redmine_linkage(session, R, pr, base, found_prs)
             except SkipToMerge:
                 log.info(f"Skipping remaining checks and proceeding to merge PR #{pr}.")
