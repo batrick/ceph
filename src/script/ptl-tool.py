@@ -96,12 +96,18 @@ INDICATIONS = [
     re.compile(r"(Acked-by: .+ <[\w@.-]+>)", re.IGNORECASE),
     re.compile(r"(Tested-by: .+ <[\w@.-]+>)", re.IGNORECASE),
 ]
+REDMINE_CUSTOM_FIELD_ID_PULL_REQUEST_ID = 21
+REDMINE_CUSTOM_FIELD_ID_RELEASE = 16
 REDMINE_CUSTOM_FIELD_ID_SHAMAN_BUILD = 26
 REDMINE_CUSTOM_FIELD_ID_QA_RUNS = 27
 REDMINE_CUSTOM_FIELD_ID_QA_RELEASE = 28
 REDMINE_CUSTOM_FIELD_ID_QA_TAGS = 3
 REDMINE_CUSTOM_FIELD_ID_GIT_BRANCH = 29
 REDMINE_ENDPOINT = "https://tracker.ceph.com"
+REDMINE_TRACKER_ID_BACKPORT = 9
+REDMINE_STATUS_ID_REJECTED = 6
+REDMINE_STATUS_ID_RESOLVED = 3
+REDMINE_STATUS_ID_CLOSED = 5
 REDMINE_PROJECT_QA = "ceph-qa"
 REDMINE_TRACKER_QA = "QA Run"
 REDMINE_USER = os.getenv("PTL_TOOL_REDMINE_USER", getuser())
@@ -339,7 +345,7 @@ def open_in_browser(urls):
 def post_draft_review(session, pr, initial_text, base=None):
     """
     Opens an editor with the draft text, previews it, and prompts the user to
-    post it as a REQUEST_CHANGES review.
+    post it. Returns the action taken ('r', 'c', or False).
     """
     if base:
         rfa_msg = f"\n\nWhen you are ready for this to be reviewed and QA'd again, please add the `pdonnell-{base}-RFA` label to this PR."
@@ -358,18 +364,19 @@ def post_draft_review(session, pr, initial_text, base=None):
                 final_text = f_read.read().strip()
                 
             print("\n" + "="*80)
-            print("DRAFT REVIEW PREVIEW (REQUEST_CHANGES):")
+            print("DRAFT REVIEW PREVIEW:")
             print("-" * 80)
             print(final_text)
             print("="*80 + "\n")
             
-            confirm = input(f"Post this review requesting changes to PR #{pr}? [y/e/N] (y=post, e=edit again, n=cancel): ").strip().lower()
-            if confirm == 'y':
+            confirm = input(f"Post this feedback to PR #{pr}? [r/c/e/N] (r=request changes, c=comment, e=edit again, n=cancel): ").strip().lower()
+            if confirm in ('r', 'c'):
+                event = 'REQUEST_CHANGES' if confirm == 'r' else 'COMMENT'
                 endpoint = f"https://api.github.com/repos/{BASE_PROJECT}/{BASE_REPO}/pulls/{pr}/reviews"
-                r = session.post(endpoint, auth=gitauth(), json={'body': final_text, 'event': 'REQUEST_CHANGES'})
+                r = session.post(endpoint, auth=gitauth(), json={'body': final_text, 'event': event})
                 if r.status_code in (200, 201):
-                    log.info(f"Successfully posted review to PR #{pr}")
-                    return True
+                    log.info(f"Successfully posted {event} to PR #{pr}")
+                    return confirm
                 else:
                     log.error(f"Failed to post review: {r.status_code} {r.text}")
                     return False
@@ -573,7 +580,7 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                 log.error("Rejecting PR due to incomplete backport.")
                 sys.exit(1)
             elif ans == 'r':
-                if post_draft_review(session, pr, md_text, base=base):
+                if post_draft_review(session, pr, md_text, base=base) == 'r':
                     log.error("Rejecting PR due to incomplete backport after posting review.")
                     sys.exit(1)
             elif ans == 'o':
@@ -612,14 +619,14 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                     md_text += f"This backport appears to pull commits from multiple `main` PRs including: {', '.join(found_prs)}.\n\n"
                     md_text += "This must be explicitly documented in the backport PR description. Furthermore, each backport tracker ticket associated with these `main` PRs must be linked to this PR.\n\n"
                     md_text += f"**Commit Parity Visualizer:**\n```text\n{visualizer_clean}\n```\n"
-                    if post_draft_review(session, pr, md_text, base=base):
+                    if post_draft_review(session, pr, md_text, base=base) == 'r':
                         log.error("Rejecting PR pending documentation of multiple original PRs.")
                         sys.exit(1)
                     break
                 else:
                     break
 
-    return visualizer_text
+    return visualizer_text, found_prs
 
 def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch, visualizer_text):
     """
@@ -827,7 +834,111 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
         log.info("Removing temporary worktree `%s'", wt_dir)
         G.git.worktree('remove', '--force', wt_dir)
 
-def verify_pr_readiness(G, session, pr, pr_commits, tip, base, args):
+def get_custom_field(issue, field_id):
+    try:
+        for cf in issue.custom_fields:
+            if cf.id == field_id:
+                return cf.value
+    except (AttributeError, redminelib.exceptions.ResourceAttrError):
+        pass
+    return None
+
+def verify_redmine_linkage(session, R, bp_pr, base, found_prs):
+    if not R:
+        log.debug("Redmine connection not available, skipping linkage audit.")
+        return
+
+    log.info("Verifying Redmine tracker linkage...")
+    irregularities = []
+    notes = []
+
+    for pr_name in found_prs:
+        m_pr = re.search(r'#(\d+)', pr_name)
+        if not m_pr:
+            continue
+        orig_pr = int(m_pr.group(1))
+
+        log.info(f"Checking Redmine for main PR #{orig_pr}...")
+        main_trackers = list(R.issue.filter(cf_21=orig_pr, status_id='*'))
+        
+        if not main_trackers:
+            log.info(f"No tracker found with cf_21={orig_pr}, searching descriptions...")
+            search_results = R.search(q=str(orig_pr), resources=['issues'])
+            for res in search_results:
+                try:
+                    issue = R.issue.get(res.id)
+                    if issue.tracker.id != REDMINE_TRACKER_ID_BACKPORT and hasattr(issue, 'description') and issue.description:
+                        match = re.search(r'^https://github\.com/[^/]+/[^/]+/pull/(\d+)$', issue.description.strip())
+                        if match and int(match.group(1)) == orig_pr:
+                            main_trackers.append(issue)
+                            print(f"Found PR #{orig_pr} in description of issue #{issue.id}.")
+                            ans = input(f"Fix tracker #{issue.id} by moving PR link from description to 'Pull Request ID' field? [y/N]: ").strip().lower()
+                            if ans == 'y':
+                                new_desc = issue.description.replace(match.group(0), "").strip()
+                                R.issue.update(issue.id, description=new_desc, custom_fields=[{'id': REDMINE_CUSTOM_FIELD_ID_PULL_REQUEST_ID, 'value': str(orig_pr)}])
+                                log.info(f"Updated issue #{issue.id}")
+                                notes.append(f"Note: Main tracker #{issue.id} was automatically updated to set the Pull Request ID field properly (it was previously only in the description).")
+                except redminelib.exceptions.ResourceNotFoundError:
+                    pass
+        
+        if not main_trackers:
+            irregularities.append(f"**Orphaned Main PR:** Could not find a Redmine tracker for `main` PR #{orig_pr}. Please create a ticket, set its 'Pull Request ID', populate the 'Backports' field, and ensure it is in the 'Pending Backport' state.")
+            continue
+        
+        for main_tracker in main_trackers:
+            bp_trackers = []
+            try:
+                for rel in main_tracker.relations:
+                    if rel.relation_type == 'copied_to':
+                        try:
+                            rel_issue = R.issue.get(rel.issue_to_id)
+                            if rel_issue.tracker.id == REDMINE_TRACKER_ID_BACKPORT:
+                                cf_release = get_custom_field(rel_issue, REDMINE_CUSTOM_FIELD_ID_RELEASE)
+                                if cf_release == base:
+                                    bp_trackers.append(rel_issue)
+                        except redminelib.exceptions.ResourceNotFoundError:
+                            pass
+            except redminelib.exceptions.ResourceAttrError:
+                pass
+
+            if not bp_trackers:
+                irregularities.append(f"**Missing Backport Tracker:** Main tracker #{main_tracker.id} does not have a backport tracker for `{base}`. Please adjust the 'Backports' field on the main tracker appropriately.")
+                continue
+            
+            for bp_tracker in bp_trackers:
+                cf_pr = get_custom_field(bp_tracker, REDMINE_CUSTOM_FIELD_ID_PULL_REQUEST_ID)
+                
+                if bp_tracker.status.id == REDMINE_STATUS_ID_REJECTED:
+                    irregularities.append(f"**Rejected Backport Ticket:** Backport tracker #{bp_tracker.id} is marked as Rejected. Suggestion: Close this backport PR.")
+                elif bp_tracker.status.id in (REDMINE_STATUS_ID_RESOLVED, REDMINE_STATUS_ID_CLOSED):
+                    irregularities.append(f"**Closed/Resolved Backport Ticket:** Backport tracker #{bp_tracker.id} is already {bp_tracker.status.name}.")
+                
+                if not cf_pr:
+                    irregularities.append(f"**Missing PR Link:** Backport tracker #{bp_tracker.id} has no 'Pull Request ID' set. Please link it to PR #{bp_pr}.")
+                elif str(cf_pr) != str(bp_pr):
+                    irregularities.append(f"**Mismatched PR Link:** Backport tracker #{bp_tracker.id} points to PR #{cf_pr}, not this backport PR #{bp_pr}.")
+    
+    if irregularities or notes:
+        md_text = "**Automated Redmine Linkage Audit**\n\n"
+        if irregularities:
+            md_text += "The following tracking irregularities were found:\n"
+            for irr in irregularities:
+                md_text += f"* {irr}\n"
+        if notes:
+            md_text += "\n" + "\n".join([f"* {note}" for note in notes]) + "\n"
+        
+        print("\n\033[93m" + "="*80)
+        print("REDMINE LINKAGE IRREGULARITIES DETECTED")
+        print("="*80 + "\033[0m")
+        
+        ans = post_draft_review(session, bp_pr, md_text, base=base)
+        if ans == 'r':
+            log.error("Rejecting PR due to Redmine tracking irregularities.")
+            sys.exit(1)
+        elif ans == 'c':
+            log.info("Posted tracking comment. Continuing...")
+
+def verify_pr_readiness(G, session, R, pr, pr_commits, tip, base, args):
     try:
         log.info("Performing trivial merge check for PR #%d...", pr)
         wt_dir = tempfile.mkdtemp(prefix="ptl-merge-check-")
@@ -858,7 +969,7 @@ def verify_pr_readiness(G, session, pr, pr_commits, tip, base, args):
                 elif ans == 'y':
                     md_text = "**Automated PR Review - Rebase Required**\n\n"
                     md_text += f"This PR currently has merge conflicts with the target base branch. Please rebase and resolve the conflicts."
-                    if post_draft_review(session, pr, md_text):
+                    if post_draft_review(session, pr, md_text) == 'r':
                         log.error("Rejecting PR pending rebase.")
                         sys.exit(1)
                 elif ans == 'n' or ans == '':
@@ -866,9 +977,10 @@ def verify_pr_readiness(G, session, pr, pr_commits, tip, base, args):
                     sys.exit(1)
 
         if base != 'main':
-            visualizer_text = verify_commit_parity(G, session, pr, pr_commits, base)
+            visualizer_text, found_prs = verify_commit_parity(G, session, pr, pr_commits, base)
             if not args.skip_conflict_check:
                 simulate_conflict_resolution(G, session, pr, pr_commits, base, args.always_fetch, visualizer_text)
+            verify_redmine_linkage(session, R, pr, base, found_prs)
         return True
     except SystemExit:
         if not args.audit:
@@ -1065,7 +1177,7 @@ def build_branch(args):
         raise SystemExit(f"Could not fetch .githubmap from {BASE_REMOTE_URL}:main:\n{e}")
 
     R = None
-    if args.create_qa or args.update_qa:
+    if args.create_qa or args.update_qa or args.audit:
         log.info("connecting to %s", REDMINE_ENDPOINT)
         R = Redmine(REDMINE_ENDPOINT, username=REDMINE_USER, key=REDMINE_API_KEY)
         log.debug("connected")
@@ -1164,7 +1276,7 @@ def build_branch(args):
 
         audit_passed = True
         if args.final_merge or args.audit:
-            audit_passed = verify_pr_readiness(G, session, pr, pr_commits, tip, base, args)
+            audit_passed = verify_pr_readiness(G, session, R, pr, pr_commits, tip, base, args)
 
         if args.audit:
             log.info(f"Audit of PR #{pr} {'passed' if audit_passed else 'failed'}. Skipping merge.")
@@ -1462,12 +1574,12 @@ def main():
         log.error("or set the PTL_TOOL_GITHUB_TOKEN environment variable.")
         sys.exit(1)
 
-    if args.create_qa or args.update_qa:
+    if args.create_qa or args.update_qa or args.audit:
         if Redmine is None:
-            log.error("redmine library is not available so cannot create qa tracker ticket")
+            log.error("redmine library is not available so cannot create qa tracker ticket or audit")
             sys.exit(1)
         if not REDMINE_API_KEY:
-            log.error("Missing Redmine API Key. Required for creating/updating QA tickets.")
+            log.error("Missing Redmine API Key. Required for creating/updating QA tickets or auditing.")
             log.error("Please create a file at ~/.redmine_key containing your API key,")
             log.error("or set the PTL_TOOL_REDMINE_API_KEY environment variable.")
             sys.exit(1)
