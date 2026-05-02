@@ -319,6 +319,23 @@ def make_pipe(content, fds_to_close, threads):
     threads.append(t)
     return f"/dev/fd/{r}", r
 
+def open_in_browser(urls):
+    if not urls:
+        return
+    for url in urls:
+        log.debug("Opening %s", url)
+    browser_env = os.environ.get('BROWSER')
+    if browser_env:
+        try:
+            subprocess.run([browser_env] + urls)
+            return
+        except Exception as e:
+            log.warning(f"Failed to open with $BROWSER ({browser_env}): {e}")
+
+    webbrowser.open_new(urls)
+    for url in urls[1:]:
+        webbrowser.open_new_tab(url)
+
 def post_draft_review(session, pr, initial_text, base=None):
     """
     Opens an editor with the draft text, previews it, and prompts the user to
@@ -532,7 +549,7 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
             ans = input("Do you want to allow this commit anyway? [y/N/o] (y=yes, n=no, o=open PR in browser) ").strip().lower()
             if ans == 'o':
                 url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
-                webbrowser.open_new(url)
+                open_in_browser([url])
                 print(f"Opened {url} in browser.")
             elif ans != 'y':
                 sys.exit(1)
@@ -562,19 +579,17 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
             elif ans == 'o':
                 # Open the backport PR first in a new window
                 bp_pr_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
-                webbrowser.open_new(bp_pr_url)
+                urls_to_open = [bp_pr_url]
 
                 for pr_name, o_sha, o_summary, m_sha in missing_commits:
-                    urls_to_open = []
                     m_pr = re.search(r'#(\d+)', pr_name)
                     if m_pr:
                         urls_to_open.append(f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{m_pr.group(1)}")
                     urls_to_open.append(f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{m_sha}")
                     urls_to_open.append(f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{o_sha}")
                     
-                    for url in urls_to_open:
-                        webbrowser.open_new_tab(url)
-                print("Opened URLs in a new browser window.")
+                open_in_browser(urls_to_open)
+                print("Opened URLs in browser.")
             else:
                 print("Invalid choice. Please enter p, o, r, or q.")
     elif analyzed_merges:
@@ -585,14 +600,13 @@ def verify_commit_parity(G, session, pr, pr_commits, base):
                 ans = input("Multiple original PRs detected! Do you want to post a review requesting documentation? [y/N/o] (y=yes, n=no, o=open PRs in browser): ").strip().lower()
                 if ans == 'o':
                     url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
-                    webbrowser.open_new(url)
-                    print(f"Opened {url} in browser.")
+                    urls_to_open = [url]
                     for pr_str in found_prs:
                         m_pr = re.search(r'#(\d+)', pr_str)
                         if m_pr:
-                            orig_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{m_pr.group(1)}"
-                            webbrowser.open_new_tab(orig_url)
-                            print(f"Opened {orig_url} in browser.")
+                            urls_to_open.append(f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{m_pr.group(1)}")
+                    open_in_browser(urls_to_open)
+                    print("Opened URLs in browser.")
                 elif ans == 'y':
                     md_text = f"**Automated Backport Parity Review - Multiple PRs Detected**\n\n"
                     md_text += f"This backport appears to pull commits from multiple `main` PRs including: {', '.join(found_prs)}.\n\n"
@@ -668,8 +682,7 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                             if ans == 'o':
                                 bp_pr_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
                                 commit_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{c.hexsha}"
-                                webbrowser.open_new(bp_pr_url)
-                                webbrowser.open_new_tab(commit_url)
+                                open_in_browser([bp_pr_url, commit_url])
                                 print("Opened PR and commit URLs in browser.")
                             else:
                                 break
@@ -763,9 +776,7 @@ def simulate_conflict_resolution(G, session, pr, pr_commits, base, always_fetch,
                             bp_pr_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
                             orig_commit_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{c.hexsha}"
                             bp_commit_url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/commit/{commit.hexsha}"
-                            webbrowser.open_new(bp_pr_url)
-                            webbrowser.open_new_tab(orig_commit_url)
-                            webbrowser.open_new_tab(bp_commit_url)
+                            open_in_browser([bp_pr_url, orig_commit_url, bp_commit_url])
                             print("Opened relevant URLs in browser.")
                         elif ans == 'e':
                             log.info(f"Re-opening {editor} to examine conflicts...")
@@ -842,7 +853,7 @@ def verify_pr_readiness(G, session, pr, pr_commits, tip, base, args):
                 ans = input(f"PR #{pr} needs a rebase! Do you want to post a review requesting a rebase? [y/N/o] (y=yes, n=abort script, o=open PR in browser): ").strip().lower()
                 if ans == 'o':
                     url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
-                    webbrowser.open_new(url)
+                    open_in_browser([url])
                     print(f"Opened {url} in browser.")
                 elif ans == 'y':
                     md_text = "**Automated PR Review - Rebase Required**\n\n"
