@@ -870,6 +870,7 @@ def build_branch(args):
         args.qa_release = args.qa_release or base
         args.credits = False
         args.always_fetch = True
+        args.skip_conflict_check = True
 
     # Compute branch names now that integration flags and auto-detect have settled
     branch = datetime.datetime.utcnow().strftime(args.branch).format(user=USER)
@@ -910,60 +911,58 @@ def build_branch(args):
 
         response = pr_responses[pr]
 
-        log.info("Performing trivial merge check for PR #%d...", pr)
-        
+        qa_tracker_description.append(get_pr_tracker_string(session, pr, response))
+        message = "Merge PR #%d into %s\n\n* %s:\n" % (pr, merge_branch_name, remote_ref)
+        pr_commits = list(G.iter_commits(rev="HEAD.."+str(tip)))
+        pr_commits.reverse() # chronological order for simulation
+
         audit_passed = True
-        try:
-            wt_dir = tempfile.mkdtemp(prefix="ptl-merge-check-")
-            has_base_conflicts = False
+        if not args.integration:
+            log.info("Performing trivial merge check for PR #%d...", pr)
             try:
-                G.git.worktree('add', '--detach', wt_dir, G.head.commit)
-                wt_repo = git.Repo(wt_dir)
+                wt_dir = tempfile.mkdtemp(prefix="ptl-merge-check-")
+                has_base_conflicts = False
                 try:
-                    wt_repo.git(c=SANDBOX_CFG).merge(tip.hexsha, '--no-commit', '--no-ff')
-                except git.exc.GitCommandError:
-                    has_base_conflicts = True
-                finally:
+                    G.git.worktree('add', '--detach', wt_dir, G.head.commit)
+                    wt_repo = git.Repo(wt_dir)
                     try:
-                        wt_repo.git.merge('--abort')
+                        wt_repo.git(c=SANDBOX_CFG).merge(tip.hexsha, '--no-commit', '--no-ff')
                     except git.exc.GitCommandError:
-                        pass
-            finally:
-                G.git.worktree('remove', '--force', wt_dir)
+                        has_base_conflicts = True
+                    finally:
+                        try:
+                            wt_repo.git.merge('--abort')
+                        except git.exc.GitCommandError:
+                            pass
+                finally:
+                    G.git.worktree('remove', '--force', wt_dir)
 
-            if has_base_conflicts:
-                log.error(f"PR #{pr} has conflicts with the target base branch.")
-                while True:
-                    ans = input(f"PR #{pr} needs a rebase! Do you want to post a review requesting a rebase? [y/N/o] (y=yes, n=abort script, o=open PR in browser): ").strip().lower()
-                    if ans == 'o':
-                        url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
-                        webbrowser.open_new(url)
-                        print(f"Opened {url} in browser.")
-                    elif ans == 'y':
-                        md_text = "**Automated PR Review - Rebase Required**\n\n"
-                        md_text += f"This PR currently has merge conflicts with the target base branch. Please rebase and resolve the conflicts."
-                        if post_draft_review(session, pr, md_text):
-                            log.error("Rejecting PR pending rebase.")
+                if has_base_conflicts:
+                    log.error(f"PR #{pr} has conflicts with the target base branch.")
+                    while True:
+                        ans = input(f"PR #{pr} needs a rebase! Do you want to post a review requesting a rebase? [y/N/o] (y=yes, n=abort script, o=open PR in browser): ").strip().lower()
+                        if ans == 'o':
+                            url = f"https://github.com/{BASE_PROJECT}/{BASE_REPO}/pull/{pr}"
+                            webbrowser.open_new(url)
+                            print(f"Opened {url} in browser.")
+                        elif ans == 'y':
+                            md_text = "**Automated PR Review - Rebase Required**\n\n"
+                            md_text += f"This PR currently has merge conflicts with the target base branch. Please rebase and resolve the conflicts."
+                            if post_draft_review(session, pr, md_text):
+                                log.error("Rejecting PR pending rebase.")
+                                sys.exit(1)
+                        elif ans == 'n' or ans == '':
+                            log.error(f"Aborting script due to unmergeable PR #{pr}.")
                             sys.exit(1)
-                    elif ans == 'n' or ans == '':
-                        log.error(f"Aborting script due to unmergeable PR #{pr}.")
-                        sys.exit(1)
 
-            qa_tracker_description.append(get_pr_tracker_string(session, pr, response))
-
-            message = "Merge PR #%d into %s\n\n* %s:\n" % (pr, merge_branch_name, remote_ref)
-
-            pr_commits = list(G.iter_commits(rev="HEAD.."+str(tip)))
-            pr_commits.reverse() # chronological order for simulation
-
-            if base != 'main':
-                visualizer_text = verify_commit_parity(G, session, pr, pr_commits, base)
-                if not args.skip_conflict_check:
-                    simulate_conflict_resolution(G, session, pr, pr_commits, base, args.always_fetch, visualizer_text)
-        except SystemExit:
-            audit_passed = False
-            if not args.audit:
-                raise
+                if base != 'main':
+                    visualizer_text = verify_commit_parity(G, session, pr, pr_commits, base)
+                    if not args.skip_conflict_check:
+                        simulate_conflict_resolution(G, session, pr, pr_commits, base, args.always_fetch, visualizer_text)
+            except SystemExit:
+                audit_passed = False
+                if not args.audit:
+                    raise
 
         if args.audit:
             log.info(f"Audit of PR #{pr} {'passed' if audit_passed else 'failed'}. Skipping merge.")
@@ -1308,7 +1307,7 @@ def main():
     group.add_argument('--release-merge', dest='release_merge', action='store_true', help='enable release (or \'main\') merge behavior (implies --branch HEAD)')
     group.add_argument('--branch-name-append', dest='branch_append', action='store', help='append string to branch name')
     group.add_argument('--branch-release', dest='branch_release', action='store', help='release name to embed in branch (for shaman)')
-    group.add_argument('--integration', dest='integration', action='store_true', help='enable integration workflow: auto-sets --branch-release and --qa-release to the PR base, implies --no-credits and --always-fetch')
+    group.add_argument('--integration', dest='integration', action='store_true', help='enable integration workflow: auto-sets --branch-release and --qa-release to the PR base, implies --no-credits, --always-fetch, and skips all verification checks')
     group.add_argument('--merge-branch-name', dest='merge_branch_name', action='store', default=False, help='name of the branch for merge messages')
     group.add_argument('--no-credits', dest='credits', action='store_false', help='skip indication search (Reviewed-by, etc.)')
     group.add_argument('--no-tag', dest='no_tag', action='store_true', help='do not create a tag of the branch')
@@ -1384,7 +1383,6 @@ def main():
         sys.exit(0)
 
     if isinstance(args.audit, AuditLabels):
-        print(args.audit)
         if args.pr_label:
             log.error("--audit with labels and --pr-label are mutually exclusive")
             sys.exit(1)
