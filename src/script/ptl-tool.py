@@ -146,14 +146,31 @@ class AuditLabels:
     passed: str = None
     failed: str = None
 
+
 def parse_audit_labels(value):
     if value is True or value is False:
         return value
+        
+    if isinstance(value, str):
+        val_lower = value.lower()
+        if val_lower == 'true':
+            return True
+        if val_lower == 'false':
+            return False
+            
+        # Prevent argparse from greedily consuming the PR number as the audit label
+        if value.isdigit() or '/pull/' in value or 'github.com' in value:
+            raise argparse.ArgumentTypeError(
+                f"'{value}' looks like a PR number. Because --audit takes an optional argument, "
+                "argparse is getting confused. Please use '--audit=true <pr>', '--audit=<labels> <pr>', "
+                "or '--audit -- <pr>' to separate them."
+            )
+
     parts = value.split(':')
     if len(parts) == 1:
-        return AuditLabels(queue=parts[0])
+        return AuditLabels(queue=parts)
     if len(parts) == 3:
-        return AuditLabels(queue=parts[0], passed=parts[1], failed=parts[2])
+        return AuditLabels(queue=parts, passed=parts, failed=parts)
     raise argparse.ArgumentTypeError("Audit labels must be either 'queue' or 'queue:passed:failed'")
 
 def gitauth():
@@ -1530,7 +1547,7 @@ def main():
     group.add_argument('--push-ci', dest='push_ci', action='store_true', help='push branch and tag to CI repository (even when not making QA tickets)')
 
     group = parser.add_argument_group('Backport Verification')
-    group.add_argument('--audit', dest='audit', type=parse_audit_labels, nargs='?', const=True, default=False, help='run parity and conflict simulations. Can optionally take a format like search_label:passed_label:failed_label to swap labels on success/failure')
+    group.add_argument('--audit', dest='audit', type=parse_audit_labels, const=True, default=False, help='run parity and conflict simulations. Accepts "true" or a format like search_label:passed_label:failed_label to swap labels on success/failure')
     group.add_argument('--skip-conflict-check', dest='skip_conflict_check', action='store_true', help='skip conflict resolution simulation')
 
     def parse_pr(value):
