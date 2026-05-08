@@ -125,22 +125,24 @@ void EventOutput::list() const
 
 void EventOutput::summary() const
 {
-  std::map<std::string, int> type_count;
-  for (JournalScanner::EventMap::const_iterator i = scan.events.begin(); i != scan.events.end(); ++i) {
-    std::string type;
-    if (auto& le = i->second.log_event; le)
-      type = le->get_type_str();
-    else if (auto& pi = i->second.pi; pi)
-      type = pi->get_type_str();
-    if (type_count.count(type) == 0) {
-      type_count[type] = 0;
+  if (!scan.events.empty()) {
+    std::map<std::string, int> type_count;
+    for (JournalScanner::EventMap::const_iterator i = scan.events.begin(); i != scan.events.end(); ++i) {
+      std::string type;
+      if (auto& le = i->second.log_event; le)
+        type = le->get_type_str();
+      else if (auto& pi = i->second.pi; pi)
+        type = pi->get_type_str();
+      if (type_count.count(type) == 0) {
+        type_count[type] = 0;
+      }
+      type_count[type] += 1;
     }
-    type_count[type] += 1;
-  }
 
-  std::cout << "Events by type:" << std::endl;
-  for (std::map<std::string, int>::iterator i = type_count.begin(); i != type_count.end(); ++i) {
-      std::cout << "  " << i->first << ": " << i->second << std::endl;
+    std::cout << "Events by type:" << std::endl;
+    for (std::map<std::string, int>::iterator i = type_count.begin(); i != type_count.end(); ++i) {
+        std::cout << "  " << i->first << ": " << i->second << std::endl;
+    }
   }
 
   std::cout << "Errors: " << scan.errors.size() << std::endl;
