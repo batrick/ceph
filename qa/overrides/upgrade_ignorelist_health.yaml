@@ -19,3 +19,5 @@ overrides:
       - noscrub
       - nodeep-scrub
       - osds down
+      - MDS_INSUFFICIENT_STANDBY
+      - insufficient standby
