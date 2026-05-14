@@ -1,6 +1,12 @@
 meta:
 - desc: |
    librbd C and C++ api tests
+overrides:
+  ceph:
+    log-ignorelist:
+      # TestLibRBD.RemoveFullTryDataPool
+      - POOL_FULL
+      - is full
 stress-tasks:
 - workunit:
      branch: squid
