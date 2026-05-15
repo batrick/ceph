@@ -7,6 +7,9 @@ tasks:
 - ceph:
     log-ignorelist:
       - \(POOL_APP_NOT_ENABLED\)
+- full_sequential_finally:
+    - sleep:
+        duration: 900
 - kclient:
 - workunit:
     clients:
