@@ -109,11 +109,11 @@ def task(ctx, config):
         if key_type == 'aes':
             log.info("Configuring cluster to allow insecure 'aes' cipher for kclient...")
             try:
-                remote.run(args=['sudo', 'ceph', 'config', 'set', 'mon', 'mon_auth_allow_insecure_key', 'true'])
-                remote.run(args=['sudo', 'ceph', 'mon', 'set', 'auth_allowed_ciphers', 'aes,aes256k'])
                 remote.run(args=['sudo', 'ceph', 'health', 'mute', 'AUTH_INSECURE_CLIENT_KEY_TYPE', '--sticky'])
                 remote.run(args=['sudo', 'ceph', 'health', 'mute', 'AUTH_INSECURE_KEYS_ALLOWED', '--sticky'])
                 remote.run(args=['sudo', 'ceph', 'health', 'mute', 'AUTH_INSECURE_KEYS_CREATABLE', '--sticky'])
+                remote.run(args=['sudo', 'ceph', 'mon', 'set', 'auth_allowed_ciphers', 'aes,aes256k'])
+                remote.run(args=['sudo', 'ceph', 'config', 'set', 'mon', 'mon_auth_allow_insecure_key', 'true'])
             except CommandFailedError as e:
                 log.warning(f"Failed to set cluster configs for legacy aes key: {e}")
 
