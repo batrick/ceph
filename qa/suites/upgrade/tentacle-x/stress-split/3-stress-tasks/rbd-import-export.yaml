@@ -1,6 +1,13 @@
 meta:
 - desc: |
    run basic import/export cli tests for rbd
+overrides:
+  ceph:
+    log-ignorelist:
+      # TestLibRBD.RemoveFullTryDataPool
+      - POOL_FULL
+      - pool.*full
+      - is full
 stress-tasks:
 - workunit:
     branch: tentacle
