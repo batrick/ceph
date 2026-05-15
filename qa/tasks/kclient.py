@@ -122,12 +122,9 @@ def task(ctx, config):
         log.info(f"Generating key for {entity} with key-type {key_type} at {keyring_path}")
         remote.run(
             args=[
-                'sudo', 'ceph', 'auth', 'get-or-create', entity,
-                'mon', 'allow rw',
-                'mgr', 'allow r',
-                'osd', 'allow rwx',
-                'mds', 'allow',
+                'sudo', 'ceph', 'auth', 'rotate',
                 f'--key-type={key_type}',
+                entity,
                 '-o', keyring_path
             ]
         )
