@@ -2528,7 +2528,8 @@ void CDir::_omap_commit_ops(int r, int op_prio, int64_t metapool, version_t vers
     }
 
     unsigned size = item.key.length() + bl.length() + 2 * sizeof(__u32);
-    if (write_size > 0 && write_size + size > max_write_size)
+    if (write_size > 0 && write_size + size > max_write_size &&
+        (!_set.empty() || !_rm.empty()))
       commit_one();
 
     write_size += size;
