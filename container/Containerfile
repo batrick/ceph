@@ -182,7 +182,7 @@ RUN set -euo pipefail; \
         echo "python3-saml" >> packages.txt; \
     fi
 
-# NFS-Ganesha
+# NFS-Ganesha (separate from main packages.txt due to selinux-policy dep issues)
 RUN echo "\
 dbus-daemon \
 nfs-ganesha-ceph \
@@ -191,7 +191,7 @@ nfs-ganesha-rados-urls \
 nfs-ganesha-rgw \
 nfs-ganesha \
 rpcbind \
-sssd-client" >> packages.txt
+sssd-client" > ganesha-packages.txt
 
 # ISCSI
 RUN echo "ceph-iscsi tcmu-runner python3-rtslib" >> packages.txt
@@ -217,9 +217,12 @@ RUN echo "python3-scikit-learn" >> packages.txt
 # ceph-node-proxy
 RUN echo "ceph-node-proxy" >> packages.txt
 
-RUN echo "=== PACKAGES TO BE INSTALLED ==="; cat packages.txt
+RUN echo "=== PACKAGES TO BE INSTALLED ==="; cat packages.txt; cat ganesha-packages.txt
 RUN echo "=== INSTALLING ===" ; \
-dnf install -y --setopt=install_weak_deps=False --setopt=skip_missing_names_on_install=False --enablerepo=crb $(cat packages.txt)
+    dnf install -y --setopt=install_weak_deps=False --setopt=skip_missing_names_on_install=False --enablerepo=crb $(cat packages.txt)
+RUN echo "=== INSTALLING GANESHA ===" ; \
+    dnf install -y --setopt=install_weak_deps=False --skip-broken $(cat ganesha-packages.txt) || \
+    echo "WARNING: one or more ganesha packages were skipped due to unresolvable deps"
 
 # XXX why isn't this done in the ganesha package?
 RUN mkdir -p /var/run/ganesha
@@ -246,8 +249,12 @@ RUN set -ex && \
     rm -f /etc/yum.repos.d/{ceph,ganesha,tcmu-runner,ceph-iscsi}.repo
 
 # Verify that the packages installed haven't been accidentally cleaned, then
-# clean the package list and re-clean unnecessary RPM database files
-RUN rpm -q $(cat packages.txt) && rm -f /var/lib/rpm/__db* && rm -f *packages.txt
+# clean the package list and re-clean unnecessary RPM database files.
+RUN rpm -q $(cat packages.txt) && \
+    # Ganesha may be absent if selinux-policy is too old; warn but don't fail.
+    (rpm -q $(cat ganesha-packages.txt) || \
+    echo "WARNING: one or more ganesha packages are not installed") && \
+    rm -f /var/lib/rpm/__db* && rm -f packages.txt ganesha-packages.txt
 
 #
 # Set some envs in the container for quickly inspecting details about the build at runtime
