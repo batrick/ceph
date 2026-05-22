@@ -7,6 +7,8 @@ overrides:
       - reached quota
       - overall HEALTH_
       - \(CACHE_POOL_NO_HIT_SET\)
+      - OBJECT_UNFOUND
+      - pg .* is stuck peering
       - \(POOL_FULL\)
       - \(SMALLER_PGP_NUM\)
       - \(SLOW_OPS\)
