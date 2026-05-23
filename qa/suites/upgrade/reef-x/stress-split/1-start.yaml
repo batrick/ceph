@@ -14,6 +14,7 @@ overrides:
       - osd.* is in unknown state
       - PG_AVAILABILITY
       - PG_DEGRADED
+      - PG_DAMAGED
       - Reduced data availability
       - Degraded data redundancy
       - pg .* is stuck inactive
