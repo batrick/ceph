@@ -128,7 +128,7 @@ class NvmeofService(CephService):
                                              ['mon', 'profile rbd',
                                               'osd', 'profile rbd'])
 
-        super().register_for_certificates(daemon_spec)
+        super().prepare_certificates(daemon_spec)
         self.mgr.cert_mgr.register_self_signed_cert_key_pair(spec.service_name(), NVMEOF_CLIENT_CERT_LABEL)
         self.configure_tls(spec, daemon_spec)
 
@@ -181,7 +181,7 @@ class NvmeofService(CephService):
             daemon_spec.extra_files['encryption_key'] = spec.encryption_key
 
         daemon_spec.final_config, _ = self.generate_config(daemon_spec)
-        daemon_spec.deps = []
+        daemon_spec.deps = self.get_dependencies(self.mgr, spec, daemon_spec.daemon_type)
         return daemon_spec
 
     def daemon_check_post(self, daemon_descrs: List[DaemonDescription]) -> None:

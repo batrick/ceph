@@ -239,7 +239,8 @@ if(HAVE_INTEL)
     check_nasm_support(${object_format}
       HAVE_NASM_X64
       HAVE_NASM_X64_AVX2
-      HAVE_NASM_X64_AVX512)
+      HAVE_NASM_X64_AVX512
+      HAVE_NASM_X64_AVX512_VPCLMUL)
   endif()
 endif()
 
@@ -598,6 +599,7 @@ set(ceph_common_deps
   common_utf8 extblkdev arch crc32
   ${LIB_RESOLV}
   Boost::thread
+  Boost::context
   Boost::random
   Boost::program_options
   Boost::date_time
