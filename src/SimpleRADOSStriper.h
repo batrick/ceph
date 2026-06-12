@@ -15,7 +15,14 @@
 #ifndef _SIMPLERADOSSTRIPER_H
 #define _SIMPLERADOSSTRIPER_H
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <iosfwd>
+#include <memory>
+#include <mutex>
 #include <queue>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
