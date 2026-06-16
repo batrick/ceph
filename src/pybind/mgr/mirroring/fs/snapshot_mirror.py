@@ -764,6 +764,9 @@ class FSSnapshotMirror:
         except MirrorException as me:
             return me.args[0], '', me.args[1]
 
+    def _metrics_cache_enabled(self):
+        return self.mgr.get_module_option('snapshot_mirror_metrics_cache_enabled')
+
     @lru_cache_timeout(
         lambda self, *_args, **_kwargs: self.mgr.get_module_option(
             'snapshot_mirror_metrics_cache_ttl'),
@@ -779,6 +782,18 @@ class FSSnapshotMirror:
             self.rados, self.fs_map, filesystem)
         metrics, _, _ = metrics_load.fetch_sync_stat_metrics(
             ioctx, filesystem, peers, dir_path, None,
+            fspolicy.policy, fspolicy.get_live_instance_ids())
+        return metrics
+
+    def _load_sync_stat_metrics_from_omap(self, filesystem, mirrored_dir_path,
+                                          peer_uuid, peers, fspolicy):
+        log.debug('sync stat metrics for filesystem %s (dir=%s, peer=%s) '
+                  'loaded from omap',
+                  filesystem, mirrored_dir_path or '*', peer_uuid or '*')
+        ioctx = metrics_load.open_metadata_ioctx(
+            self.rados, self.fs_map, filesystem)
+        metrics, _, _ = metrics_load.fetch_sync_stat_metrics(
+            ioctx, filesystem, peers, mirrored_dir_path, peer_uuid,
             fspolicy.policy, fspolicy.get_live_instance_ids())
         return metrics
 
@@ -808,6 +823,12 @@ class FSSnapshotMirror:
                                               f'peer {peer_uuid} not found for '
                                               f'filesystem {filesystem}')
                     peers = {peer_uuid: peers[peer_uuid]}
+
+                if not self._metrics_cache_enabled():
+                    metrics = self._load_sync_stat_metrics_from_omap(
+                        filesystem, mirrored_dir_path, peer_uuid, peers,
+                        fspolicy)
+                    return 0, json.dumps({'metrics': metrics}, indent=4), ''
 
                 metrics = self.sync_stat_complete_cache.try_get(
                     filesystem, mirrored_dir_path, peer_uuid, peers)
