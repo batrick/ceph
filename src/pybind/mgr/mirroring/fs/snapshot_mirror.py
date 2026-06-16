@@ -22,7 +22,7 @@ from .utils import INSTANCE_ID_PREFIX, MIRROR_OBJECT_NAME, Finisher, \
     AsyncOpTracker, get_metadata_pool, norm_path, connect_to_filesystem, \
     disconnect_from_filesystem
 from .metrics.cache import (
-    CACHE_TTL_SECS, SyncStatCompleteCache, lru_cache_timeout, PARTIAL_CACHE_MAX,
+    SyncStatCompleteCache, lru_cache_timeout, PARTIAL_CACHE_MAX,
     metrics_for_dir_and_peers)
 from .metrics import load as metrics_load
 from .exception import MirrorException
@@ -298,7 +298,7 @@ class FSSnapshotMirror:
         self.pool_policy = {}
         self.fs_map = self.mgr.get('fs_map')
         self.lock = threading.Lock()
-        self.sync_stat_complete_cache = SyncStatCompleteCache()
+        self.sync_stat_complete_cache = SyncStatCompleteCache(mgr)
         self.refresh_pool_policy()
         self.local_fs = CephfsClient(mgr)
 
@@ -765,7 +765,8 @@ class FSSnapshotMirror:
             return me.args[0], '', me.args[1]
 
     @lru_cache_timeout(
-        lambda self, *_args, **_kwargs: CACHE_TTL_SECS,
+        lambda self, *_args, **_kwargs: self.mgr.get_module_option(
+            'snapshot_mirror_metrics_cache_ttl'),
         PARTIAL_CACHE_MAX)
     def sync_stat_partial_cache(self, filesystem, dir_path, peer_ids):
         peer_scope = (next(iter(peer_ids)) if len(peer_ids) == 1 else '*')
