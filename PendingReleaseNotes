@@ -57,6 +57,8 @@
     If the default provider is required when also using custom providers,
     it must be explicitly loaded in the configuration file or code (see https://github.com/openssl/openssl/blob/master/README-PROVIDERS.md).
 * RGW: Fixed bucket notification events so the 'x_amz_request_id' in NotificationEvent now matches the 'x_amz_request_id' returned by the corresponding S3 operation.
+* RGW: The rgw_gc_max_deferred and rgw_gc_max_deferred_entries_size options have been removed, as they did not do anything.
+  - Updated the default for rgw_gc_max_queue_size to account for the extra space from removing rgw_gc_max_deferred_entries_size.
 
 
 * DASHBOARD: A new Overview landing page provides an at-a-glance cluster summary
@@ -186,6 +188,13 @@
   ``fs mirror peer status`` fields (directory state, current sync, last sync, and
   snap summary) and are labeled by peer UUID and mirrored directory path. See
   https://tracker.ceph.com/issues/73457
+* CephFS Mirroring: The mirroring module provides ``ceph fs snapshot mirror status``,
+  a Ceph CLI command similar to the ``fs mirror peer status`` admin socket interface
+  for viewing per-directory snapshot sync metrics. The output layout matches
+  ``fs mirror peer status`` for core sync fields and additionally includes
+  ``metrics_updated_at`` (time of the last omap write). Optional filters by
+  mirrored directory path and peer UUID are supported. For more information,
+  see https://tracker.ceph.com/issues/76686
 * RBD: Mirror snapshot creation and trash purge schedules are now automatically
   staggered when no explicit "start-time" is specified. This reduces scheduling
   spikes and distributes work more evenly over time.
