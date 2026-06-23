@@ -460,6 +460,10 @@ if(ALLOCATOR)
   elseif(NOT ALLOCATOR STREQUAL "libc")
     message(FATAL_ERROR "Unsupported allocator selected: ${ALLOCATOR}")
   endif()
+elseif(WITH_ASAN)
+  # Force libc: tcmalloc/jemalloc still export operator new/delete even when the
+  # sanitizer shadows malloc, so sanitizer-allocated memory is freed via tcmalloc and SIGSEGVs.
+  set(ALLOCATOR "libc")
 else(ALLOCATOR)
   find_package(gperftools 2.6.2)
   set(HAVE_LIBTCMALLOC ${gperftools_FOUND})
@@ -817,6 +821,17 @@ else()
   include(BuildBoost)
   build_boost(1.87
     COMPONENTS ${BOOST_COMPONENTS} ${BOOST_HEADER_COMPONENTS})
+  if(WITH_ASAN)
+    # Boost.Context is built ucontext-only here (context-impl=ucontext); define
+    # the matching backend tree-wide so every Boost.Context/Coroutine2 consumer
+    # agrees on it, instead of relying on per-target propagation that is easy to miss.
+    # Except riscv64: its ASan mis-handles ucontext, so it keeps fcontext.
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "riscv")
+      add_compile_definitions(BOOST_USE_ASAN)
+    else()
+      add_compile_definitions(BOOST_USE_ASAN BOOST_USE_UCONTEXT)
+    endif()
+  endif()
 endif()
 include_directories(BEFORE SYSTEM ${Boost_INCLUDE_DIRS})
 add_library(Boost::asio INTERFACE IMPORTED)
