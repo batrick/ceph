@@ -201,6 +201,23 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
             desc='Seconds for which to cache host facts data',
         ),
         Option(
+            'allow_lo_routes',
+            type='bool',
+            default=False,
+            desc='If true, cephadm list-networks is run with --allow-lo-routes so '
+            'loopback (lo) routes are included in host network facts; if false, '
+            'they are omitted (default).',
+        ),
+        Option(
+            'allow_bgp_routes',
+            type='bool',
+            default=False,
+            desc='If true, cephadm list-networks is run with --allow-bgp-routes so '
+            'BGP routes from ``ip route ls proto bgp`` and '
+            '``ip -6 route ls proto bgp`` are merged into host network facts; if '
+            'false (default), only the main IPv4 and IPv6 tables are used.',
+        ),
+        Option(
             'host_check_interval',
             type='secs',
             default=10 * 60,
@@ -568,6 +585,8 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule):
             self.device_cache_timeout = 0
             self.daemon_cache_timeout = 0
             self.facts_cache_timeout = 0
+            self.allow_lo_routes = False
+            self.allow_bgp_routes = False
             self.host_check_interval = 0
             self.stray_daemon_check_interval = 0
             self.max_count_per_host = 0
@@ -3026,7 +3045,9 @@ Then run the following:
     def _daemon_action(self,
                        daemon_spec: CephadmDaemonDeploySpec,
                        action: str,
-                       image: Optional[str] = None) -> str:
+                       image: Optional[str] = None,
+                       skip_restart_for_reconfig: bool = False,
+                       send_signal_to_daemon: Optional[str] = None) -> str:
         self._daemon_action_set_image(action, image, daemon_spec.daemon_type,
                                       daemon_spec.daemon_id)
 
@@ -3051,7 +3072,9 @@ Then run the following:
                     daemon_spec)
             with self.async_timeout_handler(daemon_spec.host, f'cephadm deploy ({daemon_spec.daemon_type} daemon)'):
                 return self.wait_async(
-                    CephadmServe(self)._create_daemon(daemon_spec, reconfig=(action == 'reconfig')))
+                    CephadmServe(self)._create_daemon(daemon_spec, reconfig=(action == 'reconfig'),
+                                                      skip_restart_for_reconfig=skip_restart_for_reconfig,
+                                                      send_signal_to_daemon=send_signal_to_daemon))
 
         actions = {
             'start': ['reset-failed', 'start'],

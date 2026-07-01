@@ -437,9 +437,20 @@ class CephadmServe:
 
     def _refresh_host_networks(self, host: str) -> Optional[str]:
         try:
+            list_net_args: List[str] = []
+            if self.mgr.allow_lo_routes:
+                list_net_args.append('--allow-lo-routes')
+            if self.mgr.allow_bgp_routes:
+                list_net_args.append('--allow-bgp-routes')
             with self.mgr.async_timeout_handler(host, 'cephadm list-networks'):
                 networks = self.mgr.wait_async(self._run_cephadm_json(
-                    host, 'mon', 'list-networks', [], no_fsid=True, log_output=self.mgr.log_refresh_metadata))
+                    host,
+                    'mon',
+                    'list-networks',
+                    list_net_args,
+                    no_fsid=True,
+                    log_output=self.mgr.log_refresh_metadata,
+                ))
         except OrchestratorError as e:
             return str(e)
 
@@ -1182,6 +1193,8 @@ class CephadmServe:
                     dd.hostname, dd.name()
                 )
             )
+            skip_restart_for_reconfig = False
+            send_signal_to_daemon = None
             if not last_config:
                 self.log.info('Reconfiguring %s (unknown last config time)...' % (
                     dd.name()))
@@ -1201,27 +1214,29 @@ class CephadmServe:
             else:
                 # method uses new action enum type
                 _scheduled_action = utils.Action.create(scheduled_action)
-                _action = svc_obj.choose_next_action(
+                _step = svc_obj.choose_next_action(
                     _scheduled_action,
                     dd.daemon_type,
                     spec,
                     curr_deps=deps,
                     last_deps=last_deps,
                 )
-                if _action is not _scheduled_action:
+                if _step.action is not _scheduled_action:
                     self.log.info(
                         (
                             'Daemon %s chose new action %s (was %s)'
                             ' (deps: %r, last_deps: %r)'
                         ),
                         dd.name(),
-                        _action,
+                        _step.action,
                         _scheduled_action,
                         deps,
                         last_deps,
                     )
                     # convert back to legacy str type
-                    action = str(_action)
+                    action = str(_step.action)
+                skip_restart_for_reconfig = _step.skip_restart_for_reconfig
+                send_signal_to_daemon = _step.send_signal_to_daemon
             action = _ceph_service_next_action(
                 action, dd.daemon_type, dd.name(), self.mgr, last_config
             )
@@ -1231,7 +1246,13 @@ class CephadmServe:
                     action = 'redeploy'
                 try:
                     daemon_spec = CephadmDaemonDeploySpec.from_daemon_description(dd)
-                    self.mgr._daemon_action(daemon_spec, action=action)
+                    reconfig_extras: dict[str, Any] = {}
+                    if skip_restart_for_reconfig:
+                        reconfig_extras['skip_restart_for_reconfig'] = True
+                    if send_signal_to_daemon:
+                        reconfig_extras['send_signal_to_daemon'] = send_signal_to_daemon
+                    self.mgr._daemon_action(daemon_spec, action=action, **reconfig_extras)
+
                     if self.mgr.cache.rm_scheduled_daemon_action(dd.hostname, dd.name()):
                         self.mgr.cache.save_host(dd.hostname)
                 except OrchestratorError as e:
@@ -1414,6 +1435,8 @@ class CephadmServe:
                              daemon_spec: CephadmDaemonDeploySpec,
                              reconfig: bool = False,
                              osd_uuid_map: Optional[Dict[str, Any]] = None,
+                             skip_restart_for_reconfig: bool = False,
+                             send_signal_to_daemon: Optional[str] = None,
                              ) -> str:
 
         daemon_params: Dict[str, Any] = {}
@@ -1454,6 +1477,10 @@ class CephadmServe:
 
                 if reconfig:
                     daemon_params['reconfig'] = True
+                if skip_restart_for_reconfig:
+                    daemon_params['skip_restart_for_reconfig'] = True
+                if send_signal_to_daemon:
+                    daemon_params['send_signal_to_daemon'] = send_signal_to_daemon
                 if self.mgr.allow_ptrace:
                     daemon_params['allow_ptrace'] = True
 
@@ -1543,6 +1570,14 @@ class CephadmServe:
                             sd.update_pending_daemon_config(True)
                         self.mgr.cache.add_daemon(daemon_spec.host, sd)
                     self.mgr.cache.invalidate_host_daemons(daemon_spec.host)
+                elif reconfig and daemon_spec.daemon_type == 'mgr':
+                    cache_host = daemon_spec.host
+                    if not code and self.mgr.cache.has_daemon(daemon_spec.name()):
+                        existing_dd = self.mgr.cache.get_daemon(daemon_spec.name())
+                        existing_dd.ports = daemon_spec.ports
+                        cache_host = existing_dd.hostname or daemon_spec.host
+                        self.mgr.cache.add_daemon(cache_host, existing_dd)
+                    self.mgr.cache.invalidate_host_daemons(cache_host)
 
                 if daemon_spec.daemon_type != 'agent':
                     self.mgr.cache.update_daemon_config_deps(

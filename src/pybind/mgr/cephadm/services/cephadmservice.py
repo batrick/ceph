@@ -969,13 +969,13 @@ class CephadmService(metaclass=ABCMeta):
         spec: Optional[ServiceSpec],
         curr_deps: List[str],
         last_deps: List[str],
-    ) -> utils.Action:
+    ) -> utils.NextDaemonStep:
         """Given the scheduled_action, service spec, daemon_type, and
         current and previous dependency lists return the next action that
         this service would prefer cephadm take.
         """
         if curr_deps == last_deps:
-            return scheduled_action
+            return utils.NextDaemonStep(scheduled_action)
         sym_diff = set(curr_deps).symmetric_difference(last_deps)
         logger.info(
             'Reconfigure wanted %s: deps %r -> %r (diff %r)',
@@ -984,7 +984,7 @@ class CephadmService(metaclass=ABCMeta):
             curr_deps,
             sym_diff,
         )
-        return utils.Action.RECONFIG
+        return utils.NextDaemonStep(utils.Action.RECONFIG)
 
 
 class CephService(CephadmService):
@@ -1231,6 +1231,30 @@ class MgrService(CephService):
             # are not a concern.
             return True
 
+    @staticmethod
+    def _get_mgr_service_ports(mgr: "CephadmOrchestrator") -> List[int]:
+        """Return the list of ports from the mgr map services."""
+        ports: List[int] = []
+        mgr_map = mgr.get('mgr_map')
+        for end_point in mgr_map.get('services', {}).values():
+            port = re.search(r'\:(\d+)\/', end_point)
+            if port:
+                ports.append(int(port.group(1)))
+        return ports
+
+    @classmethod
+    def get_dependencies(cls, mgr: "CephadmOrchestrator",
+                         spec: Optional[ServiceSpec] = None,
+                         daemon_type: Optional[str] = None) -> List[str]:
+        return sorted(
+            [f'port:{p}' for p in cls._get_mgr_service_ports(mgr)]
+            + [f'sd_port:{mgr.service_discovery_port}']
+        )
+
+    def generate_config(self, daemon_spec: CephadmDaemonDeploySpec) -> Tuple[Dict[str, Any], List[str]]:
+        config, _ = super().generate_config(daemon_spec)
+        return config, self.get_dependencies(self.mgr)
+
     def prepare_create(self, daemon_spec: CephadmDaemonDeploySpec) -> CephadmDaemonDeploySpec:
         """
         Create a new manager instance on a host.
@@ -1250,17 +1274,7 @@ class MgrService(CephService):
         # user has decided to use different dashboard ports in each server
         # If this is the case then the dashboard port opened will be only the used
         # as default.
-        ports = []
-        ret, mgr_services, err = self.mgr.check_mon_command({
-            'prefix': 'mgr services',
-        })
-        if mgr_services:
-            mgr_endpoints = json.loads(mgr_services)
-            for end_point in mgr_endpoints.values():
-                port = re.search(r'\:\d+\/', end_point)
-                if port:
-                    ports.append(int(port[0][1:-1]))
-
+        ports = self._get_mgr_service_ports(self.mgr)
         # Always replace ports (do not append onto a list rehydrated from the
         # persisted host cache). When ``mgr services`` is empty, ``ports`` is
         # empty and we must not retain old entries + append service discovery
@@ -1983,7 +1997,7 @@ class CephExporterService(CephService):
         spec: Optional[ServiceSpec],
         curr_deps: List[str],
         last_deps: List[str],
-    ) -> utils.Action:
+    ) -> utils.NextDaemonStep:
         """Given the scheduled_action, service spec, daemon_type, and
         current and previous dependency lists return the next action that
         this service would prefer cephadm take.
@@ -2097,7 +2111,7 @@ def next_action_for_mgmt_stack_service(
     spec: Optional[ServiceSpec],
     curr_deps: List[str],
     last_deps: List[str],
-) -> utils.Action:
+) -> utils.NextDaemonStep:
     """This function exists to help refactor existing code to use
     choose_next_action instead of if-blocks inside serve.py.
     It avoids the need to muck around with common base classes at the
@@ -2105,7 +2119,7 @@ def next_action_for_mgmt_stack_service(
     Call this from choose_next_action.
     """
     if curr_deps == last_deps:
-        return scheduled_action
+        return utils.NextDaemonStep(scheduled_action)
     sym_diff = set(curr_deps).symmetric_difference(last_deps)
     logger.info(
         'Reconfigure wanted %s: deps %r -> %r (diff %r)',
@@ -2136,4 +2150,4 @@ def next_action_for_mgmt_stack_service(
     # If so we ought to be able to vastly simplify this...
     if any(svc in e for e in sym_diff for svc in REDEPLOY_TRIGGERS):
         action = utils.Action.REDEPLOY
-    return action
+    return utils.NextDaemonStep(action)

@@ -1189,6 +1189,19 @@ def deploy_daemon(
                 )
             else:
                 raise RuntimeError('attempting to deploy a daemon without a container image')
+    else:
+        # On reconfig, update unit.meta so that port metadata
+        # stays current without requiring a full redeploy.
+        meta_path = os.path.join(data_dir, 'unit.meta')
+        ports = [e.port for e in endpoints] if endpoints else []
+        try:
+            update_meta_file(meta_path, {'ports': ports})
+        except FileNotFoundError:
+            logger.warning(f'unit.meta not found at {meta_path}, skipping port update')
+        except Exception as e:
+            logger.warning(
+                f'failed to update unit.meta at {meta_path}, skipping port update: {e}'
+            )
 
     if not os.path.exists(data_dir + '/unit.created'):
         with write_new(data_dir + '/unit.created', owner=(uid, gid)) as f:
@@ -1209,10 +1222,15 @@ def deploy_daemon(
     # If this was a reconfig and the daemon is not a Ceph daemon, restart it
     # so it can pick up potential changes to its configuration files
     if deployment_type == DeploymentType.RECONFIG and daemon_type not in ceph_daemons():
-        # ceph daemons do not need a restart; others (presumably) do to pick
-        # up the new config
-        call_throws(ctx, ['systemctl', 'reset-failed', ident.unit_name])
-        call_throws(ctx, ['systemctl', 'restart', ident.unit_name])
+        if not ctx.skip_restart_for_reconfig:
+            # ceph daemons do not need a restart; others (presumably) do to pick
+            # up the new config
+            call_throws(ctx, ['systemctl', 'reset-failed', ident.unit_name])
+            call_throws(ctx, ['systemctl', 'restart', ident.unit_name])
+        elif ctx.send_signal_to_daemon:
+            ctx.signal_name = ctx.send_signal_to_daemon
+            ctx.signal_number = None
+            command_signal(ctx)
 
 
 def clean_cgroup(ctx: CephadmContext, fsid: str, unit_name: str) -> None:
@@ -1319,7 +1337,11 @@ def deploy_daemon_units(
         DaemonSubIdentity.must(sc.identity) for sc in sidecars or []
     ]
     systemd_unit.update_files(
-        ctx, ident, init_container_ids=ic_ids, sidecar_ids=sc_ids
+        ctx,
+        ident,
+        init_container_ids=ic_ids,
+        sidecar_ids=sc_ids,
+        success_exit_status=container.success_exit_status,
     )
     call_throws(ctx, ['systemctl', 'daemon-reload'])
 
@@ -5047,6 +5069,18 @@ def _add_deploy_parser_args(
         default=None,
         help='Time in seconds to wait for graceful service shutdown before forcefully killing it'
     )
+    parser_deploy.add_argument(
+        '--skip-restart-for-reconfig',
+        action='store_true',
+        default=False,
+        help='skip restart for non ceph daemons and perform default action'
+    )
+    parser_deploy.add_argument(
+        '--send-signal-to-daemon',
+        type=str,
+        default=None,
+        help='Send signal to daemon'
+    )
 
 
 def _name_opts(parser: argparse.ArgumentParser) -> None:
@@ -5179,6 +5213,18 @@ def _get_parser():
 
     parser_list_networks = subparsers.add_parser(
         'list-networks', help='list IP networks')
+    parser_list_networks.add_argument(
+        '--allow-lo-routes',
+        action='store_true',
+        default=False,
+        help='Include loopback (lo) routes in the listing (default: omit)',
+    )
+    parser_list_networks.add_argument(
+        '--allow-bgp-routes',
+        action='store_true',
+        default=False,
+        help='Merge BGP routes from ip -j route ls proto bgp (default: omit)',
+    )
     parser_list_networks.set_defaults(func=command_list_networks)
 
     parser_list_rdma = subparsers.add_parser(
