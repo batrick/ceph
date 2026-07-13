@@ -2413,6 +2413,8 @@ def main():
             log.error("or set the PTL_TOOL_REDMINE_API_KEY environment variable.")
             sys.exit(1)
 
+    sys.exit(1)
+
     return build_branch(args)
 
 if __name__ == "__main__":
