@@ -36,6 +36,7 @@ jobs:
             const payload = context.payload;
             const actor = context.actor;
             const isBot = actor === 'github-actions[bot]' || actor === 'github-actions';
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             
             // Safely removes a label and logs execution, ignoring 404s if label is not attached
             async function removeLabelSafely(labelName) {
@@ -194,7 +195,6 @@ jobs:
               if (postComment) {
                 try {
                   core.info('[Router] Posting override confirmation comment...');
-                  const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
                   await github.rest.issues.createComment({
                     owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
                     body: `✅ **Audit Override Applied** by @${actorName}.\n\n[View workflow run](${runUrl})`
@@ -223,7 +223,6 @@ jobs:
               }
               
               const commentBody = payload.comment.body.trim();
-              const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
               
               if (commentBody.startsWith('/audit retest')) {
                 // Directly trigger the audit run instead of bouncing through an ephemeral label
@@ -367,7 +366,7 @@ jobs:
                   core.info('[Router] Posting override removal notification comment...');
                   await github.rest.issues.createComment({
                     owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
-                    body: '⚠️ **Audit Override Removed**\n\nNew commits were pushed to this PR, so the previous override has been removed.'
+                    body: `⚠️ **Audit Override Removed**\n\nNew commits were pushed to this PR, so the previous override has been removed.\n\n[View workflow run](${runUrl})`
                   });
                   core.info('[Router] Override removal notification posted.');
                 } catch (e) {
@@ -378,6 +377,19 @@ jobs:
               if (hasFailLabel) {
                 core.warning("[Router] PR is currently in a failed audit state. Halting automated execution on synchronize.");
                 core.info("PR is currently in a failed audit state. Remove the releng-audit-fail label or comment /audit retest to re-run.");
+                const sha = await getPrSha();
+                if (sha) {
+                  core.info(`[Router] Setting commit status to 'failure' on new SHA ${sha}...`);
+                  await github.rest.repos.createCommitStatus({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    sha: sha,
+                    state: 'failure',
+                    context: 'Backport Audit',
+                    description: 'PR is in a failed audit state. Remove releng-audit-fail label or comment /audit retest to re-run.',
+                    target_url: runUrl
+                  });
+                }
                 core.setOutput('run_audit', 'false');
                 return;
               }

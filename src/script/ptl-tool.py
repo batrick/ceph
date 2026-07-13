@@ -338,16 +338,11 @@ class AuditReport:
         if consolidated_text:
             if ci_mode:
                 footer = "\n\n---\n\n⚠️ **Note**: Automated audit checks will be suspended on future pushes to prevent comment spam while you work.\n\nWhen you are ready for a new audit, please **remove the `releng-audit-fail` label** or comment `/audit retest`."
-                
-                if os.getenv("GITHUB_ACTIONS") == "true":
-                    gh_server = os.getenv("GITHUB_SERVER_URL", "https://github.com")
-                    gh_repo = os.getenv("GITHUB_REPOSITORY", f"{BASE_PROJECT}/{BASE_REPO}")
-                    gh_run_id = os.getenv("GITHUB_RUN_ID", "nil")
-                    footer += f"\n\n**CI Run Log**: [View Workflow Details]({gh_server}/{gh_repo}/actions/runs/{gh_run_id})"
-
                 consolidated_text += footer
 
                 self._hide_previous_bot_reviews(session, pr, dry_run=dry_run)
+
+            consolidated_text = append_workflow_link(consolidated_text)
 
             if dry_run:
                 log.info(f"[DRY RUN] Would post consolidated review to PR #{pr}:\n{consolidated_text}")
@@ -367,6 +362,16 @@ class GithubBearerAuth(requests.auth.AuthBase):
             r.headers['Authorization'] = f'Bearer {GITHUB_TOKEN}'
         r.headers['Accept'] = 'application/vnd.github.v3+json'
         return r
+
+def append_workflow_link(text: str) -> str:
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        gh_server = os.getenv("GITHUB_SERVER_URL", "https://github.com")
+        gh_repo = os.getenv("GITHUB_REPOSITORY", f"{BASE_PROJECT}/{BASE_REPO}")
+        gh_run_id = os.getenv("GITHUB_RUN_ID", "nil")
+        link_str = f"\n\n[View workflow run]({gh_server}/{gh_repo}/actions/runs/{gh_run_id})"
+        if link_str not in text and "[View workflow run]" not in text and "[View Workflow Details]" not in text:
+            return text + link_str
+    return text
 
 _PR_CACHE = {}
 def get_pr_info(session, pr):
@@ -1832,7 +1837,7 @@ def manage_qa_tracker(args, R, session, branch, prs, tag, qa_tracker_description
             log.info(f"QA ticket {issue.url} is private. Skipping GitHub PR updates for added/removed PRs.")
         else:
             for pr in added_prs:
-                body = f"This PR has been added to [{issue.subject}]({issue_url})."
+                body = append_workflow_link(f"This PR has been added to [{issue.subject}]({issue_url}).")
                 if args.dry_run:
                     log.info(f"[DRY RUN] Would post comment to added PR #{pr}: {body}")
                 else:
@@ -1844,7 +1849,7 @@ def manage_qa_tracker(args, R, session, branch, prs, tag, qa_tracker_description
                         log.error(f"Failed to post comment: {r.status_code} {r.text}")
 
             for pr in removed_prs:
-                body = f"This PR has been removed from [{issue.subject}]({issue_url})."
+                body = append_workflow_link(f"This PR has been removed from [{issue.subject}]({issue_url}).")
                 if args.dry_run:
                     log.info(f"[DRY RUN] Would post comment to removed PR #{pr}: {body}")
                 else:
@@ -1875,7 +1880,7 @@ def manage_qa_tracker(args, R, session, branch, prs, tag, qa_tracker_description
             for pr in prs:
                 log.debug(f"Posting QA Run in comment for ={pr}")
                 subject = issue_kwargs['subject']
-                body = f"This PR has been added to [{subject}]({issue_url})."
+                body = append_workflow_link(f"This PR has been added to [{subject}]({issue_url}).")
                 if args.dry_run:
                     log.info(f"[DRY RUN] Would post comment to PR #{pr}: {body}")
                 else:
@@ -2337,6 +2342,8 @@ def main():
             except ValueError:
                 log.error(f"Invalid PR number in PTL_TOOL_PR_NUMBER: {pr_env}")
                 sys.exit(1)
+        else:
+            parser.error("At least one PR number must be specified via CLI arguments or PTL_TOOL_PR_NUMBER when running with --audit or --ci-mode.")
 
     if args.qe_label:
         if args.ci_mode:
