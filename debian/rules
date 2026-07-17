@@ -5,13 +5,10 @@ export DESTDIR=$(CURDIR)/debian/tmp
 
 include /usr/share/dpkg/default.mk
 
-ifneq (,$(findstring WITH_STATIC_LIBSTDCXX,$(CEPH_EXTRA_CMAKE_ARGS)))
-  # dh_auto_build sets LDFLAGS with `dpkg-buildflags --get LDFLAGS` on ubuntu,
-  # which makes the application aborts when the shared library throws
-  # exception, so strip this linker option,
-  # see http://tracker.ceph.com/issues/25209
-  export DEB_LDFLAGS_MAINT_STRIP = -Wl,-Bsymbolic-functions
-endif
+# Always strip -Wl,-Bsymbolic-functions to prevent symbol resolution
+# failures (such as undefined symbol: g_lockdep) on newer Ubuntu toolchains (Noble 24.04+)
+export DEB_LDFLAGS_MAINT_STRIP = -Wl,-Bsymbolic-functions
+
 ifneq ($(filter pkg.ceph.arrow,$(DEB_BUILD_PROFILES)),)
   extraopts += -DWITH_SYSTEM_ARROW=ON
 endif
