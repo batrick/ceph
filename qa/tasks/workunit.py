@@ -392,31 +392,41 @@ def _run_tests(ctx, refspec, role, tests, env, basedir,
                     args=['mkdir', '-p', '--', scratch_tmp],
                     label=f"workunit sandbox creation test {workunit}",
                 )
-                client_keyring = f'/etc/ceph/{cluster}.client.{id_}.keyring'
-                admin_keyring = f'/etc/ceph/{cluster}.client.admin.keyring'
-                #tmp_keyring = f'{scratch_tmp}/workunit.client.{id_}.keyring'
+
                 try:
-                    tmp_keyring = ctx.ceph[cluster].keyring
+                    cluster_keyring = ctx.ceph[cluster].keyring
                 except AttributeError:
-                    tmp_keyring = f"/etc/ceph/{cluster}.keyring"
-                remote.run(
-                    args=[
-                        'sudo',
-                        'ceph-authtool',
-                        tmp_keyring,
-                        '--import-keyring',
-                        client_keyring,
-                    ],
-                )
-                remote.run(
-                    args=[
-                        'sudo',
-                        'ceph-authtool',
-                        tmp_keyring,
-                        '--import-keyring',
-                        admin_keyring,
-                    ],
-                )
+                    cluster_keyring = f"/etc/ceph/{cluster}.keyring"
+                    log.info("keyring not configured by cluster setup, using default: %s", cluster_keyring)
+
+                try:
+                    remote.read_file(cluster_keyring)
+                except FileNotFoundError:
+                    log.info("no cluster keyring found; skipping keyring imports")
+                else:
+                    client_keyring = f'/etc/ceph/{cluster}.client.{id_}.keyring'
+                    admin_keyring = f'/etc/ceph/{cluster}.client.admin.keyring'
+                    #tmp_keyring = f'{scratch_tmp}/workunit.client.{id_}.keyring'
+                    tmp_keyring = cluster_keyring
+                    remote.run(
+                        args=[
+                            'sudo',
+                            'ceph-authtool',
+                            tmp_keyring,
+                            '--import-keyring',
+                            client_keyring,
+                        ],
+                    )
+                    remote.run(
+                        args=[
+                            'sudo',
+                            'ceph-authtool',
+                            tmp_keyring,
+                            '--import-keyring',
+                            admin_keyring,
+                        ],
+                    )
+
                 args = [
                     'cd', '--', scratch_tmp,
                     run.Raw('&&'),
