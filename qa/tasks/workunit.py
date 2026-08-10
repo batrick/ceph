@@ -400,7 +400,8 @@ def _run_tests(ctx, refspec, role, tests, env, basedir,
                     log.info("keyring not configured by cluster setup, using default: %s", cluster_keyring)
 
                 try:
-                    remote.read_file(cluster_keyring)
+                    k = remote.read_file(cluster_keyring).decode()
+                    log.info("current keyring file:\n%s", k)
                 except FileNotFoundError:
                     log.info("no cluster keyring found; skipping keyring imports")
                 else:
