@@ -418,15 +418,19 @@ def _run_tests(ctx, refspec, role, tests, env, basedir,
                             client_keyring,
                         ],
                     )
-                    remote.run(
-                        args=[
-                            'sudo',
-                            'ceph-authtool',
-                            tmp_keyring,
-                            '--import-keyring',
-                            admin_keyring,
-                        ],
-                    )
+                    # admin_keyring may be a key type not understood
+                    try:
+                        remote.run(
+                            args=[
+                                'sudo',
+                                'ceph-authtool',
+                                tmp_keyring,
+                                '--import-keyring',
+                                admin_keyring,
+                            ],
+                        )
+                    except:
+                        log.info("admin key type not understood")
 
                 args = [
                     'cd', '--', scratch_tmp,
