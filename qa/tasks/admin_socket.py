@@ -157,8 +157,11 @@ def _run_tests(ctx, client, tests):
 
             test_path = None
             if 'test' in config:
+                suite_path = ctx.config.get('suite_path')
+                repo_root = os.path.dirname(suite_path)
+                local_test_path = os.path.join(repo_root, config['test'])
                 test_path = os.path.join(tmp_dir, command)
-                remote.put_file(config['test'], test_path)
+                remote.put_file(local_test_path, test_path)
                 remote.run(
                     args=[
                         'chmod',
