@@ -101,7 +101,11 @@ def task(ctx, config):
         ]
         extra_args = [
             *config_extra_args,
-            '--no-log-to-stderr',
+            #'--no-log-to-stderr',
+            '--log-to-stderr=true',
+            '--debug-ms=1',
+            '--debug-auth=20',
+            '--debug-monc=20',
             f'--name={role}',
             f'--pool={pool}',
         ]
