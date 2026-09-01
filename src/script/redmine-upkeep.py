@@ -1486,6 +1486,7 @@ h2. Update Payload
                 'X-Redmine-API-Key': REDMINE_API_KEY,
             }
             endpoint = f"{REDMINE_ENDPOINT}/issues/{issue_id}.json"
+            issue_update.logger.debug("Sending payload:\n%s", json.dumps(issue_update.get_update_payload(suppress_mail=True), indent=4))
             response = requests.put(endpoint, headers=headers, data=json.dumps(failure_payload))
             response.raise_for_status()
             issue_update.logger.info(f"Successfully added 'upkeep-failed' tag and comment to Redmine issue.")
